@@ -11,13 +11,18 @@ services:
 
 
   lapcounter-server-lapdata:
-    profiles: ["dev"]
+    profiles: ["test"]
     #image: gregwoods/lapcounter-server-lapdata:0.1.0
     build: ./lapcounter-server-lapdata
     container_name: lapcounter-server-lapdata
-    #ports:
-    #  - 8009:8009
 
+
+  lapcounter-server-test-mqtt-latency:
+    profiles: ["test"]
+    #image: gregwoods/lapcounter-server-test-mqtt-latency:0.1.0
+    build: ./lapcounter-server-test-mqtt-latency
+    container_name: lapcounter-server-test-mqtt-latency
+   
 
   mosquitto:
     profiles: ["dev", "test", "production"]
