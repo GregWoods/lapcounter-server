@@ -1,28 +1,8 @@
+# When running in production, be sure to set envuronment variables with the --env-file argument
+#  e.g. 
+# docker compose up --profile test --env-file .env.production
+
 services:
-
-  #lapcounter-server-gpio:
-  #  profiles: ["test", "production"]
-  #  #image: gregwoods/lapcounter-server-gpio:0.1.0
-  #  build: ./lapcounter-server-gpio
-  #  container_name: lapcounter-server-gpio
-  #  privileged: true 
-  #  #ports:
-  #  #  - 8008:8008
-
-
-  lapcounter-server-lapdata:
-    profiles: ["test"]
-    #image: gregwoods/lapcounter-server-lapdata:0.1.0
-    build: ./lapcounter-server-lapdata
-    container_name: lapcounter-server-lapdata
-
-
-  lapcounter-server-test-mqtt-latency:
-    profiles: ["test"]
-    #image: gregwoods/lapcounter-server-test-mqtt-latency:0.1.0
-    build: ./lapcounter-server-test-mqtt-latency
-    container_name: lapcounter-server-test-mqtt-latency
-   
 
   mosquitto:
     profiles: ["dev", "test", "production"]
@@ -38,9 +18,41 @@ services:
     restart: unless-stopped
 
 
-  #TODO: try profiles to be able to disable this in production
-  portainer:
+  #lapcounter-server-gpio:
+  #  profiles: ["test", "production"]
+  #  #image: gregkwoods/lapcounter-server-gpio:0.1.0
+  #  build: ./lapcounter-server-gpio
+  #  container_name: lapcounter-server-gpio
+  #  privileged: true
+  #  depends_on:
+  #    - mosquitto  
+  #  #ports:
+  #  #  - 8008:8008
+
+  lapcounter-server-lapdata:
     profiles: ["test"]
+    image: gregkwoods/lapcounter-server-lapdata:latest
+    env_file:
+      - .env.docker
+    build: ./lapcounter-server-lapdata
+    container_name: lapcounter-server-lapdata
+    depends_on:
+      - mosquitto
+
+
+  lapcounter-server-test-mqtt-latency:
+    profiles: ["test"]
+    env_file:
+      - .env.docker
+    image: gregkwoods/lapcounter-server-test-mqtt-latency:latest
+    build: ./lapcounter-server-test-mqtt-latency
+    container_name: lapcounter-server-test-mqtt-latency
+    depends_on:
+      - mosquitto    
+
+
+  portainer:
+    profiles: ["disabled"]
     image: portainer/portainer-ce:latest
     container_name: portainer
     restart: unless-stopped
@@ -51,7 +63,6 @@ services:
     volumes:
       - ./portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-
 
 
 # volumes:

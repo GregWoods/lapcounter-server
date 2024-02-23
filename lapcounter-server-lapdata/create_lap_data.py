@@ -6,10 +6,16 @@ import sys
 import os
 import aiomqtt
 import paho.mqtt as mqtt
+from dotenv import load_dotenv
 
-PORT = 8080
 
-numberOfDrivers = 6
+# Load dev environment variables. We don't override existing variables set using docker compose --env-file
+#   which is used in production
+#load_dotenv('../.env.local', override=False)   #only needed if we are running the script outside of the container
+mqtt_hostname = os.getenv('MQTT_HOSTNAME')
+print(mqtt_hostname)
+
+numberOfDrivers = int(os.getenv('MOCK_NUMBER_OF_DRIVERS'))
 baseLapTime = 5
 abilityRangeMax = 4.2
 lapTimeRangeMax = 3.5
@@ -45,7 +51,7 @@ class Driver:
 
 
 async def send_message(driver):
-    async with aiomqtt.Client("localhost") as client:
+    async with aiomqtt.Client(os.getenv('MQTT_HOSTNAME')) as client:
         while True:
             driver.generateLap()
             await asyncio.sleep(max(0, driver.nextLapAt - time.time()))            
