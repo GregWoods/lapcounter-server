@@ -17,12 +17,26 @@ The implementation will be done in a containerised manner using messgae queues. 
 **Current State**
 
 ## lapcounter-server-gpio
-gpio_output_test.py: Proof of concept. Doesn't read carid data. Instead reads button presses on the Raspi an publishes using MQTT
 
-gpio_raw_lap_mocked.py: I think this should be removed. The functionality to create mocked lap data has been moved to the separate container: lapcounter-server-lapdata
+### gpio_output_test.py
+Proof of concept. Doesn't read carid data. Instead reads button presses on the Raspi an publishes using MQTT
+
+### generate_raw_lap_data_from_gpio.py
+The first step. This code reads the carId from the Raspberry Pis GPIO pins and publishes that to a queue with minimal processing. It should be fast. Running in a separate container should ensure it is non-blocking to other processes. 
+
+Initial version can be a simple while loop and poll the GPIO pins. 
+
+I could split the existing GPIO code so it only reads one lane. Each lane could be a separate asynciotask in a taskgroup. It might help prevent lane 2 being bloacked when lane 1 is trying to send an MQTT message.
+
+Is there any way to use interrupts of some some so that a new GPIO message can interrupt any mqtt sending: 
+READ: https://roboticsbackend.com/raspberry-pi-gpio-interrupts-tutorial/
+
+
 
 ## lapcounter-server-lapdata
-create_lap_data.py: creates random lap data and publishes using MQTT. Used for development.
+
+### create_lap_data.py
+creates random lap data and publishes using MQTT. Used for development.
 
 Publishes to the "lap" topic
 

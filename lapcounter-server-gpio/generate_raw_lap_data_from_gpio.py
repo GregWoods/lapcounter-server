@@ -12,13 +12,18 @@ import RPi.GPIO as GPIO
 import datetime
 
 
-# Load dev environment variables. We don't override existing variables set using docker compose --env-file
-#   which is used in production
-#load_dotenv('../.env.local', override=False)   #only needed if we are running the script outside of the container
-mqtt_hostname = os.getenv('MQTT_HOSTNAME')
-print(mqtt_hostname)
+# Load dev environment variables. We don't override existing variables set 
+#   using docker compose --env-file which is used in production
 
-MINIMUM_LAP_TIME = 3.0
+#load_dotenv('../.env.local', override=False)   #only needed if we are running the script outside of the container
+
+mqtt_hostname = os.getenv('MQTT_HOSTNAME')
+print(f"MQTT_HOSTNAME: {mqtt_hostname}")
+
+MINIMUM_LAP_TIME = float(os.getenv('MINIMUM_LAP_TIME'))
+if MINIMUM_LAP_TIME is None:
+    MINIMUM_LAP_TIME = 3.0
+print(f"MINIMUM_LAP_TIME: ${MINIMUM_LAP_TIME}")
 
 # setup GPIO pin constants
 lanes = [{
@@ -40,8 +45,8 @@ GPIO.setwarnings(False)
 
 # setup GPIO pins
 for lane in lanes:
-    GPIO.setup(lane["HSHAKE"], GPIO.OUT)
     GPIO.setup(lane["SELECTED"], GPIO.IN)
+    GPIO.setup(lane["HSHAKE"], GPIO.OUT)
     GPIO.setup(lane["CARCODE1"], GPIO.IN)
     GPIO.setup(lane["CARCODE2"], GPIO.IN)
     GPIO.setup(lane["CARCODE3"], GPIO.IN)
@@ -50,21 +55,19 @@ for lane in lanes:
     GPIO.output(lane["HSHAKE"], False)
     GPIO.output(lane["HSHAKE"], True)
 
-
 # setup previous_times array for all 6 cars
 now = datetime.now().timestamp()
-# up to 8 cars theoretically possible. We will use index 1-6 to match car number
+# up to 8 cars theoretically possible using the current 3bit data from the GPIO. 
+#   We will use index 1-6 to match car number, and ignore index 0 and 7
 previous_times = [now, now, now, now, now, now, now, now]
 
-
 # setup mqtt client
-client = mqtt.Client(os.getenv('MQTT_HOSTNAME'))
-
+client = mqtt.Client(mqtt_hostname)
 
 async def send_lap_time(car_number, crossing_time):
-    lapsed_time = crossing_time.timestamp() - previous_times[car_number]
-    if lapsed_time > MINIMUM_LAP_TIME:
-        lapdata = {"type": "lap", "car": car_number, "time": crossing_time.timestamp()}
+    lap_time = crossing_time.timestamp() - previous_times[car_number]
+    if lap_time > MINIMUM_LAP_TIME:
+        lapdata = {"car": car_number, "laptime": lap_time}
         lapjson = json.dumps(lapdata)
         print(lapjson)
         previous_times[car_number] = crossing_time.timestamp()
@@ -104,26 +107,25 @@ async def lane2_car_detected():
     await car_detected(lanes[1])
 
 
-async def read_gpio_send_message():
-    async with aiomqtt.Client(os.getenv('MQTT_HOSTNAME')) as client:
-        #Set up interrupts on the "Selected" pins
-        GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
-        GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)
+#async def read_gpio_send_message():
+#    async with aiomqtt.Client(mqtt_hostname) as client:
+#        #Set up interrupts on the "Selected" pins
+#        GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
+#        GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)
 
 async def schedule_tasks():
-    client = aiomqtt.Client(os.getenv('MQTT_HOSTNAME'))
+    client = aiomqtt.Client(mqtt_hostname)
     GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
     GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)    
     while True:
         try:
             async with client:
-                # Set up interrupts on the "Selected" pins
-                #   The clalbacks can make use of client to publish messages
-
+                # Do nothing here, the interrupts handle everything GPIO related
+                await asyncio.sleep(0.01)
+        # add conection lost exception handling
         except aiomqtt.MqttError:
             print(f"Connection lost; Reconnecting in 1 second ...")
             await asyncio.sleep(1)
-
 
 # Change to the "Selector" event loop if platform is Windows
 if sys.platform.lower() == "win32" or os.name.lower() == "nt":
