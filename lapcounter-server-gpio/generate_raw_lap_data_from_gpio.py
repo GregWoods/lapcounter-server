@@ -5,7 +5,7 @@ import time
 import sys
 import os
 import aiomqtt
-import paho.mqtt as mqtt
+#import paho.mqtt as mqtt
 from dotenv import load_dotenv
 import sys
 import RPi.GPIO as GPIO
@@ -56,13 +56,14 @@ for lane in lanes:
     GPIO.output(lane["HSHAKE"], True)
 
 # setup previous_times array for all 6 cars
-now = datetime.now().timestamp()
+now = datetime.datetime.now().timestamp()
 # up to 8 cars theoretically possible using the current 3bit data from the GPIO. 
 #   We will use index 1-6 to match car number, and ignore index 0 and 7
 previous_times = [now, now, now, now, now, now, now, now]
 
-# setup mqtt client
-client = mqtt.Client(mqtt_hostname)
+
+
+
 
 async def send_lap_time(car_number, crossing_time):
     lap_time = crossing_time.timestamp() - previous_times[car_number]
@@ -74,8 +75,8 @@ async def send_lap_time(car_number, crossing_time):
 
         # publish lap time to mqtt
         try:
-            async with client:
-                await client.publish("lap", payload=lapjson)
+        #async with aiomqtt.Client(mqtt_hostname) as client:
+            await client.publish("lap", payload=lapjson)
         except aiomqtt.MqttError:
             print(f"Connection lost; Reconnecting in 1 second ...")
             await asyncio.sleep(1)        
@@ -106,12 +107,6 @@ async def lane1_car_detected():
 async def lane2_car_detected():
     await car_detected(lanes[1])
 
-
-#async def read_gpio_send_message():
-#    async with aiomqtt.Client(mqtt_hostname) as client:
-#        #Set up interrupts on the "Selected" pins
-#        GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
-#        GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)
 
 async def schedule_tasks():
     client = aiomqtt.Client(mqtt_hostname)
