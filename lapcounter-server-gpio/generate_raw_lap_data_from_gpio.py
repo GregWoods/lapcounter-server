@@ -108,10 +108,12 @@ async def lane2_car_detected():
     await car_detected(lanes[1])
 
 
+client = aiomqtt.Client(mqtt_hostname)
+GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
+GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)    
+
+
 async def schedule_tasks():
-    client = aiomqtt.Client(mqtt_hostname)
-    GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
-    GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)    
     while True:
         try:
             async with client:
