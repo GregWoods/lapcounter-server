@@ -46,4 +46,4 @@ COPY . .
 EXPOSE 8002
 
 # Run the application.
-CMD python test_latency.py
+CMD ["python", "test_latency.py"]

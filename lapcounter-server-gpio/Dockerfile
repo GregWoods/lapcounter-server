@@ -29,10 +29,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy the source code into the container.
 COPY . .
 
-RUN chmod 755 gpio_output_test.py
+RUN chmod 755 generate_raw_lap_data_from_gpio.py
 
 # Expose the port that the application listens on.
 #EXPOSE 8090
 
 # Run the application.
-CMD ["python", "gpio_output_test.py"]
+CMD ["python", "generate_raw_lap_data_from_gpio.py"]

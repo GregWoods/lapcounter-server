@@ -32,7 +32,6 @@ Is there any way to use interrupts of some some so that a new GPIO message can i
 READ: https://roboticsbackend.com/raspberry-pi-gpio-interrupts-tutorial/
 
 
-
 ## lapcounter-server-lapdata
 
 ### create_lap_data.py
@@ -63,7 +62,9 @@ We can run any python scripts interactively using "py scriptname", but for produ
 This example performs a cross-platform build of lapcounter-server-test-mqtt-latency and will publish versions for amd64 and Raspberry Pi 3 (arm v7)
 
 ```
-docker buildx create --use     
+docker login -u gregkwoods
+#use Access Token in Keeper for the password
+docker buildx create --use
 docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-test-mqtt-latency . --push
 ```
 
