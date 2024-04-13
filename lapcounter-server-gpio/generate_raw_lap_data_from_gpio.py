@@ -1,3 +1,9 @@
+# Run with the following
+#   . ./setenv.sh
+#   sudo -E python3 generate_raw_lap_data_from_gpio.py
+# 
+#   -E is needed to pass the environment variables to the sudo command
+
 import asyncio
 import json
 import random
@@ -10,6 +16,7 @@ from dotenv import load_dotenv
 import sys
 import RPi.GPIO as GPIO
 import datetime
+import time
 
 
 # Load dev environment variables. We don't override existing variables set 
@@ -41,7 +48,7 @@ lanes = [{
 }]
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
+GPIO.setwarnings(True)  # ????
 
 # setup GPIO pins
 for lane in lanes:
@@ -62,8 +69,7 @@ now = datetime.datetime.now().timestamp()
 previous_times = [now, now, now, now, now, now, now, now]
 
 
-
-
+client = aiomqtt.Client(mqtt_hostname)
 
 async def send_lap_time(car_number, crossing_time):
     lap_time = crossing_time.timestamp() - previous_times[car_number]
@@ -108,7 +114,7 @@ async def lane2_car_detected():
     await car_detected(lanes[1])
 
 
-client = aiomqtt.Client(mqtt_hostname)
+
 GPIO.add_event_detect(lanes[0]["SELECTED"], GPIO.RISING, callback=lane1_car_detected)
 GPIO.add_event_detect(lanes[1]["SELECTED"], GPIO.RISING, callback=lane2_car_detected)    
 
