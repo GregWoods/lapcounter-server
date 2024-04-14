@@ -11,10 +11,12 @@ import paho.mqtt as mqtt
 pwr_btn_gpio = 3
 mqtt_hostname = "10.0.1.188"
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(pwr_btn_gpio, GPIO.IN)
+async def handle():
+    # client is effectively a global singleton, but needs to be instantiated here
+    #   because this handler runs in a different thread
+    if not client:
+        client = aiomqtt.Client(mqtt_hostname)
 
-async def handle(client):
     btn_down = GPIO.input(pwr_btn_gpio)
     if btn_down:
         print("Press")
@@ -27,23 +29,21 @@ async def handle(client):
     #    print(f"handle button press: Connection lost")
     #    # reconnection is done in main loop
 
-print ("Setting up event detect")
-worked = False
-while not worked:
-    # keep trying to set up event detect based on suggestion in 
-    # https://www.raspberrypi.org/forums/viewtopic.php?f=32&t=129015&p=874227#p874227
-    worked = True
-    try:
-        GPIO.add_event_detect(pwr_btn_gpio, GPIO.BOTH, lambda _:handle(client))
-    except RuntimeError:
-        worked = False
 
-print("We are running!")  # This never prints, never gets out of above while loop
+# see https://raspberrypi.stackexchange.com/questions/54514/implement-a-gpio-function-with-a-callback-calling-a-asyncio-method
+#  we sill use the asyncio event loop directly so we don't need to use async/await in the button handling callback
 
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(pwr_btn_gpio, GPIO.IN)
+GPIO.add_event_detect(pwr_btn_gpio, GPIO.BOTH, handle)
+# run the event loop
+loop = asyncio.get_event_loop()
+loop.run_forever()
+loop.close()
 
 async def main():
     global client 
-    client = aiomqtt.Client(mqtt_hostname)
+    
     while True:
         try:
             async with client:
@@ -56,3 +56,6 @@ async def main():
 
 
 asyncio.run(main())
+
+
+GPIO.cleanup()
