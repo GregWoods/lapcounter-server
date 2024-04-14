@@ -11,11 +11,21 @@ import paho.mqtt as mqtt
 pwr_btn_gpio = 3
 mqtt_hostname = "10.0.1.188"
 
-async def handle():
+loop = None
+client = None
+
+#we use asyncio's loop directly so that both button handler and mqtt client
+#   can be run in the same thread
+def handle():
     # client is effectively a global singleton, but needs to be instantiated here
-    #   because this handler runs in a different thread
+    #   so it is run in the same thread as the handler
+    # Note: this might not actually be required
     if not client:
         client = aiomqtt.Client(mqtt_hostname)
+    
+    if loop is None:
+        print("ERROR: loop is None")
+        return
 
     btn_down = GPIO.input(pwr_btn_gpio)
     if btn_down:
@@ -24,7 +34,9 @@ async def handle():
     else:
         print("Release")
     #try:
-    await client.publish("lap", "test message")
+    loop.call_soon_threadsafe(lambda _:client.publish("lap", "test message"))
+
+    #await client.publish("lap", "test message")
     #except mqtt.MqttError:
     #    print(f"handle button press: Connection lost")
     #    # reconnection is done in main loop
@@ -41,21 +53,14 @@ loop = asyncio.get_event_loop()
 loop.run_forever()
 loop.close()
 
-async def main():
-    global client 
-    
-    while True:
-        try:
-            async with client:
-                # Do nothing here, the interrupts handle everything GPIO related
-                await asyncio.sleep(0.01)
-        # add conection lost exception handling
-        except aiomqtt.MqttError:
-            print(f"Connection lost; Reconnecting...")
-            await asyncio.sleep(0.2)
 
+print("start forever loop. Is this code run?")
+
+async def main():
+    while True:
+        await asyncio.sleep(0.2)
 
 asyncio.run(main())
 
-
+print("EXIT and cleanup")
 GPIO.cleanup()
