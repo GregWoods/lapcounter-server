@@ -59,7 +59,7 @@ GPIO.output(lane["HSHAKE"], True)
 
 client = None
 
-def send_lap_time(car_number, crossing_time):
+def send_lap_time(client, car_number, crossing_time):
     lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_number + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
@@ -78,16 +78,16 @@ def handshake_end():
     GPIO.output(lane["HSHAKE"], True)
 
 
-def car_detected():
+def car_detected(client):
     crossing_time = datetime.now()
     car_number = 0
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
     if GPIO.input(lane["CARCODE3"]): car_number += 4
-    send_lap_time(car_number, crossing_time)
+    send_lap_time(client, car_number, crossing_time)
     handshake_end(lane)
 
-GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=car_detected)
+GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=lambda _:car_detected(client))
 
 #while True:
 #    client = mqtt.Client(mqtt_hostname)
