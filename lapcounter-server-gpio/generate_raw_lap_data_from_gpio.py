@@ -9,6 +9,8 @@ import random
 import time
 import sys
 import os
+import asyncio
+import aiomqtt
 import paho.mqtt as mqtt
 from dotenv import load_dotenv
 import sys
@@ -58,14 +60,14 @@ GPIO.output(lane["HSHAKE"], True)
 client = None
 
 def send_lap_time(car_number, crossing_time):
-    lapdata = {"car": car_number, "timestamp": crossing_time}
+    lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_number + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
     try:
         client.publish("lap", payload=lapjson)
     except mqtt.MqttError:
-        print(f"Connection lost")
-        # how do we reconnect?
+        print(f"send_lap_time: Connection lost")
+        # reconnection is done in main loop
 
 
 def handshake_end():
@@ -87,6 +89,40 @@ def car_detected():
 
 GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=car_detected)
 
-while True:
-    client = mqtt.Client(mqtt_hostname)
-    time.sleep(0.1)
+#while True:
+#    client = mqtt.Client(mqtt_hostname)
+#    time.sleep(0.1)
+
+
+
+#async def send_message(driver):
+#    async with aiomqtt.Client(os.getenv('MQTT_HOSTNAME')) as client:
+#        while True:
+#            driver.generateLap()
+#            await asyncio.sleep(max(0, driver.nextLapAt - time.time()))            
+#            driver.dbg()    
+#            lapdata = {"type": "lap", "car": driver.driverNumber, "time": driver.nextLapAt}
+#            lapjson = json.dumps(lapdata)
+#            await client.publish("lap", payload=lapjson)
+#            print(lapdata)
+
+
+# Create a task for each driver
+#async def schedule_tasks():
+#    async with asyncio.TaskGroup() as tg:
+#        for driver in drivers:
+#            tg.create_task(send_message(driver))
+
+async def main():
+    while True:
+        try:
+            async with client:
+                # Do nothing here, the interrupts handle everything GPIO related
+                await asyncio.sleep(0.01)
+        # add conection lost exception handling
+        except aiomqtt.MqttError:
+            print(f"Connection lost; Reconnecting...")
+            await asyncio.sleep(0.2)
+
+client = aiomqtt.Client(mqtt_hostname)
+asyncio.run(main())
