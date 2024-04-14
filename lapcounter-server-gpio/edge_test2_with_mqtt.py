@@ -21,11 +21,11 @@ def handle(client):
         print(client)
     else:
         print("Release")
-    try:
-        client.publish("lap", "test message")
-    except mqtt.MqttError:
-        print(f"handle button press: Connection lost")
-        # reconnection is done in main loop
+    #try:
+    client.publish("lap", "test message")
+    #except mqtt.MqttError:
+    #    print(f"handle button press: Connection lost")
+    #    # reconnection is done in main loop
 
 print ("Setting up event detect")
 worked = False
