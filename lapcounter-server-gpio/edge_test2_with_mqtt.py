@@ -16,7 +16,7 @@ client = aiomqtt.Client(mqtt_hostname)
 
 #we use asyncio's loop directly so that both button handler and mqtt client
 #   can be run in the same thread
-def handle(_):
+def handle(self):
 
     if loop is None:
         print("ERROR: loop is None")
@@ -29,7 +29,7 @@ def handle(_):
     else:
         print("Release")
     #try:
-    loop.call_soon_threadsafe(lambda:client.publish("lap", "test message"))
+    loop.call_soon_threadsafe(lambda x:client.publish("lap", "test message"))
 
     #await client.publish("lap", "test message")
     #except mqtt.MqttError:
