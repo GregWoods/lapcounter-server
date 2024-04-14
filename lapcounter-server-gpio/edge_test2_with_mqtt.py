@@ -14,7 +14,7 @@ mqtt_hostname = "10.0.1.188"
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(pwr_btn_gpio, GPIO.IN)
 
-def handle(client):
+async def handle(client):
     btn_down = GPIO.input(pwr_btn_gpio)
     if btn_down:
         print("Press")
@@ -22,7 +22,7 @@ def handle(client):
     else:
         print("Release")
     #try:
-    client.publish("lap", "test message")
+    await client.publish("lap", "test message")
     #except mqtt.MqttError:
     #    print(f"handle button press: Connection lost")
     #    # reconnection is done in main loop
