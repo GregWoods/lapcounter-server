@@ -29,7 +29,7 @@ def handle(self):
     else:
         print("Release")
     #try:
-    loop.call_soon_threadsafe(lambda x:client.publish("lap", "test message"))
+    loop.call_soon_threadsafe(lambda x: self.client.publish("lap", "test message"))
 
     #await client.publish("lap", "test message")
     #except mqtt.MqttError:
