@@ -114,6 +114,7 @@ GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=lambda _:car_detec
 #            tg.create_task(send_message(driver))
 
 async def main():
+    client = aiomqtt.Client(mqtt_hostname)
     while True:
         try:
             async with client:
@@ -124,5 +125,5 @@ async def main():
             print(f"Connection lost; Reconnecting...")
             await asyncio.sleep(0.2)
 
-client = aiomqtt.Client(mqtt_hostname)
+
 asyncio.run(main())
