@@ -14,10 +14,11 @@ mqtt_hostname = "10.0.1.188"
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(pwr_btn_gpio, GPIO.IN)
 
-def handle(channel):
-    movement = GPIO.input(pwr_btn_gpio)
-    if movement:
+def handle(client):
+    btn_down = GPIO.input(pwr_btn_gpio)
+    if btn_down:
         print("Press")
+        print(client)
     else:
         print("Release")
 
@@ -28,7 +29,7 @@ while not worked:
     # https://www.raspberrypi.org/forums/viewtopic.php?f=32&t=129015&p=874227#p874227
     worked = True
     try:
-        GPIO.add_event_detect(pwr_btn_gpio, GPIO.BOTH, handle)
+        GPIO.add_event_detect(pwr_btn_gpio, GPIO.BOTH, lambda _:handle(client))
     except RuntimeError:
         worked = False
 
@@ -36,6 +37,7 @@ print("We are running!")  # This never prints, never gets out of above while loo
 
 
 async def main():
+    global client 
     client = aiomqtt.Client(mqtt_hostname)
     while True:
         try:
