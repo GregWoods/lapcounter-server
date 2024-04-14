@@ -12,17 +12,12 @@ pwr_btn_gpio = 3
 mqtt_hostname = "10.0.1.188"
 
 loop = None
-client = None
+client = aiomqtt.Client(mqtt_hostname)
 
 #we use asyncio's loop directly so that both button handler and mqtt client
 #   can be run in the same thread
-def handle():
-    # client is effectively a global singleton, but needs to be instantiated here
-    #   so it is run in the same thread as the handler
-    # Note: this might not actually be required
-    if not client:
-        client = aiomqtt.Client(mqtt_hostname)
-    
+def handle(_):
+
     if loop is None:
         print("ERROR: loop is None")
         return
