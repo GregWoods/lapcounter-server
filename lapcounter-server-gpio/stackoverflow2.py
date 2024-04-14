@@ -10,21 +10,19 @@ import RPi.GPIO as GPIO
 LOOP_IN = 16
 LOOP_OUT = 22
 
-@asyncio.coroutine
-def delayed_raise_signal():
-    yield from asyncio.sleep(1)
+async def delayed_raise_signal():
+    await asyncio.sleep(1)
 
     GPIO.output(LOOP_OUT, GPIO.HIGH)
 
-@asyncio.coroutine
-def stop_loop():
-    yield from asyncio.sleep(1)
+async def stop_loop():
+    await asyncio.sleep(1)
 
     print('Stopping Event Loop')
     asyncio.get_event_loop().stop()
 
 def gpio_event_on_loop_thread():
-    asyncio.async(stop_loop())
+    asyncio.ensure_future(stop_loop())
 
 def setup():
     GPIO.setmode(GPIO.BOARD)
@@ -39,7 +37,7 @@ def setup():
     loop = asyncio.get_event_loop()
     GPIO.add_event_detect(LOOP_IN, GPIO.RISING, callback=on_gpio_event)
 
-    asyncio.async(delayed_raise_signal())
+    asyncio.ensure_future(delayed_raise_signal())
 
 if __name__ == '__main__':
     setup()
