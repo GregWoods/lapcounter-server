@@ -9,7 +9,7 @@ import random
 import time
 import sys
 import os
-import paho.mqtt as mqtt
+import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 import sys
 import RPi.GPIO as GPIO
@@ -28,6 +28,7 @@ if MINIMUM_LAP_TIME is None:
 print(f"MINIMUM_LAP_TIME: ${MINIMUM_LAP_TIME}")
 
 # setup GPIO pin constants
+pwr_btn_gpio = 3
 lanes = [{
     "SELECTED": 2,
     "HSHAKE": 4,
@@ -81,8 +82,17 @@ def car_detected(client):
     send_lap_time(client, car_number, crossing_time)
     handshake_end(lane)
 
+def send_test_mqtt():
+    print("send_test_mqtt")
+    print(f"client: {client}")
+    client.publish("lap", payload="test")
+
+
 # utilises a new thread to handle the GPIO event detection
-GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=lambda _:car_detected(client))
+GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=car_detected)
+
+# detect button press for testing
+GPIO.add_event_detect(pwr_btn_gpio, GPIO.RISING, callback=send_test_mqtt)
 
 # example from : https://pypi.org/project/paho-mqtt/#network-loop
 # TODO: read up on "set" data structure. Consider using the passed in lapdata timestamp instead of mid.
