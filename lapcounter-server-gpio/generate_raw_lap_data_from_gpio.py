@@ -76,11 +76,14 @@ def handshake_end():
 
 
 def car_detected(_):
+    print("car detected")
     crossing_time = datetime.now()
     car_number = 0
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
     if GPIO.input(lane["CARCODE3"]): car_number += 4
+    print(f"car number: {car_number}")
+    print(f"crossing time: {crossing_time}")
     send_lap_time(car_number, crossing_time)
     handshake_end(lane)
 
