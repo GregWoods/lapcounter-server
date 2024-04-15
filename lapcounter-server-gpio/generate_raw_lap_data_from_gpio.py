@@ -56,6 +56,8 @@ GPIO.output(lane["HSHAKE"], True)
 GPIO.output(lane["HSHAKE"], False)
 GPIO.output(lane["HSHAKE"], True)
 
+GPIO.setup(pwr_btn_gpio, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
 client = None
 
 def send_lap_time(client, car_number, crossing_time):
