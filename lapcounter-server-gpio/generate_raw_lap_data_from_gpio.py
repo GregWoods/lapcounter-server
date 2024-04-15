@@ -9,8 +9,6 @@ import random
 import time
 import sys
 import os
-import asyncio
-import aiomqtt
 import paho.mqtt as mqtt
 from dotenv import load_dotenv
 import sys
@@ -63,11 +61,7 @@ def send_lap_time(client, car_number, crossing_time):
     lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_number + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
-    try:
-        client.publish("lap", payload=lapjson)
-    except mqtt.MqttError:
-        print(f"send_lap_time: Connection lost")
-        # reconnection is done in main loop
+    client.publish("lap", payload=lapjson)
 
 
 def handshake_end():
@@ -87,43 +81,22 @@ def car_detected(client):
     send_lap_time(client, car_number, crossing_time)
     handshake_end(lane)
 
+# utilises a new thread to handle the GPIO event detection
 GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=lambda _:car_detected(client))
 
-#while True:
-#    client = mqtt.Client(mqtt_hostname)
-#    time.sleep(0.1)
+# example from : https://pypi.org/project/paho-mqtt/#network-loop
+# TODO: read up on "set" data structure. Consider using the passed in lapdata timestamp instead of mid.
 
+unacked_publish = set()
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.user_data_set(unacked_publish)
+client.connect(mqtt_hostname)
+# create a new thread to handle the network loop. Also handles reconnecting
+client.loop_start()
 
+# Forever loop. The mqtt client will continue to attempt to send all messages in the unacked_publish set
+while True:
+    time.sleep(0.001)
 
-#async def send_message(driver):
-#    async with aiomqtt.Client(os.getenv('MQTT_HOSTNAME')) as client:
-#        while True:
-#            driver.generateLap()
-#            await asyncio.sleep(max(0, driver.nextLapAt - time.time()))            
-#            driver.dbg()    
-#            lapdata = {"type": "lap", "car": driver.driverNumber, "time": driver.nextLapAt}
-#            lapjson = json.dumps(lapdata)
-#            await client.publish("lap", payload=lapjson)
-#            print(lapdata)
-
-
-# Create a task for each driver
-#async def schedule_tasks():
-#    async with asyncio.TaskGroup() as tg:
-#        for driver in drivers:
-#            tg.create_task(send_message(driver))
-
-async def main():
-    client = aiomqtt.Client(mqtt_hostname)
-    while True:
-        try:
-            async with client:
-                # Do nothing here, the interrupts handle everything GPIO related
-                await asyncio.sleep(0.01)
-        # add conection lost exception handling
-        except aiomqtt.MqttError:
-            print(f"Connection lost; Reconnecting...")
-            await asyncio.sleep(0.2)
-
-
-asyncio.run(main())
+client.disconnect()
+client.loop_stop()
