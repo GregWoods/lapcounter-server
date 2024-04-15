@@ -56,11 +56,11 @@ GPIO.output(lane["HSHAKE"], True)
 GPIO.output(lane["HSHAKE"], False)
 GPIO.output(lane["HSHAKE"], True)
 
-GPIO.setup(pwr_btn_gpio, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+GPIO.setup(pwr_btn_gpio, GPIO.IN)
 
 client = None
 
-def send_lap_time(client, car_number, crossing_time):
+def send_lap_time(car_number, crossing_time):
     lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_number + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
@@ -75,16 +75,16 @@ def handshake_end():
     GPIO.output(lane["HSHAKE"], True)
 
 
-def car_detected(client):
+def car_detected(_):
     crossing_time = datetime.now()
     car_number = 0
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
     if GPIO.input(lane["CARCODE3"]): car_number += 4
-    send_lap_time(client, car_number, crossing_time)
+    send_lap_time(car_number, crossing_time)
     handshake_end(lane)
 
-def send_test_mqtt():
+def send_test_mqtt(_):
     print("send_test_mqtt")
     print(f"client: {client}")
     client.publish("lap", payload="test")
