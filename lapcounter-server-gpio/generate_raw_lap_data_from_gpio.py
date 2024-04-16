@@ -5,16 +5,12 @@
 #   -E is needed to pass the environment variables to the sudo command
 
 import json
-import random
 import time
-import sys
 import os
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 import sys
 import RPi.GPIO as GPIO
-import datetime
-import time
 
 # LANE_NUMBER starts from 1, lane_number is 0 based
 lane_number = int(os.getenv('LANE_NUMBER')) - 1
@@ -78,7 +74,7 @@ def handshake_end():
 
 def car_detected(_):
     print("car detected")
-    crossing_time = datetime.now()
+    crossing_time = time.time_ns()
     car_number = 0
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
