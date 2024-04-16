@@ -18,7 +18,7 @@ import time
 
 # LANE_NUMBER starts from 1, lane_number is 0 based
 lane_number = int(os.getenv('LANE_NUMBER')) - 1
-print(f"LANE_NUMBER: {lane_number + 1}")
+print(f"LANE_NUMBER: {lane_number}")
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
