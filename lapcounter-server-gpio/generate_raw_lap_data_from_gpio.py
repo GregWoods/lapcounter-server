@@ -93,7 +93,7 @@ def send_test_mqtt(_):
 
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
-GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=car_detected)
+GPIO.add_event_detect(lane["SELECTED"], GPIO.FALLING, callback=car_detected)
 
 # detect button press for testing
 GPIO.add_event_detect(pwr_btn_gpio, GPIO.RISING, callback=send_test_mqtt)
