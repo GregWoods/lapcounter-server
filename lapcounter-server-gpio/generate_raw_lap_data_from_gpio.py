@@ -18,6 +18,7 @@ import time
 
 # LANE_NUMBER starts from 1, lane_number is 0 based
 lane_number = int(os.getenv('LANE_NUMBER')) - 1
+print(f"LANE_NUMBER: {lane_number + 1}")
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
@@ -94,13 +95,15 @@ def send_test_mqtt(_):
 
 
 # utilises a new thread to handle the GPIO event detection
-GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=car_detected)
+print(f"lane selected GPIO: {lane['SELECTED']}")
+GPIO.add_event_detect(lane["SELECTED"], GPIO.BOTH, callback=car_detected)
 
 # detect button press for testing
 GPIO.add_event_detect(pwr_btn_gpio, GPIO.RISING, callback=send_test_mqtt)
 
 # example from : https://pypi.org/project/paho-mqtt/#network-loop
 # TODO: read up on "set" data structure. Consider using the passed in lapdata timestamp instead of mid.
+# Actually, get rid of this extra code once carID is being picked up 
 
 unacked_publish = set()
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
