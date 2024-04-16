@@ -64,7 +64,7 @@ def send_lap_time(car_number, crossing_time):
     client.publish("lap", payload=lapjson)
 
 
-def handshake_end():
+def handshake_end(_):
     GPIO.output(lane["HSHAKE"], False)
     flag1 = GPIO.input(lane["SELECTED"])
     while flag1 != 1:
@@ -75,7 +75,8 @@ def handshake_end():
 def car_detected(_):
     print("car detected")
     crossing_time = time.time_ns()
-    car_number = 0
+    # send car id 1-6 (not 0-5)
+    car_number = 1
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
     if GPIO.input(lane["CARCODE3"]): car_number += 4
@@ -92,7 +93,7 @@ def send_test_mqtt(_):
 
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
-GPIO.add_event_detect(lane["SELECTED"], GPIO.BOTH, callback=car_detected)
+GPIO.add_event_detect(lane["SELECTED"], GPIO.RISING, callback=car_detected)
 
 # detect button press for testing
 GPIO.add_event_detect(pwr_btn_gpio, GPIO.RISING, callback=send_test_mqtt)
