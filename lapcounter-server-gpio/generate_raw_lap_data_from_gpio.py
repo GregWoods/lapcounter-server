@@ -2,7 +2,7 @@
 #   . ./setenv.sh
 #   sudo -E python3 generate_raw_lap_data_from_gpio.py
 # 
-#   -E is needed to pass the environment variables to the sudo command
+#   -E is needed to pass the environment variables to sudo
 
 import json
 import time
@@ -12,17 +12,12 @@ from dotenv import load_dotenv
 import sys
 import RPi.GPIO as GPIO
 
-# LANE_NUMBER starts from 1, lane_number is 0 based
-lane_number = int(os.getenv('LANE_NUMBER')) - 1
-print(f"LANE_NUMBER: {lane_number}")
+# LANE_NUMBER starts from 1
+lane_idx = int(os.getenv('LANE_NUMBER')) - 1
+print(f"LANE_NUMBER: {lane_idx}")
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
-
-MINIMUM_LAP_TIME = float(os.getenv('MINIMUM_LAP_TIME'))
-if MINIMUM_LAP_TIME is None:
-    MINIMUM_LAP_TIME = 3.0
-print(f"MINIMUM_LAP_TIME: ${MINIMUM_LAP_TIME}")
 
 # setup GPIO pin constants
 pwr_btn_gpio = 3
@@ -40,9 +35,9 @@ lanes = [{
     "CARCODE3": 26
 }]
 
-lane = lanes[lane_number]
+lane = lanes[lane_idx]
 GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(True)  # ????
+GPIO.setwarnings(True)
 GPIO.setup(lane["SELECTED"], GPIO.IN)
 GPIO.setup(lane["HSHAKE"], GPIO.OUT)
 GPIO.setup(lane["CARCODE1"], GPIO.IN)
@@ -58,11 +53,10 @@ GPIO.setup(pwr_btn_gpio, GPIO.IN)
 client = None
 
 def send_lap_time(car_number, crossing_time):
-    lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_number + 1}
+    lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_idx + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
     client.publish("lap", payload=lapjson)
-
 
 def handshake_end(_):
     GPIO.output(lane["HSHAKE"], False)
@@ -71,11 +65,10 @@ def handshake_end(_):
         flag1 = GPIO.input(lane["SELECTED"])
     GPIO.output(lane["HSHAKE"], True)
 
-
 def car_detected(_):
     print("car detected")
     crossing_time = time.time_ns()
-    # send car id 1-6 (not 0-5)
+    # send car id 1-6
     car_number = 1
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
@@ -85,31 +78,24 @@ def car_detected(_):
     send_lap_time(car_number, crossing_time)
     handshake_end(lane)
 
+# to be removed once the system is stable
 def send_test_mqtt(_):
     print("send_test_mqtt")
     print(f"client: {client}")
     client.publish("lap", payload="test")
 
-
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
 GPIO.add_event_detect(lane["SELECTED"], GPIO.FALLING, callback=car_detected)
 
-# detect button press for testing
+# temporary: detect button press for testing
 GPIO.add_event_detect(pwr_btn_gpio, GPIO.RISING, callback=send_test_mqtt)
 
-# example from : https://pypi.org/project/paho-mqtt/#network-loop
-# TODO: read up on "set" data structure. Consider using the passed in lapdata timestamp instead of mid.
-# Actually, get rid of this extra code once carID is being picked up 
-
-unacked_publish = set()
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-client.user_data_set(unacked_publish)
 client.connect(mqtt_hostname)
 # create a new thread to handle the network loop. Also handles reconnecting
 client.loop_start()
 
-# Forever loop. The mqtt client will continue to attempt to send all messages in the unacked_publish set
 while True:
     time.sleep(0.001)
 

@@ -18,16 +18,30 @@ services:
     restart: unless-stopped
 
 
-  #lapcounter-server-gpio:
-  #  profiles: ["test", "production"]
-  #  #image: gregkwoods/lapcounter-server-gpio:0.1.0
-  #  build: ./lapcounter-server-gpio
-  #  container_name: lapcounter-server-gpio
-  #  privileged: true
-  #  depends_on:
-  #    - mosquitto  
-  #  #ports:
-  #  #  - 8008:8008
+  lapcounter-server-gpio-lane1:
+    profiles: ["production"]
+    image: gregkwoods/lapcounter-server-gpio:latest
+    env_file:
+      - .env.docker
+    environment:
+      - LANE_NUMBER=1
+    #build: ./lapcounter-server-gpio
+    #container_name: lapcounter-server-gpio
+    privileged: true
+    #depends_on:
+    #  - mosquitto  
+    #ports:
+    #  - 8008:8008
+
+  lapcounter-server-gpio-lane2:
+    profiles: ["production"]
+    image: gregkwoods/lapcounter-server-gpio:latest
+    env_file:
+      - .env.docker
+    environment:
+      - LANE_NUMBER=2
+    privileged: true
+
 
   lapcounter-server-lapdata:
     profiles: ["test"]

@@ -22,14 +22,13 @@ The implementation will be done in a containerised manner using messgae queues. 
 Proof of concept. Doesn't read carid data. Instead reads button presses on the Raspi an publishes using MQTT
 
 ### generate_raw_lap_data_from_gpio.py
-The first step. This code reads the carId from the Raspberry Pis GPIO pins and publishes that to a queue with minimal processing. It should be fast. Running in a separate container should ensure it is non-blocking to other processes. 
+The first step. This code reads the carId from the Raspberry Pis GPIO pins and publishes that to a queue with minimal processing. It should be fast. Running in a separate container should ensure it is non-blocking to other processes.
 
-Initial version can be a simple while loop and poll the GPIO pins. 
+Initial version works for a single lane. A second instance can be run for lane 2. It is hoped (and confirmed with testing) that the OS and Docker will provide more than enough resources to be able to read both lanes at the same time and have both post to the MQTT server.
 
-I could split the existing GPIO code so it only reads one lane. Each lane could be a separate asynciotask in a taskgroup. It might help prevent lane 2 being bloacked when lane 1 is trying to send an MQTT message.
+Because generate_raw_lap_data_from_gpio.py does not know about other instance, it does not perform any lap time calculations, it simply logs the system timestamp and the car which crossed the line. 
 
-Is there any way to use interrupts of some some so that a new GPIO message can interrupt any mqtt sending: 
-READ: https://roboticsbackend.com/raspberry-pi-gpio-interrupts-tutorial/
+Initial version uses GPIO.add_event_detect for pin chnage detection. This creates a new thread, so that the MQTT message send should not block subsequent pin reading.
 
 
 ## lapcounter-server-lapdata
@@ -59,14 +58,7 @@ We can run any python scripts interactively using "py scriptname", but for produ
 
 # Building a Docker Image
 
-This example performs a cross-platform build of lapcounter-server-test-mqtt-latency and will publish versions for amd64 and Raspberry Pi 3 (arm v7)
-
-```
-docker login -u gregkwoods
-#use Access Token in Keeper for the password
-docker buildx create --use
-docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-test-mqtt-latency . --push
-```
+se specific folder for exact commands
 
 # Running Locally (without Docker)
 
@@ -76,7 +68,9 @@ makes use of .env.local
 # Running on the Raspi
 
 ```
-sudo docker compose --env-file .env.docker.raspi --profile test up  --pull always
+cd ~/lapcounter-server
+sudo docker compose --env-file .env.docker --profile production up  --pull always
+# see the compose file for the different profiles
 ```
 
 # Running Locally (Docker)
