@@ -1,5 +1,6 @@
 # run using 'source' command (alias '.')
 #    . ./setenv.sh
+# Then restart the shell.
 # ordinarily these environment variables are not available to commands run as sudo.
 #   so we must run our script with the "-E" parameter, to preserve these variables
 
