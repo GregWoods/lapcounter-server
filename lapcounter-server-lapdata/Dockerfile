@@ -30,10 +30,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy the source code into the container.
 COPY . .
 
-RUN chmod 755 gpio_to_timestamps.py
+RUN chmod 755 timestamps_to_lapdata.py
 
 # Expose the port that the application listens on.
 #EXPOSE 8090
 
 # Run the application.
-CMD ["python", "gpio_to_timestamps.py"]
+CMD ["python", "timestamps_to_lapdata.py"]
