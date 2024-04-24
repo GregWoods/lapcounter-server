@@ -1,4 +1,6 @@
-aiomqtt==2.0.1
-paho-mqtt==1.6.1
+#aiomqtt==2.0.1
+#paho-mqtt==1.6.1
+
+paho-mqtt==2.0.0
 python-dotenv==1.0.1
 RPi.GPIO==0.7.1
