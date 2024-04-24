@@ -44,7 +44,7 @@ services:
 
 
   lapcounter-server-lapdata:
-    profiles: ["test"]
+    profiles: ["production", "test"]
     image: gregkwoods/lapcounter-server-lapdata:latest
     env_file:
       - .env.docker

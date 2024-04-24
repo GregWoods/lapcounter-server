@@ -1,4 +1,4 @@
-$version = "0.0.4"
+$version = "0.0.5"
 
 #docker login -u gregkwoods -p $env:DOCKER_PASSWORD_FROM_KEEPER
 #docker buildx create --use     
@@ -11,5 +11,8 @@ $version = "0.0.4"
 
 cd lapcounter-server-gpio
 docker buildx build --platform linux/arm/v7 -t gregkwoods/lapcounter-server-gpio:$version -t gregkwoods/lapcounter-server-gpio:latest . --push
+cd ..
 
+cd lapcounter-server-lapdata
+docker buildx build --platform linux/arm/v7 -t gregkwoods/lapcounter-server-lapdata:$version -t gregkwoods/lapcounter-server-lapdata:latest . --push
 cd ..
