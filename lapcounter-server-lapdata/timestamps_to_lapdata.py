@@ -8,7 +8,7 @@ import paho.mqtt.client as mqtt
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
 
-min_lap_time = os.getenv('MINIMUM_LAP_TIME')
+min_lap_time = int(os.getenv('MINIMUM_LAP_TIME')) * 1e9
 print(f"MINIMUM_LAP_TIME: {min_lap_time}")
 
 
@@ -30,20 +30,22 @@ def message_received(_client, _userdata, msg):
     topic = msg.topic
     m_decode = str(msg.payload.decode("utf-8","ignore"))
     data = json.loads(m_decode)
+    print(data)
     carnumber = data['car']
+    caridx = carnumber - 1
     #calculate laptime for this car
     thistime = time.time_ns()
-    lapsedtime = thistime - prevtimelist[carnumber]
+    lapsedtime = thistime - prevtimelist[caridx]
     #if this is a realistic time then send it
     if lapsedtime > min_lap_time:
         # the front end is still expencting a laptime in seconds (not ns)
-        lapdata = {"type": "lap", "car": carnumber+1, "time": thistime/1e9}
+        lapdata = {"type": "lap", "car": carnumber, "time": thistime/1e9}
         sendlap = json.dumps(lapdata)
         print(sendlap)
         send_lap_data(sendlap)
 
     # whether the lap time was realistic or a double bounce, or cheat! we still update the prevtimelist
-    prevtimelist[carnumber] = thistime.timestamp()
+    prevtimelist[caridx] = thistime
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
