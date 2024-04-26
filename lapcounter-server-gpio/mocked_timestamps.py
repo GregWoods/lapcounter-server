@@ -4,16 +4,20 @@ import random
 import time
 import sys
 import os
-import paho.mqtt
 import aiomqtt
-from dotenv import load_dotenv
 
+
+# This script generates mock lap times for ALL lanes and all drivers and sends them to the MQTT broker.
+#   whereas gpio_to_timestamps.py generates data for only ONE lane (but we run one docker container per lane)
 
 # Load dev environment variables. We don't override existing variables set using docker compose --env-file
 #   which is used in production
 #load_dotenv('../.env.local', override=False)   #only needed if we are running the script outside of the container
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
-print(mqtt_hostname)
+print(f"MQTT hostname: {mqtt_hostname}")
+
+publish_topic = "car_timestamp"
+print(f"Publishing to topic: {publish_topic}")
 
 numberOfDrivers = int(os.getenv('MOCK_NUMBER_OF_DRIVERS'))
 baseLapTime = 5
@@ -49,7 +53,7 @@ class Driver:
 
 
 async def send_lap_time(driver):
-    async with aiomqtt.Client(os.getenv('MQTT_HOSTNAME')) as client:
+    async with aiomqtt.Client(mqtt_hostname) as client:
         while True:
             driver.generateLap()
             await asyncio.sleep(max(0, driver.nextLapAt - time.time()))
@@ -58,7 +62,7 @@ async def send_lap_time(driver):
             lapdata = {"car": driver.driverNumber, "timestamp": crossing_time, "lane": lane_idx}
             lapjson = json.dumps(lapdata)
             print(lapjson)
-            await client.publish("car_timestamp", payload=lapjson)
+            await client.publish(publish_topic, payload=lapjson)
 
 # Create a list of drivers each with their own abilities
 driverRange = [i for i in range(1,numberOfDrivers+1)]

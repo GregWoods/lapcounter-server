@@ -1,3 +1,5 @@
 Lib/
-venv/
+.venv
+.vscode/
 Scripts/
+linuxbrew/

@@ -1,3 +1,49 @@
+# End User Quick Start - Running on the Pi
+
+Tested on a Raspberry Pi 3
+
+## Install the OS
+
+## Install Docker
+
+## Get the docker compose file
+
+## Start the docker containers
+
+```
+sudo docker container prune -f && sudo docker compose --profile production up --detach --pull always
+```
+
+
+
+# Build & Push Docker Images
+
+Once it is all working locally
+
+* Set new version tag in build.ps1
+* Build docker images and upload to dockerhub
+
+```
+> Powershell. ToDo. Convert to Bash
+cd /mnt/c/Users/gregw/projects/lapcounter-server/
+./build.ps1
+```
+
+# Test on the Pi
+
+```
+sudo docker container prune -f && sudo docker compose --profile production up --pull always
+# we don't "detach", so we can see output from all the containers
+```
+
+Additionally
+* Using mqttx (cli) installed on my local machine, I can subscribe to the mqtt events to see what is happening
+    * mqttx sub -h <mqtt_broker_ip_address> -t "car_timestamp"
+    * mqttx sub -h <mqtt_broker_ip_address> -t "lap"
+
+
+
+
 
 # new Overview
 

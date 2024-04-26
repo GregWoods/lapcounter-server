@@ -1,14 +1,14 @@
-# Non-docker, run with the following commands
+# Non-docker, local Ubuntu, run with the following commands
 #   . ./setenv.sh
-#   sudo -E python3 generate_raw_lap_data_from_gpio.py
-# 
+#   python3 gpio_to_timestamps.py
+# oe maybe
+#   sudo -E python3 gpio_to_timestamps.py
 #   -E is needed to pass the environment variables to sudo
 
 import json
 import time
 import os
-import paho.mqtt.client as mqtt
-from dotenv import load_dotenv
+import paho.mqtt.client as mqtt     #uses >= 2.0.0
 import sys
 import RPi.GPIO as GPIO
 
@@ -56,7 +56,7 @@ def send_lap_time(car_number, crossing_time):
     lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_idx + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
-    client.publish("timestamp", payload=lapjson)
+    client.publish("car_timestamp", payload=lapjson)
 
 def handshake_end(_):
     GPIO.output(lane["HSHAKE"], False)
@@ -82,7 +82,7 @@ def car_detected(_):
 def send_test_mqtt(_):
     print("send_test_mqtt")
     print(f"client: {client}")
-    client.publish("timestamp", payload="test")
+    client.publish("car_timestamp", payload="test")
 
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
