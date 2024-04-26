@@ -3,3 +3,10 @@ Lib/
 .vscode/
 Scripts/
 linuxbrew/
+
+lapcounter-web/backend-DEPRECATED
+lapcounter-web/FSR6_RPi_code-DEPRECATED
+lapcounter-web/raspi-install-DEPRECATED
+lapcounter-web/test-websocket-server-DEPRECATED
+build
+public

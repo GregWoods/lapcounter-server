@@ -1,0 +1,35 @@
+@font-face {
+  font-family: "Selawik";
+  src: url("./fonts/selawk.ttf");
+}
+@font-face {
+  font-family: "Selawik-Bold";
+  src: url("./fonts/selawkb.ttf");
+}
+
+@font-face {
+  font-family: "Selawik-Light";
+  src: url("fonts/selawkl.ttf");
+}
+@font-face {
+  font-family: "Selawik-SemiBold";
+  src: url("fonts/selawksb.ttf");
+}
+@font-face {
+  font-family: "Selawik-SemiLight";
+  src: url("fonts/selawksl.ttf");
+}
+
+
+
+
+body {
+  margin: 0;
+  font-family: "Selawik";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}

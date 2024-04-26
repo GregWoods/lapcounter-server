@@ -1,0 +1,11 @@
+#editsettingsmodal {
+    padding: 0 2vw 0 2vw;
+    font-size: 0.7em;
+}
+
+#editsettingsmodal input {
+    width: 34vw;
+    height: 2.7rem;
+    margin-left: 2vw;
+    font-size: 1rem;
+}
