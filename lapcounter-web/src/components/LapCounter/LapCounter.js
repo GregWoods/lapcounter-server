@@ -1,10 +1,10 @@
 import './LapCounter.css';
+import MqttSubscriber from '../MqttSubscriber.js'
 import EditDriverNamesModal from './EditDriverNamesModal';
 import CarSelectorModal from './CarSelectorModal';
 import DriverCard from './DriverCard';
 import Header from './Header';
 import { useState, useRef } from 'react';
-import WebSockets from '../websockets';
 import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.js';
 
 
@@ -19,7 +19,7 @@ const LapCounter = () => {
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
     const [numberOfDriversRacing, setNumberOfDriversRacing] = useState(0);
-    const [wsUrl, setWsUrl] = useState(localStorage.getItem("config_wsaddress"));
+    const [mqttHost, setMqttHost] = useState(localStorage.getItem("config_mqtthost"));
 
 
 
@@ -58,9 +58,9 @@ const LapCounter = () => {
     const [underStartersOrders, setUnderStartersOrders] = useState(false);
 
 
-    const setLocalStorageWsUrl = (newWsUrl) => {
-        setWsUrl(newWsUrl);
-        localStorage.setItem("config_wsaddress", newWsUrl);
+    const setLocalStorageMqttHost = (newMqttHost) => {
+        setMqttHost(newMqttHost);
+        localStorage.setItem("config_mqtthost", newMqttHost);
     }
 
     const storeFastestLapToday = (lapTime) => {
@@ -83,8 +83,8 @@ const LapCounter = () => {
     //setup localstorage defaults
     resetTodaysFastestLap();
     
-    if (wsUrl === '' || wsUrl === null) {
-        setLocalStorageWsUrl("ws://127.0.0.1:8080");
+    if (mqttHost === '' || mqttHost === null) {
+        setLocalStorageMqttHost("ws://127.0.0.1:8080");
     }
      
     //used internally by processLaps
@@ -276,10 +276,10 @@ const LapCounter = () => {
         <div id="top">
 
             <div id={'lapcounter'}>
-                <WebSockets wsUrl={wsUrl} onIncomingMessage={processLap} debug={DEBUG} />
+                <MqttSubscriber mqttHost={mqttHost} onIncomingLapMessage={processLap} debuf={DEBUG} />
                 <Header
-                    wsUrl={wsUrl}
-                    setWsUrl={setLocalStorageWsUrl}
+                    mqttHost={mqttHost}
+                    setMqtthost={setLocalStorageMqttHost}
                     onRaceTypeChange={handleRaceTypeChange}
                     onStartCountdown={handleStartCountdown}
                     onGoGoGo={handleGoGoGo}

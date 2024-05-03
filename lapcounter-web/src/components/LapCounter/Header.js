@@ -12,7 +12,7 @@ import ResetFastestLapModal from './ResetFastestLapModal';
 
 
 function Header({
-    wsUrl, setWsUrl, 
+    mqttHost, setMqttHost, 
     onGoGoGo, 
     onStartCountdown,
     fastestLapToday, 
@@ -144,8 +144,8 @@ function Header({
             <EditSettingsModal 
                 showMe={settingsModalShown}
                 onClose={() => setSettingsModalShown(false)}
-                wsUrl={wsUrl}
-                setWsUrl={setWsUrl}
+                mqttHost={mqttHost}
+                setMqttHost={setMqttHost}
             />
 
             <RaceTypeModal
