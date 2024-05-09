@@ -42,7 +42,7 @@ def message_received(_client, _userdata, msg):
     #if this is a realistic time then send it
     if lapsedtime > min_lap_time:
         # the front end is still expecting a laptime in seconds (not ns)
-        lapdata = {"type": "lap", "car": carnumber, "time": lapsedtime/1e9}
+        lapdata = {"type": "lap", "car": carnumber, "time": thistime/1e9, "lapTime": lapsedtime/1e9}
         prevtimelist[caridx] = thistime
         sendlap = json.dumps(lapdata)
         send_lap_data(sendlap)
@@ -50,18 +50,12 @@ def message_received(_client, _userdata, msg):
         # we could include an error state in the mqtt message to say that the lap time was too short
         pass
 
-    
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_message = message_received
 client.connect(mqtt_hostname)
-# create a new thread to handle the network loop. Also handles reconnecting
+
+# create a new thread to handle the network loop. Also handles reconnecting, and keeping the main thread alive
 client.subscribe("car_timestamp")
-client.loop_start()
-
-while True:
-    time.sleep(0.001)
-
-client.disconnect()
-client.loop_stop()
+client.loop_forever()

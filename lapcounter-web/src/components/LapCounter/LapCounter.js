@@ -8,7 +8,7 @@ import { useState, useRef } from 'react';
 import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.js';
 
 
-const DEBUG = false;
+const DEBUG = true;
 
 
 const LapCounter = () => {
@@ -217,18 +217,17 @@ const LapCounter = () => {
     }
 
     
-    const processLap = (wsMsg) => {
-        //if (DEBUG) { console.log("INCOMING LAP DATA: ", wsMsg)}
+    const processLap = (lapMsg) => {
+        console.log("INCOMING LAP DATA: ", lapMsg)
         if (!hasRaceStartedRef.current || racePausedRef.current) { return }
-
-        const carIdx = wsMsg.car - 1;
+        const carIdx = lapMsg.car - 1;
         const laps = lapDataRef.current
         const oldLap = laps[carIdx];
         
         //convert websocket message into useful lap data
-        console.log("==ProcessMessage, car:" + wsMsg.car);
+        console.log("==ProcessMessage, car:" + lapMsg.car);
 
-        const newLap = processMessage(wsMsg, oldLap, 
+        const newLap = processMessage(lapMsg, oldLap, 
             firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
             raceStartTimeRef.current, setRaceStartTime, 
             fastestLapTodayRef.current, storeFastestLapToday);
@@ -276,7 +275,7 @@ const LapCounter = () => {
         <div id="top">
 
             <div id={'lapcounter'}>
-                <MqttSubscriber mqttHost={mqttHost} onIncomingLapMessage={processLap} debuf={DEBUG} />
+                <MqttSubscriber mqttHost={mqttHost} onIncomingLapMessage={processLap} debug={DEBUG} />
                 <Header
                     mqttHost={mqttHost}
                     setMqtthost={setLocalStorageMqttHost}

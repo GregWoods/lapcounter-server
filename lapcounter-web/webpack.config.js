@@ -1,8 +1,8 @@
 module.exports = {
-    //...
-    devServer: {
-      client: {
-        overlay: false,
-      },
+  //...
+  devServer: {
+    client: {
+      overlay: false,
     },
-  };
+  },
+};

@@ -1,0 +1,13 @@
+[Unit]
+Description=Lapcounter Server Docker Compose Application
+Requires=docker.service
+After=docker.service
+
+[Service]
+WorkingDirectory=/path/to/your/docker-compose/directory
+ExecStart=/usr/bin/docker-compose up
+ExecStop=/usr/bin/docker-compose down
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

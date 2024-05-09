@@ -7,7 +7,7 @@
 services:
 
   mosquitto:
-    profiles: ["dev", "test", "production"]
+    profiles: ["dev", "production"]
     image: eclipse-mosquitto
     container_name: mosquitto
     volumes:
@@ -16,6 +16,7 @@ services:
       - ./mosquitto/log:/mosquitto/log
     ports:
       - 1883:1883
+      - 8080:8080
       - 9001:9001
     restart: unless-stopped
 
@@ -27,13 +28,12 @@ services:
       - .env.docker
     environment:
       - LANE_NUMBER=1
-    #build: ./lapcounter-server-gpio
-    #container_name: lapcounter-server-gpio
+    build: ./lapcounter-server-gpio
+    container_name: lapcounter-server-gpio-1
     privileged: true
-    #depends_on:
-    #  - mosquitto  
-    #ports:
-    #  - 8008:8008
+    depends_on:
+      - mosquitto  
+
 
   lapcounter-server-gpio-lane2:
     profiles: ["production"]
@@ -42,11 +42,28 @@ services:
       - .env.docker
     environment:
       - LANE_NUMBER=2
+    build: ./lapcounter-server-gpio
+    container_name: lapcounter-server-gpio-2
     privileged: true
+    depends_on:
+      - mosquitto
+
+
+  lapcounter-server-mocked-gpio:
+    profiles: ["dev"]
+    image: gregkwoods/lapcounter-server-mocked-gpio:latest
+    build: 
+      context: ./lapcounter-server-gpio
+      dockerfile: Dockerfile.Mock
+    env_file:
+      - .env.docker
+    container_name: lapcounter-server-mocked-gpio
+    depends_on:
+      - mosquitto
 
 
   lapcounter-server-lapdata:
-    profiles: ["production", "test"]
+    profiles: ["dev", "production"]
     image: gregkwoods/lapcounter-server-lapdata:latest
     env_file:
       - .env.docker
@@ -57,14 +74,14 @@ services:
 
 
   lapcounter-server-test-mqtt-latency:
-    profiles: ["test"]
+    profiles: ["disabled"]
     env_file:
       - .env.docker
     image: gregkwoods/lapcounter-server-test-mqtt-latency:latest
     build: ./lapcounter-server-test-mqtt-latency
     container_name: lapcounter-server-test-mqtt-latency
     depends_on:
-      - mosquitto    
+      - mosquitto
 
 
   portainer:

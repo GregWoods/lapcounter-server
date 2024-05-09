@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react';
-import ReactModal from 'react-modal';
-import CarImage from './CarImage';
+//import { useEffect, useState } from 'react';
+//import ReactModal from 'react-modal';
+//import CarImage from './CarImage';
 import './CarSelectorModal.css';
 
 
 // eslint-disable-next-line no-unused-vars
 const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drivers, setDrivers, driverIdxToFocus }) => {
 
+    /*
     const [cars, setCars] = useState(null);
 
+    
     useEffect(() => {
-        console.log('This iss supposed to be in the modal');
+        console.log('This is supposed to be in the modal');
         //console.log(process.env.PUBLIC_URL);
         fetch(carImgListUrl)
             .then((res) => res.json())
@@ -24,7 +26,6 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drive
                 }
             );
     }, []);
-
 
 
     if (cars) {
@@ -49,6 +50,8 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drive
     } else {
         return null;
     }
+    */
+    return null;
 }
 
 export default CarSelectorModal;

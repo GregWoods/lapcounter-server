@@ -14,7 +14,6 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 
     //only one "row" of lapData changed. 
     //  we now change the equivalent row in "drivers" to force a re-render
-    //We could also have used array.map and altered all the rows of drivers
     const driverInfo = {
         ...drivers[idx],
         "number": idx+1, 
@@ -67,16 +66,16 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 
 
 //wsMsg, oldLap, firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
-//            setRaceStartTime, raceFastestLapRef.current, setRaceFastestLap, lapRecordRef.current, setFastestLap
+//  setRaceStartTime, raceFastestLapRef.current, setRaceFastestLap, lapRecordRef.current, setFastestLap
 
 //this method processes laps without regard for the state of the race
-export const processMessage = (r, thisLap, firstCarCrossedStart, setFirstCarCrossedStart, 
+export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, setFirstCarCrossedStart, 
     raceStartTime, setRaceStartTime, fastestLap, setFastestLap) => {
 
-    thisLap.totalLaps += 1;
-    thisLap.absoluteRaceTime = r.time;
+    driverLapData.totalLaps += 1;
+    driverLapData.absoluteRaceTime = newLapMsg.time;
 
-    if (DEBUG) { console.log("Total laps for driver: ", thisLap.totalLaps); }
+    if (DEBUG) { console.log("Total laps for driver: ", driverLapData.totalLaps); }
 
     var tempCalcLapTime;
     var lastMsgTime;
@@ -85,17 +84,17 @@ export const processMessage = (r, thisLap, firstCarCrossedStart, setFirstCarCros
         //Nobody had crossed the start until now. This guy starts all the race timing
         setFirstCarCrossedStart(true);
 
-        setRaceStartTime(r.time);
+        setRaceStartTime(newLapMsg.time);
 
-        console.log("AAAA First car has crossed line,  ID=[" + r.car + "].    Race timer starts now"); 
-        console.log("AAAA race start time: " + r.time);
+        console.log("AAAA First car has crossed line,  ID=[" + newLapMsg.car + "].    Race timer starts now"); 
+        console.log("AAAA race start time: " + newLapMsg.time);
 
         //this is just to indicate in the UI they crossed the line for the first time after lights out
-        thisLap.lastLapTime = 0.00;
+        driverLapData.lastLapTime = 0.00;
 
         //the first driver to cross the line still needs their lastMessageTime setting, just like everyone else on their lap 0
-        thisLap.lastMessageTime = r.time;
-        return thisLap;     
+        driverLapData.lastMessageTime = newLapMsg.time;
+        return driverLapData;
     } 
     
     //every other crossing of the line goes here
@@ -103,36 +102,36 @@ export const processMessage = (r, thisLap, firstCarCrossedStart, setFirstCarCros
     //yes, there is duplication in these conditions. I stand by it, as it helps keep the logic clear
 
     //"Lap 0" is not lap. It is the time they crossed the line after starting from the grid
-    if (thisLap.totalLaps == 0) {
+    if (driverLapData.totalLaps == 0) {
         //this is lap0 for everyone except the very first car to cross the line (we already handled him, above)
-        console.log("BBBB  totalLaps=0, ID: " + r.car + " raceStartTime: " + raceStartTime);
-        console.log("BBBB Lap 0 offset to lead driver: " + (r.time - raceStartTime));
+        console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTime);
+        console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - raceStartTime));
         //this is just to indicate in the UI they crossed the line for the first time after lights out
         // we don't any lap time calculations for this "lap"
-        thisLap.lastLapTime = 0.00; 
-        thisLap.lastMessageTime = r.time;
-        return thisLap;
+        driverLapData.lastLapTime = 0.00; 
+        driverLapData.lastMessageTime = newLapMsg.time;
+        return driverLapData;
     } 
     
-    if (thisLap.totalLaps == 1) {
+    if (driverLapData.totalLaps == 1) {
         //lap 1
         //Special case, first countable lap for this driver, we time our lap from the time point the very first driver crossed the line (our pseudo race start)
         lastMsgTime = raceStartTime;
-        console.log("CCCC  totalLaps=1, ID: " + r.car + " raceStartTime: " + raceStartTime);
+        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTime);
 
-    } else if (thisLap.totalLaps > 1) {
-        lastMsgTime = thisLap.lastMessageTime
-        console.log("DDDD  totalLaps>1, ID: " + r.car + " lastMessageTime: " + lastMsgTime);     
+    } else if (driverLapData.totalLaps > 1) {
+        lastMsgTime = driverLapData.lastMessageTime
+        console.log("DDDD  totalLaps>1, ID: " + newLapMsg.car + " lastMessageTime: " + lastMsgTime);
     }
 
     //Calculate lap times
-    console.log("r.time: " + r.time + "    | lastMsgTime: " + lastMsgTime);
-    tempCalcLapTime = r.time - lastMsgTime;
-    thisLap.lastLapTime = tempCalcLapTime;
+    console.log("r.time: " + newLapMsg.time + "    | lastMsgTime: " + lastMsgTime);
+    tempCalcLapTime = newLapMsg.time - lastMsgTime;
+    driverLapData.lastLapTime = tempCalcLapTime;
 
     //Calc driver best lap time
-    if (tempCalcLapTime < thisLap.bestLapTime) {
-        thisLap.bestLapTime = tempCalcLapTime;
+    if (tempCalcLapTime < driverLapData.bestLapTime) {
+        driverLapData.bestLapTime = tempCalcLapTime;
     }
 
     //this function has too many side effects. it modified the return values and sets other global properties. 
@@ -147,8 +146,8 @@ export const processMessage = (r, thisLap, firstCarCrossedStart, setFirstCarCros
         //no fastest lap has been set... so this lap is now fastest
         setFastestLap(tempCalcLapTime.toFixed(3));
     }
-    thisLap.lastMessageTime = r.time;
-    return thisLap;
+    driverLapData.lastMessageTime = newLapMsg.time;
+    return driverLapData;
 }
 
 

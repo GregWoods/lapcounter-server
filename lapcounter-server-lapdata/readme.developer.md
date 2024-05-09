@@ -1,3 +1,32 @@
+# Build Instructions
+
+## Create and Push a Cross Platform Build.
+
+* linux/amd64 for local use (run from WSL2)
+* arm/v7 for Raspberry Pi 3A
+
+```
+docker buildx build --platform linux/amd64,linux/arm/v7 --push -t gregkwoods/lapcounter-server-lapdata:latest .
+```
+
+## Local build and Run
+
+docker build -f ./Dockerfile -t lapcounter-server-lapdata:latest .
+docker run --env-file ../.env.local lapcounter-server-lapdata
+
+
+
+
+
+
+
+
+
+
+
+
+
+Move all this to the global readme
 
 # Generating a working lapcounter and Race Management System
 
