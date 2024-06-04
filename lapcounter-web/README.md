@@ -8,10 +8,19 @@
 * npm start
 * Use the browser developer tools to fix the windows size to 1920x1080 (it can be scaled down via zoom)
 
+## Quick Start (Production)
+
+This is to be run inside a a docker container running the nginx web server.
+See: https://hub.docker.com/_/nginx
+```
+npm run build
+docker build -t gregkwoods/lapcounter-web:0.0.1 .
+
+```
 
 ## Overview
 
-This project started as a copy of the code supplied by the user "ZoomRnpm startoom" on SlotForum.
+This project started as a copy of the code supplied by the user "ZoomRoom" on SlotForum.
 
 This is the post with the latest code. It is in a more recent, compact thread:
 https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/#post-2438259

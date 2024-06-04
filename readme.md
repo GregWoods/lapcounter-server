@@ -14,14 +14,14 @@ the original project, well documented on [slotforum](https://www.slotforum.com/t
 
 ![My reworked React JS UI](docs/shakedown.gif)
 
-### Features and Notes From the above GIF...
+## Features
 
 * Nice fonts, and nice colours which map to the powerbase/hand throttle colours (hackable)
 * Start lights beep the countdown. Not realistic, but nice!
-* Drivers only appear on the leaderboards when they cross the line, so the screen still looks uncluttered if only 2 drivers are racing
+* Drivers only appear on the leaderboards when they first cross the line, so the screen looks uncluttered if only 2 drivers are racing
 * Once the winning driver crosses the line, each driver finishes their lap, then the race is over
-    * This results in some odd looking ordering of events, as seen in the GIF, where the ordering is P1, P6, P3, P4, P2, P5.
-    * The logic is correct, as is based on more laps completed beats less laps completed, and lower total race time beats higher total race time for drivers ion teh same lap
+    * This can give some odd looking ordering of events, as seen in the GIF, where the ordering is P1, P6, P3, P4, P2, P5.
+    * The logic is correct, as is based on a greater number of laps completed beats less laps completed, then lower total race time beats higher total race time for drivers on the same lap
 * There are just a few predefined race types, because I got tired of drivers debating whether to run a 20 or 25 lap race. Each race type is kept substantially different from the others, with choices intentionally limited (but can be hacked)
 * Yellow flag can be triggered by hitting the space bar
 * Crossing the finish line under yellow flag results in lap being discarded
@@ -29,7 +29,7 @@ the original project, well documented on [slotforum](https://www.slotforum.com/t
 * Driver names quickly editable (not shown)
 * [Coming Soon] A nice UI for uploading and using car images
 
-### Notes from the GIF
+## Notes from the GIF
 
 * The UI to modify the car images is not finished. The old FSR logo from the Zoomroom original code has been left in for now
 * Note that the GIF was generated from fake data, so it takes longer than in most real races for all 6 cars to cross the line and appear on the board

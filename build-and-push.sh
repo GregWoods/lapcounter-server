@@ -16,3 +16,8 @@ cd ..
 cd lapcounter-server-lapdata
 docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-lapdata:$version -t gregkwoods/lapcounter-server-lapdata:latest . --push
 cd ..
+
+cd lapcounter-web
+yarn build
+docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-web:$version -t gregkwoods/lapcounter-web:latest . --push
+

@@ -10,3 +10,4 @@ lapcounter-web/raspi-install-DEPRECATED
 lapcounter-web/test-websocket-server-DEPRECATED
 build
 public
+/data/logs

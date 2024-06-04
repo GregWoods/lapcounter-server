@@ -73,6 +73,32 @@ services:
       - mosquitto
 
 
+  lapcounter-web:
+    profiles: ["dev", "production"]
+    image: gregkwoods/lapcounter-web:latest
+    ports:
+      - 8090:80
+    build: ./lapcounter-web
+    container_name: lapcounter-web
+    depends_on:
+      - lapcounter-server-lapdata
+
+
+  #nginx-proxy-manager:
+  #  profiles: ["dev", "production"]
+  #  image: 'jc21/nginx-proxy-manager:latest'
+  #  restart: unless-stopped
+  #  ports:
+  #    # These ports are in format <host-port>:<container-port>
+  #    - '80:80' # Public HTTP Port
+  #    - '443:443' # Public HTTPS Port
+  #    - '81:81' # Admin Web Port
+  #  volumes:
+  #    - ./data:/data
+  #    - ./letsencrypt:/etc/letsencrypt
+
+
+
   lapcounter-server-test-mqtt-latency:
     profiles: ["disabled"]
     env_file:
