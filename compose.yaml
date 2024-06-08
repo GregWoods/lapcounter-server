@@ -70,7 +70,7 @@ services:
     build: ./lapcounter-server-lapdata
     container_name: lapcounter-server-lapdata
     depends_on:
-      - mosquitto
+      - lapcounter-server-gpio-lane1
 
 
   lapcounter-web:
