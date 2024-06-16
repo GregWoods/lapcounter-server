@@ -1,13 +1,8 @@
-# When running in production, be sure to set envuronment variables with the --env-file argument
-#  e.g. 
-# docker compose up --profile test --env-file .env.production
-
-
+# Now using separate compose files for dev and production
 
 services:
 
   mosquitto:
-    profiles: ["dev", "production"]
     image: eclipse-mosquitto
     container_name: mosquitto
     volumes:
@@ -21,71 +16,68 @@ services:
     restart: unless-stopped
 
 
-  lapcounter-server-gpio-lane1:
-    profiles: ["production"]
-    image: gregkwoods/lapcounter-server-gpio:latest
-    env_file:
-      - .env.docker
-    environment:
-      - LANE_NUMBER=1
-    build: ./lapcounter-server-gpio
-    container_name: lapcounter-server-gpio-1
-    privileged: true
-    depends_on:
-      - mosquitto  
-
-
-  lapcounter-server-gpio-lane2:
-    profiles: ["production"]
-    image: gregkwoods/lapcounter-server-gpio:latest
-    env_file:
-      - .env.docker
-    environment:
-      - LANE_NUMBER=2
-    build: ./lapcounter-server-gpio
-    container_name: lapcounter-server-gpio-2
-    privileged: true
-    depends_on:
-      - mosquitto
-
-
-  lapcounter-server-mocked-gpio:
-    profiles: ["dev"]
+  mocked-gpio:
     image: gregkwoods/lapcounter-server-mocked-gpio:latest
     build: 
-      context: ./lapcounter-server-gpio
-      dockerfile: Dockerfile.Mock
+      context: ./gpio
+      dockerfile: Dockerfile.Mocked
     env_file:
-      - .env.docker
-    container_name: lapcounter-server-mocked-gpio
+      - .env.dev
+    container_name: mocked-gpio
     depends_on:
       - mosquitto
 
 
-  lapcounter-server-lapdata:
-    profiles: ["dev", "production"]
+  lapdata:
     image: gregkwoods/lapcounter-server-lapdata:latest
     env_file:
-      - .env.docker
-    build: ./lapcounter-server-lapdata
-    container_name: lapcounter-server-lapdata
+      - .env.dev
+    build: ./lapdata
+    container_name: lapdata
     depends_on:
-      - lapcounter-server-gpio-lane1
+      - mocked-gpio
 
 
-  lapcounter-web:
-    profiles: ["dev", "production"]
-    image: gregkwoods/lapcounter-web:latest
+  #lapcounter-web:
+  #  image: gregkwoods/lapcounter-web:latest
+  #  ports:
+  #    - 8090:80
+  #  build: ./lapcounter-web
+  #  container_name: lapcounter-web
+  #  depends_on:
+  #    - lapdata
+
+
+  #http://localhost:5001/upload
+  #http://localhost:5001/media/<uploaded_file_name>
+  #http://localhost:5001/static/hello.txt
+  web:
+    container_name: web
+    build: ./web
+    image: gregkwoods/lapcounter-server-web:latest
+    command: python manage.py run -h 0.0.0.0
+    volumes:
+      - ./web:/usr/src/app
     ports:
-      - 8090:80
-    build: ./lapcounter-web
-    container_name: lapcounter-web
+      - 5001:5000
+    env_file:
+      - ./.env.dev
     depends_on:
-      - lapcounter-server-lapdata
+      - db
+
+  db:
+    container_name: db
+    image: postgres:16
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      # only for dev. prod uses .env.prod.db
+      POSTGRES_USER: hello_flask
+      POSTGRES_PASSWORD: hello_flask
+      POSTGRES_DB: hello_flask_dev
 
 
   #nginx-proxy-manager:
-  #  profiles: ["dev", "production"]
   #  image: 'jc21/nginx-proxy-manager:latest'
   #  restart: unless-stopped
   #  ports:
@@ -97,15 +89,13 @@ services:
   #    - ./data:/data
   #    - ./letsencrypt:/etc/letsencrypt
 
-
-
-  lapcounter-server-test-mqtt-latency:
+  test-mqtt-latency:
     profiles: ["disabled"]
     env_file:
-      - .env.docker
+      - .env.dev
     image: gregkwoods/lapcounter-server-test-mqtt-latency:latest
-    build: ./lapcounter-server-test-mqtt-latency
-    container_name: lapcounter-server-test-mqtt-latency
+    build: ./test-mqtt-latency
+    container_name: test-mqtt-latency
     depends_on:
       - mosquitto
 
@@ -124,9 +114,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
 
-# volumes:
+volumes:
+  postgres_data:
+
 #   db-data:
 # secrets:
 #   db-password:
 #     file: db/password.txt
-

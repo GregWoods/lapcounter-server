@@ -1,0 +1,13 @@
+[Unit]
+Description=Gunicorn instance to serve lapcounter web server
+After=network.target
+
+[Service]
+User=pi
+Group=www-data
+WorkingDirectory=/home/pi/lapcounter/backend
+Environment="PATH=/home/pi/lapcounter/backend/bin"
+ExecStart=/usr/bin/gunicorn --workers 3 wsgi:app --bind=unix:/home/pi/lapcounter/backend/lapcounter.sock
+
+[Install]
+WantedBy=multi-user.target

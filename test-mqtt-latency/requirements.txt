@@ -1,0 +1,3 @@
+aiomqtt==1.2.1      # breaking changes in 2.0.0
+paho-mqtt==2.0.0
+python-dotenv==1.0.1
