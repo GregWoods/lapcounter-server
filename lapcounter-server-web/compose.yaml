@@ -1,0 +1,28 @@
+services:
+  web:
+    container_name: web
+    build: ./services/web
+    image: gregkwoods/lapcounter-server-web
+    command: python manage.py run -h 0.0.0.0
+    volumes:
+      - ./services/web:/usr/src/app
+    ports:
+      - 5001:5000
+    env_file:
+      - ./.env.dev
+    depends_on:
+      - db
+
+  db:
+    container_name: db
+    image: postgres:16
+    volumes:
+      - postgres_data:/var/lib/postgresq;/data
+    environment:
+      POSTGRES_USER: hello_flask
+      POSTGRES_PASSWORD: hello_flask
+      POSTGRES_DB: hello_flask_dev
+
+volumes:
+  postgres_data:
+
