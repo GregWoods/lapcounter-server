@@ -1,11 +1,11 @@
 import './LapCounter.css';
-import MqttSubscriber from '../MqttSubscriber.js'
-import EditDriverNamesModal from './EditDriverNamesModal';
-import CarSelectorModal from './CarSelectorModal';
-import DriverCard from './DriverCard';
-import Header from './Header';
+import MqttSubscriber from '../MqttSubscriber.jsx'
+import EditDriverNamesModal from './EditDriverNamesModal.jsx';
+import CarSelectorModal from './CarSelectorModal.jsx';
+import DriverCard from './DriverCard.jsx';
+import Header from './Header.jsx';
 import { useState, useRef } from 'react';
-import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.js';
+import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.jsx';
 
 
 const DEBUG = true;

@@ -1,10 +1,9 @@
 //https://github.com/astoilkov/use-local-storage-state
-//import useLocalStorageState from 'use-local-storage-state'
-import createLocalStorageHook from 'use-local-storage-state'
+import useLocalStorageState from 'use-local-storage-state'
 import RaceTypePreset from './RaceTypePreset'
 import './RaceTypeModal.css'
 import { useState, useEffect, createRef } from 'react';
-import ReactModal from 'react-modal';
+import Modal from 'react-modal';
 
 
 //maybe state management should be done on LapCounter
@@ -13,29 +12,24 @@ import ReactModal from 'react-modal';
 
 //ReactModal.setAppElement('#lapcounter');
 
-const useRacePresets = createLocalStorageHook('racepresets', {
-    ssr: true,
-    defaultValue: [
-        { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
-        { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
-        { id: 2, type: 'laps', description: 'Standard (50 laps)', details: { laps: 50 }},
-        { id: 3, type: 'laps', description: 'Professional (160 laps)', details: { laps: 160 }},
-        /*{ id: 4, type: 'time', description: 'Endurance (60 minutes)', details: { time: '01:00:00' }},
-        { id: 5, type: 'time', description: 'Le-Mans (4 hours)', details: { time: '04:00:00' }},
-        { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
-    ]
-})
-
-const useRacePresetIdx = createLocalStorageHook('RaceTypeIdx', 2);
-
-
 
 const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
 
     //WARNING: at the moment, id must match array index
     //TODO: going to need a more comprehensive data structure for the different types of races
     // eslint-disable-next-line no-unused-vars
-    const [raceDurationPresets, setRaceDurationPresets] = useRacePresets();
+    const [raceDurationPresets, setRaceDurationPresets] = useLocalStorageState('racepresets', {
+        ssr: true,
+        defaultValue: [
+            { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
+            { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
+            { id: 2, type: 'laps', description: 'Standard (50 laps)', details: { laps: 50 }},
+            { id: 3, type: 'laps', description: 'Professional (160 laps)', details: { laps: 160 }},
+            /*{ id: 4, type: 'time', description: 'Endurance (60 minutes)', details: { time: '01:00:00' }},
+            { id: 5, type: 'time', description: 'Le-Mans (4 hours)', details: { time: '04:00:00' }},
+            { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
+        ]        
+    });
 
 
     //some "reduce" trickery to create an array which we can store a ref to each race preset
@@ -47,8 +41,8 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
         return acc;
     }, {});
 
-    //selection saved to local storage  
-    const [selectedPresetIdx, setSelectedPresetIdx] = useRacePresetIdx();
+    //selection saved to local storage
+    const [selectedPresetIdx, setSelectedPresetIdx] = useLocalStorageState('RaceTypeIdx', 2);
 
     const [modalClassName, setModalClassName] = useState("ReactModalContent");
 
@@ -70,7 +64,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
             refs[selectedPresetIdx].current.scrollIntoView({ behaviour: 'smooth', block: 'nearest' });
         }
     },
-    [selectedPresetIdx]);
+    [refs, selectedPresetIdx]);
 
 
     const handleKeyup = (evt) => {
@@ -97,7 +91,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
     }
 
     return (
-        <ReactModal
+        <Modal
             isOpen={showMe}
             onRequestClose={onClose}
             id="racetypemodal"
@@ -131,7 +125,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
                     <button id="raceTypeStartRace" onClick={handleStartRaceBtn}>Start Race&nbsp;
                         <svg version="1.0" xmlns="http://www.w3.org/2000/svg" fill="#FFF" width="80"
                             viewBox="0 0 2399.5 2304" preserveAspectRatio="xMidYMid meet"
-                            style={{ enableBackground: 'new 0 0 2399.5 2304' }, { padding: '0px' }}
+                            style={{ enableBackground: 'new 0 0 2399.5 2304', padding: '0px' }}
                         >
                             <g id="g4197">
                                 <path fill="#000" id="path4145" d="M335.8,1345.9C151.3,819,0.2,386.8,0,385.6c-0.4-2,102.6-49.6,107.3-49.6c1,0,743.2,1889.5,744.2,1894.5
@@ -149,7 +143,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
 
             </div>
         </div>
-        </ReactModal>
+        </Modal>
     );
 }
 
