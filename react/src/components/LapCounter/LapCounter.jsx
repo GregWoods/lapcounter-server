@@ -79,7 +79,7 @@ const LapCounter = () => {
     }
 
     const forceResetFastestLap = () => {
-        storeFastestLapToday("99.209");
+        storeFastestLapToday("99.999");
     }
 
     //setup localstorage defaults
