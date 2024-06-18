@@ -9,7 +9,7 @@ This project is build in a very modular way, making use of several Docker contai
 The lap counter code itself is split amongst several containers. These are outlined below.
 
 
-## Layer 1 - lapcounter-server-gpio
+## Layer 1 - gpio
 
 
 This layer only runs on a Raspberry Pi, it cannot be run on your developer machine. It uses the raspberry Pi's GPIO to read car ID data as each car crosses the start finish line.
@@ -25,7 +25,7 @@ During development, the mocked version automatically produces data for 2 lanes.
 
 
 
-## Layer 2 - lapcounter-server-lapdata
+## Layer 2 - lapdata
 
 Subscribes to the "car_timestamp" topic on the MQTT server, and transforms it into more useful lap data. 
 
@@ -37,10 +37,20 @@ Example data (using the example input above), published to the MQTT host, under 
 ```{"type": "lap", "car": 2, "time": 1715270252.2429936, "lapTime": 17.1683136}```
 
 
+## Layer 3 - web
 
-## Layer 3 - lapcounter-web
+This is a Python API running on Flask.
+In production this will run in an nginx server
 
-This is a simple container running nginx to serve the React app
+
+## Layer 4 - react
+
+This is a simple container running nginx to serve the React app.
+It does not run whilst in development, since we use the vite build-in server to serve the React front end on port 5173.
+In production, these files will be served from the static folder of the Flask app running on nginx.
+
+
+
 
 
 
