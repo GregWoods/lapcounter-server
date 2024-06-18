@@ -11,7 +11,6 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
         return newDrivers;
     }
 
-
     //only one "row" of lapData changed. 
     //  we now change the equivalent row in "drivers" to force a re-render
     const driverInfo = {
@@ -49,7 +48,7 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
         driver.p1LapsRemaining = p1LapsRemaining;
         driver.isRaceFastestLap = !isNaN(parseFloat(driver.fastestLap)) && parseFloat(driver.fastestLap) == parseFloat(raceFastestLap);
 
-        //suspend a driver who hasn't posted a lap in X seconds
+        //suspend a driver who hasn't posted a lap in 'suspendAfter' seconds
         driver.suspended = (parseInt(driver.totalRaceTime) + suspendAfter) < latestRaceTime;
     });
     //now re-sort by driver number, so we have the original ordering.
@@ -65,12 +64,10 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 }
 
 
-//wsMsg, oldLap, firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
-//  setRaceStartTime, raceFastestLapRef.current, setRaceFastestLap, lapRecordRef.current, setFastestLap
 
 //this method processes laps without regard for the state of the race
 export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, setFirstCarCrossedStart, 
-    raceStartTime, setRaceStartTime, fastestLap, setFastestLap) => {
+    raceStartTimeRef, fastestLap, setFastestLap) => {
 
     driverLapData.totalLaps += 1;
     driverLapData.absoluteRaceTime = newLapMsg.time;
@@ -84,7 +81,7 @@ export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, s
         //Nobody had crossed the start until now. This guy starts all the race timing
         setFirstCarCrossedStart(true);
 
-        setRaceStartTime(newLapMsg.time);
+        raceStartTimeRef.current = newLapMsg.time;
 
         console.log("AAAA First car has crossed line,  ID=[" + newLapMsg.car + "].    Race timer starts now"); 
         console.log("AAAA race start time: " + newLapMsg.time);
@@ -104,8 +101,8 @@ export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, s
     //"Lap 0" is not lap. It is the time they crossed the line after starting from the grid
     if (driverLapData.totalLaps == 0) {
         //this is lap0 for everyone except the very first car to cross the line (we already handled him, above)
-        console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTime);
-        console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - raceStartTime));
+        console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTimeRef.current);
+        console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - raceStartTimeRef.current));
         //this is just to indicate in the UI they crossed the line for the first time after lights out
         // we don't any lap time calculations for this "lap"
         driverLapData.lastLapTime = 0.00; 
@@ -115,9 +112,10 @@ export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, s
     
     if (driverLapData.totalLaps == 1) {
         //lap 1
-        //Special case, first countable lap for this driver, we time our lap from the time point the very first driver crossed the line (our pseudo race start)
-        lastMsgTime = raceStartTime;
-        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTime);
+        //Special case, first countable lap for this driver, we time our lap from the time point the 
+        //  very first driver crossed the line (our pseudo race start)
+        lastMsgTime = raceStartTimeRef.current;
+        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTimeRef.current);
 
     } else if (driverLapData.totalLaps > 1) {
         lastMsgTime = driverLapData.lastMessageTime
