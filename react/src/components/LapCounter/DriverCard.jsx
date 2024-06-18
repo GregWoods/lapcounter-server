@@ -6,17 +6,17 @@ import './DriverColors.css';
 const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
     let className = 'drivercard driver' + driver.number;
     if (!underStartersOrders && driver.lapsCompleted > -1) {
-        if (driver.suspended) {
-            className += ' suspended';
-        } else {
+        //if (driver.suspended) {
+        //    className += ' suspended';
+        //} else {
             className += ' show';
-        }
+        //}
     }
 
     const fastestLapClass = (driver.isRaceFastestLap) ? "fastestlaptime raceFastestLap" : "fastestlaptime personalFastestLap";
 
 
-    const driverPosition = driver.position;   
+    const driverPosition = driver.position;
 
 
     let lastLapClass = "lastlaptime";
@@ -25,7 +25,7 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
             lastLapClass += " raceFastestLap"
         } else {
             lastLapClass += " personalFastestLap"
-        }        
+        }
     }
 
 
