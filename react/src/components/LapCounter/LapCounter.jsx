@@ -74,9 +74,13 @@ const LapCounter = () => {
         var twentyFourhoursAgo = now.setDate(now.getDate() - 1);
 
         if (fastestLapToday === '' || fastestLapToday === null || fastestLapTodayUpdatedOn < twentyFourhoursAgo) {
-            storeFastestLapToday("99.209");
-        }        
-    }    
+            forceResetFastestLap();
+        }
+    }
+
+    const forceResetFastestLap = () => {
+        storeFastestLapToday("99.209");
+    }
 
     //setup localstorage defaults
     resetTodaysFastestLap();
@@ -290,7 +294,7 @@ const LapCounter = () => {
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
                     onYellowFlag={() => {racePausedRef.current = true;}}
                     onEndYellowFlag={() => {racePausedRef.current = false;}}
-                    resetTodaysFastestLap = {resetTodaysFastestLap}
+                    forceResetFastestLap = {forceResetFastestLap}
                 />
                 <div id="driverCardOuter">
                     <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
