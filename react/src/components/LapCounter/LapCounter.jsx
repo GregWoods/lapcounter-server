@@ -5,7 +5,7 @@ import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
 import { useState, useRef } from 'react';
-import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.jsx';
+import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.js';
 
 
 const DEBUG = true;
@@ -40,9 +40,7 @@ const LapCounter = () => {
     const hasRaceStartedRef = useRef();
     hasRaceStartedRef.current = hasRaceStarted;
 
-    const [raceStartTime, setRaceStartTime] = useState(0.00);
-    const raceStartTimeRef = useRef();
-    raceStartTimeRef.current = raceStartTime;
+    const raceStartTimeRef = useRef(0.00);
 
     const [raceType, setRaceType] = useState(null);
     const raceTypeRef = useRef();
@@ -165,7 +163,7 @@ const LapCounter = () => {
         setUnderStartersOrders(false);
         racePausedRef.current = false;
 
-        //ideally we'd setRaceStartTime(wsMsg.time) when the lights go out,
+        //ideally we'd set raceStartTime.current = wsMsg.time when the lights go out,
         //  but we don't have that time info which is obtained from the server side python.
         //  I don't want any more complexity in the server side code (at the moment)
         //  and I don't want to have to sync server and client times, so we stick
@@ -229,7 +227,7 @@ const LapCounter = () => {
 
         const newLap = processMessage(lapMsg, oldLap, 
             firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
-            raceStartTimeRef.current, setRaceStartTime, 
+            raceStartTimeRef, 
             fastestLapTodayRef.current, storeFastestLapToday);
         
         //Set Fastest Lap for this Race. Used to display purple lap time for a driver
@@ -242,7 +240,8 @@ const LapCounter = () => {
 
         laps[carIdx] = newLap;
         setLapData(laps);
-        
+
+        console.log(`raceStartTimeRef.current: ${raceStartTimeRef.current}`)
         //create "drivers" view-model from lap data
         var modifiedDrivers = modifyDriversViewModel(
                 driversRef.current, 
@@ -251,6 +250,7 @@ const LapCounter = () => {
                 raceTypeRef.current.details.laps, 
                 raceFastestLapRef.current, 
                 raceStartTimeRef.current);
+
         console.log('modifiedDrivers');
         console.dir(modifiedDrivers);
         saveDrivers(modifiedDrivers);
