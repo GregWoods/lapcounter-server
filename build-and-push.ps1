@@ -15,17 +15,15 @@ $version = "0.0.6"
 
 cd gpio
 docker buildx build --platform linux/arm/v7 -t gregkwoods/lapcounter-server-gpio:$version -t gregkwoods/lapcounter-server-gpio:latest . --push
-docker buildx build -f ./Dockerfile.Mocked --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-mocked-gpio:$version -t gregkwoods/lapcounter-server-mocked-gpio:latest . --push
+docker buildx build -f ./Dockerfile.Mock --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-mocked-gpio:$version -t gregkwoods/lapcounter-server-mocked-gpio:latest . --push
 cd ..
-
 
 cd lapdata
 docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-lapdata:$version -t gregkwoods/lapcounter-server-lapdata:latest . --push
 cd ..
 
-
 cd react
-docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-react:$version -t gregkwoods/lapcounter-server-react:latest  . --push
+docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-react:$version -t gregkwoods/lapcounter-server-react:latest . --push
 cd ..
 
 #cd web

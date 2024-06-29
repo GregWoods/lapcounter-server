@@ -20,7 +20,7 @@ services:
     profiles: ["production"]
     image: gregkwoods/lapcounter-server-gpio:latest
     env_file:
-      - .env.local
+      - .env.prod
     environment:
       - LANE_NUMBER=1
     build: ./gpio
@@ -34,7 +34,7 @@ services:
     profiles: ["production"]
     image: gregkwoods/lapcounter-server-gpio:latest
     env_file:
-      - .env.local
+      - .env.prod
     environment:
       - LANE_NUMBER=2
     build: ./gpio
@@ -48,7 +48,7 @@ services:
     profiles: ["dev", "production"]
     image: gregkwoods/lapcounter-server-lapdata:latest
     env_file:
-      - .env.local
+      - .env.prod
     build: ./lapdata
     container_name: lapdata
     depends_on:
@@ -72,6 +72,18 @@ services:
     depends_on:
       - db
 
+  react:
+    profiles: ["dev", "production"]
+    build: ./react
+    container_name: react
+    image: gregkwoods/lapcounter-server-react:latest
+    ports:
+      - 8087:80
+    volumes:
+      - static_volume:/usr/src/app/dist
+    #for debugging. Use docker compose "run" instead of "up"
+    entrypoint: /bin/sh
+
   #web:
   #  container_name: web
   #  build: ./web
@@ -88,21 +100,21 @@ services:
 
 
   nginx:
+    profiles: ["disabled"]
     container_name: nginx
-    build: ./services/nginx
+    build: ./nginx
     volumes:
       - static_volume:/home/app/web/project/static
       - media_volume:/home/app/web/project/media
     ports:
       - 1337:80
-    depends_on:
-      - web
+
 
   db:
     container_name: db
     image: postgres:16
     volumes:
-      - postgres_data:/var/lib/postgresql/data/
+      - postgres_data_prod:/var/lib/postgresql/data/
     env_file:
       - ./.env.prod.db
 
