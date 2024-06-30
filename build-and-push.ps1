@@ -4,7 +4,7 @@
 
 #cd /mnt/c/Users/gregw/projects/lapcounter-server/
 
-$version = "0.0.6"
+$version = "0.0.8"
 
 #docker login -u gregkwoods -p $env:DOCKER_PASSWORD_FROM_KEEPER
 #  supplying password in CLI isn't allowed anymore

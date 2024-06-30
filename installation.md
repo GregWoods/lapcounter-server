@@ -1,8 +1,10 @@
 
 # End User Setup- Running on a Raspberry Pi
+
 [see my more recent notes in Docker]
 
 ## Install the OS
+
 We do not need a GUI, so I'm not using Raspberry Pi OS.
 Instead I am using Ubuntu 32bit LTS (currently 22.10)
 Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to set up your SD card
@@ -18,6 +20,7 @@ Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to set up your 
 
 
 ## Install Docker
+
 ```
 # remove old packages, not needed in Ubuntu 24.04
 # for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do sudo apt-get remove $pkg; done
@@ -33,6 +36,7 @@ docker run busybox echo "hello from busybox"
 ```
 
 ## Bootstrap the app
+
 ```
 #the following looks wrong... it doesn't fully use docker. Merge in my OneNote
 cd ~

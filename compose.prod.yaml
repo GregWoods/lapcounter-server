@@ -3,7 +3,6 @@
 services:
 
   mosquitto:
-    profiles: ["dev", "production"]
     image: eclipse-mosquitto
     container_name: mosquitto
     volumes:
@@ -17,7 +16,6 @@ services:
     restart: unless-stopped
 
   gpio-lane1:
-    profiles: ["production"]
     image: gregkwoods/lapcounter-server-gpio:latest
     env_file:
       - .env.prod
@@ -31,7 +29,6 @@ services:
 
 
   gpio-lane2:
-    profiles: ["production"]
     image: gregkwoods/lapcounter-server-gpio:latest
     env_file:
       - .env.prod
@@ -45,7 +42,6 @@ services:
 
 
   lapdata:
-    profiles: ["dev", "production"]
     image: gregkwoods/lapcounter-server-lapdata:latest
     env_file:
       - .env.prod
@@ -56,8 +52,8 @@ services:
 
 
   web:
-    profiles: ["dev", "production"]
-    build: 
+    profiles: ["disabled"]
+    build:
       context: ./web
       dockerfile: Dockerfile.prod
     image: gregkwoods/lapcounter-server-web:latest
@@ -73,7 +69,6 @@ services:
       - db
 
   react:
-    profiles: ["dev", "production"]
     build: ./react
     container_name: react
     image: gregkwoods/lapcounter-server-react:latest
@@ -111,6 +106,7 @@ services:
 
 
   db:
+    profiles: ["disabled"]
     container_name: db
     image: postgres:16
     volumes:
