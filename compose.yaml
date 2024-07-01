@@ -18,6 +18,7 @@ services:
 
   mocked-gpio:
     image: gregkwoods/lapcounter-server-mocked-gpio:latest
+    pull_policy: always
     build: 
       context: ./gpio
       dockerfile: Dockerfile.Mocked
@@ -30,6 +31,7 @@ services:
 
   lapdata:
     image: gregkwoods/lapcounter-server-lapdata:latest
+    pull_policy: always
     env_file:
       - .env.dev
     build: ./lapdata
@@ -38,6 +40,9 @@ services:
       - mocked-gpio
 
 
+  #http://localhost:5001/upload
+  #http://localhost:5001/media/<uploaded_file_name>
+  #http://localhost:5001/static/hello.txt
   #lapcounter-web:
   #  image: gregkwoods/lapcounter-web:latest
   #  ports:
@@ -48,22 +53,18 @@ services:
   #    - lapdata
 
 
-  #http://localhost:5001/upload
-  #http://localhost:5001/media/<uploaded_file_name>
-  #http://localhost:5001/static/hello.txt
-  web:
-    container_name: web
-    build: ./web
-    image: gregkwoods/lapcounter-server-web:latest
-    command: python manage.py run -h 0.0.0.0
+  react:
+    container_name: react
+    pull_policy: always
+    build: ./react
+    image: gregkwoods/lapcounter-server-react:latest
     volumes:
       - ./web:/usr/src/app
     ports:
-      - 5001:5000
+      - 8088:80
     env_file:
       - ./.env.dev
-    depends_on:
-      - db
+
 
   db:
     container_name: db
