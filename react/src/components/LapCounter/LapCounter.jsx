@@ -86,7 +86,7 @@ const LapCounter = () => {
     resetTodaysFastestLap();
     
     if (mqttHost === '' || mqttHost === null) {
-        setLocalStorageMqttHost("ws://127.0.0.1:8080");
+        setLocalStorageMqttHost("ws://10.0.1.189:8080");
     }
      
     //used internally by processLaps
