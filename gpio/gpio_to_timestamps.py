@@ -20,7 +20,6 @@ mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
 
 # setup GPIO pin constants
-pwr_btn_gpio = 3
 lanes = [{
     "SELECTED": 2,
     "HSHAKE": 4,
@@ -47,8 +46,6 @@ GPIO.output(lane["HSHAKE"], False)
 GPIO.output(lane["HSHAKE"], True)
 GPIO.output(lane["HSHAKE"], False)
 GPIO.output(lane["HSHAKE"], True)
-
-GPIO.setup(pwr_btn_gpio, GPIO.IN)
 
 client = None
 
@@ -87,9 +84,6 @@ def send_test_mqtt(_):
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
 GPIO.add_event_detect(lane["SELECTED"], GPIO.FALLING, callback=car_detected)
-
-# temporary: detect button press for testing
-GPIO.add_event_detect(pwr_btn_gpio, GPIO.RISING, callback=send_test_mqtt)
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.connect(mqtt_hostname)

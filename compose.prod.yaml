@@ -42,7 +42,7 @@ services:
     privileged: true
     restart: unless-stopped
     depends_on:
-      - mosquitto
+      - gpio-lane1
 
 
   lapdata:
@@ -54,7 +54,7 @@ services:
     container_name: lapdata
     restart: unless-stopped
     depends_on:
-      - gpio-lane1
+      - gpio-lane2
 
 
   web:
