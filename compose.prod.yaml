@@ -25,6 +25,7 @@ services:
     build: ./gpio
     container_name: gpio-1
     privileged: true
+    restart: unless-stopped
     depends_on:
       - mosquitto  
 
@@ -39,6 +40,7 @@ services:
     build: ./gpio
     container_name: gpio-2
     privileged: true
+    restart: unless-stopped
     depends_on:
       - mosquitto
 
@@ -50,6 +52,7 @@ services:
       - .env.prod
     build: ./lapdata
     container_name: lapdata
+    restart: unless-stopped
     depends_on:
       - gpio-lane1
 
@@ -82,7 +85,8 @@ services:
     volumes:
       - static_volume:/usr/src/app/dist
     #for debugging. Use docker compose "run" instead of "up"
-    entrypoint: /bin/sh
+    #restart: unless-stopped
+    #entrypoint: /bin/sh
 
   #web:
   #  container_name: web
