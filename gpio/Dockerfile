@@ -25,7 +25,7 @@ WORKDIR /app
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gcc
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
-    python -m pip install -r requirements.txt
+    python -m pip install --break-system-packages -r requirements.txt
 
 # Copy the source code into the container.
 COPY . .
