@@ -1,7 +1,5 @@
 # Non-docker, local Ubuntu, run with the following commands
 #   . ./setenv.sh
-#   python3 gpio_to_timestamps.py
-# oe maybe
 #   sudo -E python3 gpio_to_timestamps.py
 #   -E is needed to pass the environment variables to sudo
 
@@ -63,23 +61,15 @@ def handshake_end(_):
     GPIO.output(lane["HSHAKE"], True)
 
 def car_detected(_):
-    print("car detected")
     crossing_time = time.time_ns()
     # send car id 1-6
     car_number = 1
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
     if GPIO.input(lane["CARCODE3"]): car_number += 4
-    print(f"car number: {car_number}")
-    print(f"crossing time: {crossing_time}")
     send_lap_time(car_number, crossing_time)
     handshake_end(lane)
 
-# to be removed once the system is stable
-def send_test_mqtt(_):
-    print("send_test_mqtt")
-    print(f"client: {client}")
-    client.publish("car_timestamp", payload="test")
 
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
@@ -90,8 +80,6 @@ client.connect(mqtt_hostname)
 # create a new thread to handle the network loop. Also handles reconnecting
 client.loop_start()
 
+#Just keep the program running
 while True:
-    time.sleep(0.001)
-
-client.disconnect()
-client.loop_stop()
+    time.sleep(1)
