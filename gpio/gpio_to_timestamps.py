@@ -8,7 +8,7 @@ import time
 import os
 import paho.mqtt.client as mqtt     #uses >= 2.0.0
 import sys
-import RPi.GPIO as GPIO
+import RPi.GPIO as GPIO             # actually uses the lgpio library for compativility with newer Linux kernels
 
 # LANE_NUMBER starts from 1
 lane_idx = int(os.getenv('LANE_NUMBER')) - 1
@@ -69,7 +69,6 @@ def car_detected(_):
     if GPIO.input(lane["CARCODE3"]): car_number += 4
     send_lap_time(car_number, crossing_time)
     handshake_end(lane)
-
 
 # utilises a new thread to handle the GPIO event detection
 print(f"lane selected GPIO: {lane['SELECTED']}")
