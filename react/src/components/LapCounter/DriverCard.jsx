@@ -1,6 +1,7 @@
 import DriverCardPosition from './DriverCardPosition';
 import './DriverCard.css';
 import './DriverColors.css';
+import DriverCardTime from './DriverCardTime';
 
 
 const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
@@ -41,17 +42,8 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
             </div>
 
             <div className="drivercontent">
-
-                <div className={fastestLapClass}>
-                    <div className="timelbl">Fastest Lap</div>
-                    <div className="time">&#8203;{driver.fastestLap}</div>
-                </div>
-
-                <div className={lastLapClass}>
-                    <div className="timelbl">Last Lap</div>
-                    <div className="time">&#8203;{driver.lastLap}</div>
-                </div>
-
+                <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
+                <DriverCardTime fastestLapClass={lastLapClass} label="Last Lap" lapTime={driver.lastLap} />
             </div>
 
             <DriverCardPosition 
