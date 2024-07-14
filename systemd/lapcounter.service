@@ -1,3 +1,5 @@
+; not sure this service is needed. Docker seems to start automatically, with container already running. I need to be sure of this though!
+
 [Unit]
 Description=Lapcounter Server Docker Compose Application
 Requires=docker.service

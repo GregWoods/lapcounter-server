@@ -14,6 +14,6 @@ This is to be run inside a a docker container running the nginx web server.
 See: https://hub.docker.com/_/nginx
 ```
 npm run build
-docker build -t gregkwoods/lapcounter-web:0.0.1 .
+docker build -t gregkwoods/lapcounter-server=api:0.0.1 .
 
 ```

@@ -43,12 +43,12 @@ services:
   #http://localhost:5001/upload
   #http://localhost:5001/media/<uploaded_file_name>
   #http://localhost:5001/static/hello.txt
-  #lapcounter-web:
-  #  image: gregkwoods/lapcounter-web:latest
-  #  ports:
-  #    - 8090:80
-  #  build: ./lapcounter-web
-  #  container_name: lapcounter-web
+  api:
+    image: gregkwoods/lapcounter-server-api:latest
+    ports:
+      - 8090:80
+    build: ./lapcounter-server-api
+    container_name: api
   #  depends_on:
   #    - lapdata
 
