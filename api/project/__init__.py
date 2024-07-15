@@ -8,9 +8,12 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
+import os
+from flask_cors import CORS
 
 
 app = Flask(__name__)
+CORS(app)  # This will enable CORS for all routes
 app.config.from_object("project.config.Config")
 db = SQLAlchemy(app)
 
@@ -41,7 +44,7 @@ def upload_file():
     if request.method == "POST":
         file = request.files["file"]
         filename = secure_filename(file.filename)
-        file.save(os.path.join(app.config["MEDIA_FOLDER"], filename))
+        file.save(os.path.join(app.config["MEDIA_FOLDER"], "cars", filename))
     return """
     <!doctype html>
     <title>upload new File</title>
@@ -49,3 +52,10 @@ def upload_file():
       <p><input type=file name=file><input type=submit value=Upload>
     </form>
     """
+
+@app.route("/api/cars", methods=["GET"])
+def get_cars():
+    folder_path = os.path.join(app.config["MEDIA_FOLDER"], "cars")
+    api_base_url = os.environ.get("API_BASE_URL", "http://127.0.0.1:5001")
+    files = [f"{api_base_url}/media/cars/{filename}" for filename in os.listdir(folder_path)]
+    return jsonify(files)
