@@ -14,18 +14,18 @@ $version = "0.0.9"
 #docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-test-mqtt-latency:$version -t gregkwoods/lapcounter-server-test-mqtt-latency:latest . --push
 
 cd gpio
-docker buildx build --platform linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-gpio:$version -t gregkwoods/lapcounter-server-gpio:latest . --push
-docker buildx build -f ./Dockerfile.Mock --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-mocked-gpio:$version -t gregkwoods/lapcounter-server-mocked-gpio:latest . --push
+#docker buildx build --platform linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-gpio:$version -t gregkwoods/lapcounter-server-gpio:latest . --push
+#docker buildx build -f ./Dockerfile.Mock --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-mocked-gpio:$version -t gregkwoods/lapcounter-server-mocked-gpio:latest . --push
 cd ..
 
 cd lapdata
-docker buildx build --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-lapdata:$version -t gregkwoods/lapcounter-server-lapdata:latest . --push
+#docker buildx build --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-lapdata:$version -t gregkwoods/lapcounter-server-lapdata:latest . --push
 cd ..
 
 cd react
-docker buildx build --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-react:$version -t gregkwoods/lapcounter-server-react:latest . --push
+#docker buildx build --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-react:$version -t gregkwoods/lapcounter-server-react:latest . --push
 cd ..
 
 cd api
-docker buildx build --platform linux/amd64,linux/arm/v7,linux/arm64/v8 -t gregkwoods/lapcounter-server-api:$version -t gregkwoods/lapcounter-api:latest . --push
+./build-and-push-api.ps1
 cd ..

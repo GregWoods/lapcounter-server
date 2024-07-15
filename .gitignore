@@ -11,3 +11,4 @@ lapcounter-web/test-websocket-server-DEPRECATED
 build
 public
 /data/logs
+/api/project/media/**

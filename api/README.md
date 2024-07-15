@@ -1,19 +1,44 @@
-# Standalone Scalextric Digital Lap Counter
+# Standalone Scalextric Digital Lap Counter - Python API
 
-## Quick Start (Developer)
+## Powershell ovewr Ubuntu
 
-* see docker compose file and related docs for starting the back end
-* nvm use 20.12.2
-* npm install
-* npm start
-* Use the browser developer tools to fix the windows size to 1920x1080 (it can be scaled down via zoom)
+I have set up the new python virtual env in Powershell, because I am also running the build-and-push
+scripts in POwershell. Mixing Powershell and Ubuntu causes permissions errors.
+Note that Ubuntu would have been fine... just stick to one!
 
-## Quick Start (Production)
+## Use pyenv!
 
-This is to be run inside a a docker container running the nginx web server.
-See: https://hub.docker.com/_/nginx
+It is installed globalled, and allows changing python version
+ ```
+pyenv versions
+pyenv install --list
+pyenv install 3.12.2
+ ```
+
+ ## Running without Docker
+
 ```
-npm run build
-docker build -t gregkwoods/lapcounter-server=api:0.0.1 .
-
+./venv/Scripts/activate
+pip install -r requirements.txt
+./setenv.ps1
+python manage.py run
 ```
+
+## Running with Docker
+
+
+From the ```api``` folder, we need to specify the compose file in the parent folder
+```
+docker compose -f ../compose.yaml up --build --detach api
+```
+
+
+### Endpoints (see __init__.py)
+
+These endpoints all work in Docker... but not when running locally
+```
+http://127.0.0.1:5001
+http://127.0.0.1:5001/upload
+http://127.0.0.1:5001/media/01595327e5339118540a72a10b7c61521e3eafb74b.jpg
+```
+

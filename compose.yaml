@@ -44,13 +44,24 @@ services:
   #http://localhost:5001/media/<uploaded_file_name>
   #http://localhost:5001/static/hello.txt
   api:
-    image: gregkwoods/lapcounter-server-api:latest
-    ports:
-      - 8090:80
-    build: ./lapcounter-server-api
     container_name: api
+    pull_policy: always
+    build: ./api
+    image: gregkwoods/lapcounter-server-api:latest
+    volumes:
+      - ./api/:/usr/src/app/
+    ports:
+      - 5001:5000
+    command: python manage.py run -h 0.0.0.0
+    env_file:
+      - ./api/.env.dev
   #  depends_on:
   #    - lapdata
+
+
+    
+
+
 
 
   react:
@@ -72,7 +83,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      # only for dev. prod uses .env.prod.db
+      # only for local dev. Production uses .env.prod.db
       POSTGRES_USER: hello_flask
       POSTGRES_PASSWORD: hello_flask
       POSTGRES_DB: hello_flask_dev
