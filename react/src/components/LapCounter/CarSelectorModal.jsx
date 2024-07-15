@@ -1,14 +1,13 @@
-//import { useEffect, useState } from 'react';
-//import ReactModal from 'react-modal';
-//import CarImage from './CarImage';
+import { useEffect, useState } from 'react';
+import ReactModal from 'react-modal';
+import CarImage from './CarImage';
 import './CarSelectorModal.css';
 
 
 // eslint-disable-next-line no-unused-vars
-const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drivers, setDrivers, driverIdxToFocus }) => {
+const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers, driverIdxToFocus }) => {
 
-    /*
-    const [cars, setCars] = useState(null);
+    const [cars, setCars] = useState([]);
 
     
     useEffect(() => {
@@ -18,14 +17,13 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drive
             .then((res) => res.json())
             .then((data) => {
                 setCars(data);
-                console.log(data);
-                console.log(cars);
+                console.dir(data);
             },
                 (error) => {
                     console.log(error);
                 }
             );
-    }, []);
+    }, [carImgListUrl]);
 
 
     if (cars) {
@@ -42,7 +40,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drive
             >
             <div className="carcontainer">
                 {cars.map((car, idx) => {
-                    return <CarImage key={idx} url={carImgBaseUrl + '/' + car} />
+                    return <CarImage key={idx} url={car} />
                 })}
             </div>
             </ReactModal>
@@ -50,8 +48,6 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, carImgBaseUrl, drive
     } else {
         return null;
     }
-    */
-    return null;
 }
 
 export default CarSelectorModal;
