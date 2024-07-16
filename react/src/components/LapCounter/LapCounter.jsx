@@ -12,6 +12,40 @@ const DEBUG = true;
 
 
 const LapCounter = () => {
+
+    const defaultConfig = {
+        // These defaults are based on the production docker setup
+        // They are stored in localstorage
+        mqtthost: "ws://192.168.8.3:8080",
+        apihost: "http://192.168.8.3:5001",
+        racepresets: [
+            { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
+            { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
+            { id: 2, type: 'laps', description: 'Standard (50 laps)', details: { laps: 50 }},
+            { id: 3, type: 'laps', description: 'Professional (160 laps)', details: { laps: 160 }},
+            /*{ id: 4, type: 'time', description: 'Endurance (60 minutes)', details: { time: '01:00:00' }},
+            { id: 5, type: 'time', description: 'Le-Mans (4 hours)', details: { time: '04:00:00' }},
+            { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
+        ]
+    }
+    
+    let currentConfig = localStorage.getItem("lapcounter_config")
+
+    //update localStorage config with default values if any are missing
+    if (!currentConfig) {
+        currentConfig = defaultConfig;
+    } else {
+        currentConfig = JSON.parse(currentConfig);
+        for (const key in defaultConfig) {
+            if (!(key in currentConfig)) {
+                currentConfig[key] = defaultConfig[key];
+            }
+        }
+    }
+    localStorage.setItem("lapcounter_config", JSON.stringify(currentConfig));
+
+    const [config, setConfig] = useState(currentConfig);
+
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
 
@@ -19,9 +53,6 @@ const LapCounter = () => {
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
     const [numberOfDriversRacing, setNumberOfDriversRacing] = useState(0);
-    const [mqttHost, setMqttHost] = useState(localStorage.getItem("config_mqtthost"));
-
-
 
     // Using refs...
     //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
@@ -54,11 +85,10 @@ const LapCounter = () => {
     racePausedRef.current = false;
 
     const [underStartersOrders, setUnderStartersOrders] = useState(false);
-
-
-    const setLocalStorageMqttHost = (newMqttHost) => {
-        setMqttHost(newMqttHost);
-        localStorage.setItem("config_mqtthost", newMqttHost);
+    
+    const storeMqttHost = (newMqttHost) => {
+        setConfig({...config, mqtthost: newMqttHost});
+        localStorage.setItem("lapcounter_config", config);
     }
 
     const storeFastestLapToday = (lapTime) => {
@@ -84,11 +114,8 @@ const LapCounter = () => {
 
     //setup localstorage defaults
     resetTodaysFastestLap();
-    
-    if (mqttHost === '' || mqttHost === null) {
-        setLocalStorageMqttHost("ws://192.168.8.3:8080");
-    }
-     
+
+
     //used internally by processLaps
     const lapDataDefault = [
         {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
@@ -155,7 +182,6 @@ const LapCounter = () => {
         setCarSelectorModalDriverIdx(driverIdx);
         setCarSelectorModalShown(true);
     }
-
 
     const handleStartCountdown = (raceTypeObj) => {
         resetRaceValues(raceTypeObj);
@@ -279,10 +305,10 @@ const LapCounter = () => {
         <div id="top">
 
             <div id={'lapcounter'}>
-                <MqttSubscriber mqttHost={mqttHost} onIncomingLapMessage={processLap} debug={DEBUG} />
+                <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={processLap} debug={DEBUG} />
                 <Header
-                    mqttHost={mqttHost}
-                    setMqtthost={setLocalStorageMqttHost}
+                    mqttHost={config.mqtthost}
+                    setMqtthost={storeMqttHost}
                     onRaceTypeChange={handleRaceTypeChange}
                     onStartCountdown={handleStartCountdown}
                     onGoGoGo={handleGoGoGo}
