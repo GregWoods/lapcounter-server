@@ -14,7 +14,7 @@ const DEBUG = true;
 
 const LapCounter = () => {
 
-    const defaultConfig = {
+    let defaultConfig = {
         // These defaults are based on the production docker setup
         // They are stored in localstorage
         mqtthost: "ws://192.168.8.3:8080",
@@ -29,6 +29,13 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
+    /*
+    //developer defaults
+    defaultConfig = {...defaultConfig,
+        mqtthost: "ws://127.0.0.1:8080",
+        apihost: "http://127.0.0.1:5001"
+    };
+    */
 
     //update localStorage config with default values if any are missing
     const [config, setConfig] = useLocalStorageState('lapcounter_config');
