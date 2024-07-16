@@ -21,7 +21,7 @@ const DriverCardTime = ({cssClass, label, lapTime}) => {
     return (
         <div className={cssClass}>
             <div className="timelbl">{label}</div>
-            <div className="time">{displayTime}</div>
+            <div className="time">&#8203;{displayTime}</div>
         </div>
     );
 };

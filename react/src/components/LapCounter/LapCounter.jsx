@@ -49,7 +49,7 @@ const LapCounter = () => {
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
 
-    const [carSelectorModalShown, setCarSelectorModalShown] = useState(true);
+    const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
     const [numberOfDriversRacing, setNumberOfDriversRacing] = useState(0);
@@ -345,7 +345,7 @@ const LapCounter = () => {
             <CarSelectorModal 
                 showMe={carSelectorModalShown}
                 onClose={() => setCarSelectorModalShown(false)}
-                carImgListUrl='http://localhost:5001/api/cars'
+                carImgListUrl={config.apihost + '/api/cars'}
                 drivers={drivers}
                 setDrivers={(d) => saveDrivers(d)} 
                 driverIdxToFocus={carSelectorModalDriverIdx} 
