@@ -1,4 +1,5 @@
 import './LapCounter.css';
+import useLocalStorageState from 'use-local-storage-state'
 import MqttSubscriber from '../MqttSubscriber.jsx'
 import EditDriverNamesModal from './EditDriverNamesModal.jsx';
 import CarSelectorModal from './CarSelectorModal.jsx';
@@ -28,23 +29,19 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    
-    let currentConfig = localStorage.getItem("lapcounter_config")
 
     //update localStorage config with default values if any are missing
-    if (!currentConfig) {
-        currentConfig = defaultConfig;
+    const [config, setConfig] = useLocalStorageState('lapcounter_config');
+    if (!config) {
+        setConfig(defaultConfig);
     } else {
-        currentConfig = JSON.parse(currentConfig);
         for (const key in defaultConfig) {
-            if (!(key in currentConfig)) {
-                currentConfig[key] = defaultConfig[key];
+            if (!(key in config)) {
+                config[key] = defaultConfig[key];
             }
         }
+        setConfig(config);
     }
-    localStorage.setItem("lapcounter_config", JSON.stringify(currentConfig));
-
-    const [config, setConfig] = useState(currentConfig);
 
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
