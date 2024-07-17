@@ -1,8 +1,8 @@
-import './ResetFastestLapModal.css';
+import './ResetFastestLapTodayModal.css';
 import ReactModal from 'react-modal';
 
 
-const ResetFastestLapModal = ({ showMe, onClose, resetFastestLap }) => 
+const ResetFastestLapTodayModal = ({ showMe, onClose, resetFastestLap }) => 
 {
     const onDone = () => {
         resetFastestLap();
@@ -35,4 +35,4 @@ const ResetFastestLapModal = ({ showMe, onClose, resetFastestLap }) =>
     );
 }
 
-export default ResetFastestLapModal;
+export default ResetFastestLapTodayModal;

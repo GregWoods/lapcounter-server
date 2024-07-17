@@ -8,7 +8,7 @@ import React, { useState, useEffect, createRef } from 'react';
 import RaceFlagYellow from './RaceFlagYellow';
 import YellowFlagCountdown from './YellowFlagCountdown';
 import YellowFlagRacePaused from './YellowFlagRacePaused';
-import ResetFastestLapModal from './ResetFastestLapModal';
+import ResetFastestLapTodayModal from './ResetFastestLapTodayModal';
 
 
 function Header({
@@ -31,7 +31,7 @@ function Header({
     const [settingsModalShown, setSettingsModalShown] = useState(false);
     const [yellowCountdownShown, setYellowCountdownShown] = useState(false);
     const [yellowFlashingShown, setYellowFlashingShown] = useState(false);
-    const [resetFastestLapModalShown, setResetFastestLapModalShown] = useState(false);
+    const [ResetFastestLapTodayModalShown, setResetFastestLapTodayModalShown] = useState(false);
 
 
     //needed for onKeyUp
@@ -135,7 +135,7 @@ function Header({
 
                 <h1>Wellington Raceway</h1>
                     
-                <div id="laprecord" onClick={() => {setResetFastestLapModalShown(true)}}>
+                <div id="laprecord" onClick={() => {setResetFastestLapTodayModalShown(true)}}>
                     <div id="laprecordlbl">Lap Record</div>
                     <div id="fastestlaptime">{fastestLapToday}</div>
                 </div>
@@ -176,9 +176,9 @@ function Header({
                 onEndYellowFlag={handleEndYellowFlag} />
 
 
-            <ResetFastestLapModal 
-                showMe={resetFastestLapModalShown}
-                onClose={() => setResetFastestLapModalShown(false)}
+            <ResetFastestLapTodayModal 
+                showMe={ResetFastestLapTodayModalShown}
+                onClose={() => setResetFastestLapTodayModalShown(false)}
                 resetFastestLap = {forceResetFastestLap}
             />
 
