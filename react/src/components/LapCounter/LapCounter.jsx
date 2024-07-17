@@ -38,7 +38,7 @@ const LapCounter = () => {
     */
 
     //update localStorage config with default values if any are missing
-    const [config, setConfig] = useLocalStorageState('lapcounter_config');
+    const [config, setConfig] = useLocalStorageState('config');
     if (!config) {
         setConfig(defaultConfig);
     } else {
@@ -92,7 +92,7 @@ const LapCounter = () => {
     
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtthost: newMqttHost});
-        localStorage.setItem("lapcounter_config", config);
+        localStorage.setItem("config", config);
     }
 
     const storeFastestLapToday = (lapTime) => {

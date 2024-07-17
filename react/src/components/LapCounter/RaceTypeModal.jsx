@@ -19,7 +19,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
     //TODO: going to need a more comprehensive data structure for the different types of races
     // eslint-disable-next-line no-unused-vars
 
-    const [config] = useLocalStorageState('lapcounter_config');
+    const [config] = useLocalStorageState('config');
     const raceDurationPresets = config.racepresets;
 
     //some "reduce" trickery to create an array which we can store a ref to each race preset
