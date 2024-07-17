@@ -42,8 +42,8 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
             </div>
 
             <div className="drivercontent">
-                <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
                 <DriverCardTime fastestLapClass={lastLapClass} label="Last Lap" lapTime={driver.lastLap} />
+                <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
             </div>
 
             <DriverCardPosition 
