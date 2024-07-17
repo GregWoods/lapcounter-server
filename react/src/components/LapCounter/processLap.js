@@ -66,7 +66,8 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 
 
 //this method processes laps without regard for the state of the race
-export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, setFirstCarCrossedStart, 
+export const processMessage = (newLapMsg, driverLapData, //firstCarCrossedStart, setFirstCarCrossedStart, 
+    race, setRace,
     raceStartTimeRef, fastestLap, setFastestLap) => {
 
     driverLapData.totalLaps += 1;
@@ -76,10 +77,10 @@ export const processMessage = (newLapMsg, driverLapData, firstCarCrossedStart, s
 
     var tempCalcLapTime;
     var lastMsgTime;
-
-    if (!firstCarCrossedStart) {
+    
+    if (!race.firstCarCrossedStart) {
         //Nobody had crossed the start until now. This guy starts all the race timing
-        setFirstCarCrossedStart(true);
+        setRace({...race, firstCarCrossedStart: true});
 
         raceStartTimeRef.current = newLapMsg.time;
 

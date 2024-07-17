@@ -37,18 +37,17 @@ const LapCounter = () => {
     };
     */
 
-    //update localStorage config with default values if any are missing
-    const [config, setConfig] = useLocalStorageState('config');
-    if (!config) {
-        setConfig(defaultConfig);
-    } else {
-        for (const key in defaultConfig) {
-            if (!(key in config)) {
-                config[key] = defaultConfig[key];
-            }
-        }
-        setConfig(config);
-    }
+    let defaultRace = { firstCarCrossedStart: false };
+
+    const [config, setConfig] = useLocalStorageState('config', defaultConfig);
+
+    const [race, setRace] = useLocalStorageState('race', defaultRace);
+    const raceRef = useRef();
+    raceRef.current = race;
+
+    //const [stats, setStats] = useLocalStorageState('stats');
+    //const stateRef = useRef();
+    //statsRef.current = stats;
 
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
@@ -63,9 +62,7 @@ const LapCounter = () => {
     //  Each of the following values which are "ref'd up" are used inside the processLaps callback.
     //    If we didn't use Refs (or some similar technique), then referring to the state
     //    variables would always return the initial value rather than the current value.
-    const [firstCarCrossedStart, setFirstCarCrossedStart] = useState(false);
-    const firstCarCrossedStartRef = useRef();
-    firstCarCrossedStartRef.current = firstCarCrossedStart;
+
 
     const [fastestLapToday, setFastestLapToday] = useState(localStorage.getItem("config_fastestLapToday"));
     const fastestLapTodayRef = useRef();
@@ -108,11 +105,11 @@ const LapCounter = () => {
         var twentyFourhoursAgo = now.setDate(now.getDate() - 1);
 
         if (fastestLapToday === '' || fastestLapToday === null || fastestLapTodayUpdatedOn < twentyFourhoursAgo) {
-            forceResetFastestLap();
+            resetFastestLapToday();
         }
     }
 
-    const forceResetFastestLap = () => {
+    const resetFastestLapToday = () => {
         storeFastestLapToday("99.999");
     }
 
@@ -243,15 +240,19 @@ const LapCounter = () => {
         setRaceType(raceTypeObj);
         setHasRaceStarted(false);
         setRaceFastestLap(9999);
-        setFirstCarCrossedStart(false);
         setNumberOfDriversRacing(0);
         racePausedRef.current = false;
+
+        setRace(defaultRace);
     }
 
     
+    //This is a callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
+    //  Hence we need to use useRef to access the current state values
     const processLap = (lapMsg) => {
         console.log("INCOMING LAP DATA: ", lapMsg)
         if (!hasRaceStartedRef.current || racePausedRef.current) { return }
+        
         const carIdx = lapMsg.car - 1;
         const laps = lapDataRef.current
         const oldLap = laps[carIdx];
@@ -260,7 +261,8 @@ const LapCounter = () => {
         console.log("==ProcessMessage, car:" + lapMsg.car);
 
         const newLap = processMessage(lapMsg, oldLap, 
-            firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
+            //firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
+            raceRef.current, setRace,
             raceStartTimeRef, 
             fastestLapTodayRef.current, storeFastestLapToday);
         
@@ -324,7 +326,7 @@ const LapCounter = () => {
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
                     onYellowFlag={() => {racePausedRef.current = true;}}
                     onEndYellowFlag={() => {racePausedRef.current = false;}}
-                    forceResetFastestLap = {forceResetFastestLap}
+                    resetFastestLapToday = {resetFastestLapToday}
                 />
                 <div id="driverCardOuter">
                     <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
