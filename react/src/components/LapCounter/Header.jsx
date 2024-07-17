@@ -179,7 +179,7 @@ function Header({
             <ResetFastestLapTodayModal 
                 showMe={resetFastestLapTodayModalShown}
                 onClose={() => setresetFastestLapTodayModalShown(false)}
-                resetFastestLap = {forceResetFastestLap}
+                resetFastestLapToday = {forceResetFastestLap}
             />
 
 

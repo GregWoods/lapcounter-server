@@ -2,10 +2,10 @@ import './ResetFastestLapTodayModal.css';
 import ReactModal from 'react-modal';
 
 
-const ResetFastestLapTodayModal = ({ showMe, onClose, resetFastestLap }) => 
+const ResetFastestLapTodayModal = ({ showMe, onClose, resetFastestLapToday }) => 
 {
     const onDone = () => {
-        resetFastestLap();
+        resetFastestLapToday();
         onClose();
     }
     const onCancel = () => {
