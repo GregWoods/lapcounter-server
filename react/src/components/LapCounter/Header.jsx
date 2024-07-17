@@ -22,7 +22,7 @@ function Header({
     onYellowFlagCountdown,
     onYellowFlag, 
     onEndYellowFlag,
-    forceResetFastestLap }) {
+    resetFastestLapToday }) {
 
     const [showStartLights, setShowStartLights] = useState(false);
 
@@ -31,7 +31,7 @@ function Header({
     const [settingsModalShown, setSettingsModalShown] = useState(false);
     const [yellowCountdownShown, setYellowCountdownShown] = useState(false);
     const [yellowFlashingShown, setYellowFlashingShown] = useState(false);
-    const [resetFastestLapTodayModalShown, setresetFastestLapTodayModalShown] = useState(false);
+    const [resetFastestLapTodayModalShown, setResetFastestLapTodayModalShown] = useState(false);
 
 
     //needed for onKeyUp
@@ -135,7 +135,7 @@ function Header({
 
                 <h1>Wellington Raceway</h1>
                     
-                <div id="laprecord" onClick={() => {setresetFastestLapTodayModalShown(true)}}>
+                <div id="laprecord" onClick={() => {setResetFastestLapTodayModalShown(true)}}>
                     <div id="laprecordlbl">Lap Record</div>
                     <div id="fastestlaptime">{fastestLapToday}</div>
                 </div>
@@ -178,8 +178,8 @@ function Header({
 
             <ResetFastestLapTodayModal 
                 showMe={resetFastestLapTodayModalShown}
-                onClose={() => setresetFastestLapTodayModalShown(false)}
-                resetFastestLapToday = {forceResetFastestLap}
+                onClose={() => setResetFastestLapTodayModalShown(false)}
+                resetFastestLapToday = {resetFastestLapToday}
             />
 
 
