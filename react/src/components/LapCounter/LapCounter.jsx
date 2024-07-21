@@ -5,9 +5,8 @@ import EditDriverNamesModal from './EditDriverNamesModal.jsx';
 import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect} from 'react';
 import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.js';
-
 
 const DEBUG = true;
 
@@ -56,6 +55,8 @@ const LapCounter = () => {
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
     const [numberOfDriversRacing, setNumberOfDriversRacing] = useState(0);
+
+    const [mqttLapMessage, setMqttLapMessage] = useState(null);
 
     // Using refs...
     //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
@@ -246,21 +247,21 @@ const LapCounter = () => {
         setRace(defaultRace);
     }
 
-    
-    //This is a callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
-    //  Hence we need to use useRef to access the current state values
-    const processLap = (lapMsg) => {
-        console.log("INCOMING LAP DATA: ", lapMsg)
+
+    //the old procesdsLaps function
+    useEffect(() => {
+        console.log("INCOMING LAP DATA: ", mqttLapMessage);
+
         if (!hasRaceStartedRef.current || racePausedRef.current) { return }
         
-        const carIdx = lapMsg.car - 1;
+        const carIdx = mqttLapMessage.car - 1;
         const laps = lapDataRef.current
         const oldLap = laps[carIdx];
         
         //convert websocket message into useful lap data
-        console.log("==ProcessMessage, car:" + lapMsg.car);
+        console.log("==ProcessMessage, car:" + mqttLapMessage.car);
 
-        const newLap = processMessage(lapMsg, oldLap, 
+        const newLap = processMessage(mqttLapMessage, oldLap, 
             //firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
             raceRef.current, setRace,
             raceStartTimeRef, 
@@ -298,7 +299,9 @@ const LapCounter = () => {
         setNumberOfDriversRacing(numberOfDriversRacing);
 
         checkEndOfRace(modifiedDrivers, handleRaceEnd);
-    }
+
+    }, [mqttLapMessage, setRace]);
+
 
     const handleRaceTypeChange = (raceTypeObj) => {
         console.log("LapCounter:handleRaceTypeChange", raceTypeObj);
@@ -311,7 +314,7 @@ const LapCounter = () => {
         <div id="top">
 
             <div id={'lapcounter'}>
-                <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={processLap} debug={DEBUG} />
+                <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={((x) => { console.dir(x); setMqttLapMessage(x) })} debug={DEBUG} />
                 <Header
                     mqttHost={config.mqtthost}
                     setMqtthost={storeMqttHost}

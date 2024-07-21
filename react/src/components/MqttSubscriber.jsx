@@ -58,12 +58,12 @@ const MqttSubscriber = ({ mqttHost, onIncomingLapMessage, debug }) => {
             client.on('message', (topic, message) => {
                 const payload = { topic, message: message.toString() };
                 console.log(`message: ${payload.message}`);
-                if (topic == 'lap') {
-                    onIncomingLapMessage(JSON.parse(payload.message));
-                }
+                //if (topic == 'lap') {
+                onIncomingLapMessage(JSON.parse(payload.message));
+                //}
             });
         }
-    }, [client]);
+    }, [client, debug, onIncomingLapMessage]);
 
     return null;
 }
