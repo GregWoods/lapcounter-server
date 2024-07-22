@@ -37,7 +37,10 @@ const LapCounter = () => {
     };
     */
 
-    let defaultRace = { firstCarCrossedStart: false };
+    let defaultRace = { 
+        firstCarCrossedStart: false,
+        fastestLap: 99.999
+    };
 
     const [config, setConfig] = useLocalStorageState('config', defaultConfig);
 
@@ -78,9 +81,6 @@ const LapCounter = () => {
     const raceTypeRef = useRef();
     raceTypeRef.current = raceType;
 
-    const [raceFastestLap, setRaceFastestLap] = useState(9999);
-    const raceFastestLapRef = useRef();
-    raceFastestLapRef.current = raceFastestLap;
 
     const racePausedRef = useRef();
     racePausedRef.current = false;
@@ -239,7 +239,6 @@ const LapCounter = () => {
         setDrivers(newDrivers);
         setRaceType(raceTypeObj);
         setHasRaceStarted(false);
-        setRaceFastestLap(9999);
         setNumberOfDriversRacing(0);
         racePausedRef.current = false;
 
@@ -269,10 +268,13 @@ const LapCounter = () => {
         //Set Fastest Lap for this Race. Used to display purple lap time for a driver
         //  we do it here and not in processLapjs processMessage, because here, we only run it if the race is underway
         //console.log("RACE FASTEST LAP: " + newLap.bestLapTime + " : " + raceFastestLapRef.current + " : " + newLap.bestLapTime <= raceFastestLapRef.current);
+        
+        /*
         if (newLap.bestLapTime <= raceFastestLapRef.current) {
             setRaceFastestLap(newLap.bestLapTime.toFixed(3));
             //console.log("New fastest Lap: " + newLap.bestLapTime);
         }
+        */
 
         laps[carIdx] = newLap;
         setLapData(laps);
@@ -284,7 +286,7 @@ const LapCounter = () => {
                 carIdx, 
                 newLap, 
                 raceTypeRef.current.details.laps, 
-                raceFastestLapRef.current, 
+                raceRef.current.fastestLap,
                 raceStartTimeRef.current);
 
         console.log('modifiedDrivers');
