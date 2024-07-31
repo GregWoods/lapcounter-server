@@ -39,6 +39,7 @@ const LapCounter = () => {
 
     let defaultRace = { 
         firstCarCrossedStart: false,
+        startTime: null,
         fastestLap: 99.999
     };
 
@@ -74,8 +75,6 @@ const LapCounter = () => {
     const [hasRaceStarted, setHasRaceStarted] = useState(false);
     const hasRaceStartedRef = useRef();
     hasRaceStartedRef.current = hasRaceStarted;
-
-    const raceStartTimeRef = useRef(0.00);
 
     const [raceType, setRaceType] = useState(null);
     const raceTypeRef = useRef();
@@ -259,12 +258,13 @@ const LapCounter = () => {
         //convert websocket message into useful lap data
         console.log("==ProcessMessage, car:" + lapMsg.car);
 
-        const newLap = calculateLapTime(lapMsg, oldLap, 
+        const [newLap, newRace] = calculateLapTime(lapMsg, oldLap, 
             //firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
-            raceRef.current, setRace,
-            raceStartTimeRef, 
+            raceRef.current,
             fastestLapTodayRef.current, storeFastestLapToday);
         
+        setRace(newRace);
+
         //Set Fastest Lap for this Race. Used to display purple lap time for a driver
         //  we do it here and not in processLapjs processMessage, because here, we only run it if the race is underway
         //console.log("RACE FASTEST LAP: " + newLap.bestLapTime + " : " + raceFastestLapRef.current + " : " + newLap.bestLapTime <= raceFastestLapRef.current);
@@ -279,15 +279,16 @@ const LapCounter = () => {
         laps[carIdx] = newLap;
         setLapData(laps);
 
-        console.log(`raceStartTimeRef.current: ${raceStartTimeRef.current}`)
+        console.log(`newRace.startTime: ${newRace.startTime}`)
         //create "drivers" view-model from lap data
         var modifiedDrivers = modifyDriversViewModel(
                 driversRef.current, 
                 carIdx, 
                 newLap, 
                 raceTypeRef.current.details.laps, 
-                raceRef.current.fastestLap,
-                raceStartTimeRef.current);
+                newRace.fastestLap,
+                newRace.startTime        //Feels like this shouldn't be needed. All calcs that might need this should have been done??
+        );
 
         console.log('modifiedDrivers');
         console.dir(modifiedDrivers);

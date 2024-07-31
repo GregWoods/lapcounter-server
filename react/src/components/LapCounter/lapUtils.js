@@ -66,9 +66,11 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 
 
 //this method processes laps without regard for the state of the race
-export const calculateLapTime = (newLapMsg, driverLapData, //firstCarCrossedStart, setFirstCarCrossedStart, 
-    race, setRace,
-    raceStartTimeRef, fastestLap, setFastestLap) => {
+export const calculateLapTime = (
+    newLapMsg, 
+    driverLapData, 
+    race,
+    fastestLap, setFastestLap) => {
 
     driverLapData.totalLaps += 1;
     driverLapData.absoluteRaceTime = newLapMsg.time;
@@ -80,19 +82,17 @@ export const calculateLapTime = (newLapMsg, driverLapData, //firstCarCrossedStar
     
     if (!race.firstCarCrossedStart) {
         //Nobody had crossed the start until now. This guy starts all the race timing
-        setRace({...race, firstCarCrossedStart: true});
-
-        raceStartTimeRef.current = newLapMsg.time;
+        race = {...race, startTime: newLapMsg.time, firstCarCrossedStart: true};
 
         console.log("AAAA First car has crossed line,  ID=[" + newLapMsg.car + "].    Race timer starts now"); 
-        console.log("AAAA race start time: " + newLapMsg.time);
+        console.log("AAAA race start time: " + race.startTime);
 
         //this is just to indicate in the UI they crossed the line for the first time after lights out
         driverLapData.lastLapTime = 0.00;
 
         //the first driver to cross the line still needs their lastMessageTime setting, just like everyone else on their lap 0
         driverLapData.lastMessageTime = newLapMsg.time;
-        return driverLapData;
+        return [driverLapData, race];
     } 
     
     //every other crossing of the line goes here
@@ -103,26 +103,28 @@ export const calculateLapTime = (newLapMsg, driverLapData, //firstCarCrossedStar
     //"Lap 0" is not lap. It is the time taken to cross the line after starting from the grid position
     if (driverLapData.totalLaps == 0) {
         //this is lap0 for everyone except the very first car to cross the line (we already handled him, above)
-        console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTimeRef.current);
-        console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - raceStartTimeRef.current));
+        console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + race.startTime);
+        console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - race.startTime));
         //this is just to indicate in the UI they crossed the line for the first time after lights out
         // we don't any lap time calculations for this "lap"
         driverLapData.lastLapTime = 0.000; 
-        driverLapData.lastMessageTime = newLapMsg.time;
-        return driverLapData;
+        driverLapData.lastMessageTime = race.startTime;
+        return [driverLapData, race];
     } 
     
+    /*
     if (driverLapData.totalLaps == 1) {
         //lap 1
         //Special case, first countable lap for this driver, we time our lap from the time point the 
         //  very first driver crossed the line (our pseudo race start)
-        lastMsgTime = raceStartTimeRef.current;
-        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTimeRef.current);
+        lastMsgTime = race.startTime;
+        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + race.startTime);
 
     } else if (driverLapData.totalLaps > 1) {
-        lastMsgTime = driverLapData.lastMessageTime
-        console.log("DDDD  totalLaps>1, ID: " + newLapMsg.car + " lastMessageTime: " + lastMsgTime);
-    }
+    */
+    lastMsgTime = driverLapData.lastMessageTime
+    console.log("DDDD  totalLaps>1, ID: " + newLapMsg.car + " lastMessageTime: " + lastMsgTime);
+    //}
 
     //Calculate lap times
     console.log("r.time: " + newLapMsg.time + "    | lastMsgTime: " + lastMsgTime);
@@ -146,7 +148,7 @@ export const calculateLapTime = (newLapMsg, driverLapData, //firstCarCrossedStar
         setFastestLap(tempCalcLapTime.toFixed(3));
     }
     driverLapData.lastMessageTime = newLapMsg.time;
-    return driverLapData;
+    return [driverLapData, race];
 }
 
 
