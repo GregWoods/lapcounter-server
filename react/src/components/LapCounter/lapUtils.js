@@ -66,7 +66,7 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 
 
 //this method processes laps without regard for the state of the race
-export const processMessage = (newLapMsg, driverLapData, //firstCarCrossedStart, setFirstCarCrossedStart, 
+export const calculateLapTime = (newLapMsg, driverLapData, //firstCarCrossedStart, setFirstCarCrossedStart, 
     race, setRace,
     raceStartTimeRef, fastestLap, setFastestLap) => {
 

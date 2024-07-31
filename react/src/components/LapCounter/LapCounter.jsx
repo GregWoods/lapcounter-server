@@ -6,7 +6,7 @@ import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
 import { useState, useRef } from 'react';
-import {modifyDriversViewModel, processMessage, checkEndOfRace} from './processLap.js';
+import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
 
 
 const DEBUG = true;
@@ -245,10 +245,10 @@ const LapCounter = () => {
         setRace(defaultRace);
     }
 
-    
+
     //This is a callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
     //  Hence we need to use useRef to access the current state values
-    const processLap = (lapMsg) => {
+    const processLapMsg = (lapMsg) => {
         console.log("INCOMING LAP DATA: ", lapMsg)
         if (!hasRaceStartedRef.current || racePausedRef.current) { return }
         
@@ -259,7 +259,7 @@ const LapCounter = () => {
         //convert websocket message into useful lap data
         console.log("==ProcessMessage, car:" + lapMsg.car);
 
-        const newLap = processMessage(lapMsg, oldLap, 
+        const newLap = calculateLapTime(lapMsg, oldLap, 
             //firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
             raceRef.current, setRace,
             raceStartTimeRef, 
@@ -268,7 +268,7 @@ const LapCounter = () => {
         //Set Fastest Lap for this Race. Used to display purple lap time for a driver
         //  we do it here and not in processLapjs processMessage, because here, we only run it if the race is underway
         //console.log("RACE FASTEST LAP: " + newLap.bestLapTime + " : " + raceFastestLapRef.current + " : " + newLap.bestLapTime <= raceFastestLapRef.current);
-        
+
         /*
         if (newLap.bestLapTime <= raceFastestLapRef.current) {
             setRaceFastestLap(newLap.bestLapTime.toFixed(3));
@@ -313,7 +313,7 @@ const LapCounter = () => {
         <div id="top">
 
             <div id={'lapcounter'}>
-                <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={processLap} debug={DEBUG} />
+                <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={processLapMsg} debug={DEBUG} />
                 <Header
                     mqttHost={config.mqtthost}
                     setMqtthost={storeMqttHost}
