@@ -263,6 +263,9 @@ const LapCounter = () => {
             raceRef.current,
             fastestLapTodayRef.current, storeFastestLapToday);
         
+        laps[carIdx] = newLap;
+        setLapData(laps);
+
         setRace(newRace);
 
         //Set Fastest Lap for this Race. Used to display purple lap time for a driver
@@ -275,9 +278,6 @@ const LapCounter = () => {
             //console.log("New fastest Lap: " + newLap.bestLapTime);
         }
         */
-
-        laps[carIdx] = newLap;
-        setLapData(laps);
 
         console.log(`newRace.startTime: ${newRace.startTime}`)
         //create "drivers" view-model from lap data

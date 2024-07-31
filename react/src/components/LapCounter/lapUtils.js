@@ -94,37 +94,23 @@ export const calculateLapTime = (
         driverLapData.lastMessageTime = newLapMsg.time;
         return [driverLapData, race];
     } 
-    
-    //every other crossing of the line goes here
-    
-    //yes, there is duplication in these conditions. I stand by it, as it helps keep the logic clear
-    //  I'm also not keen on the early return... but the nesting would be worse.
 
-    //"Lap 0" is not lap. It is the time taken to cross the line after starting from the grid position
+    //every other crossing of the line runs the following...
+
+    //"Lap 0" is not a lap. It is the time taken to cross the line after starting from the grid position
     if (driverLapData.totalLaps == 0) {
-        //this is lap0 for everyone except the very first car to cross the line (we already handled him, above)
+        //this is lap 0 for everyone except the very first car to cross the line (we already handled him, above)
         console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + race.startTime);
         console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - race.startTime));
         //this is just to indicate in the UI they crossed the line for the first time after lights out
-        // we don't any lap time calculations for this "lap"
+        // we don't perform any lap time calculations for this "lap"
         driverLapData.lastLapTime = 0.000; 
         driverLapData.lastMessageTime = race.startTime;
         return [driverLapData, race];
     } 
-    
-    /*
-    if (driverLapData.totalLaps == 1) {
-        //lap 1
-        //Special case, first countable lap for this driver, we time our lap from the time point the 
-        //  very first driver crossed the line (our pseudo race start)
-        lastMsgTime = race.startTime;
-        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + race.startTime);
 
-    } else if (driverLapData.totalLaps > 1) {
-    */
     lastMsgTime = driverLapData.lastMessageTime
     console.log("DDDD  totalLaps>1, ID: " + newLapMsg.car + " lastMessageTime: " + lastMsgTime);
-    //}
 
     //Calculate lap times
     console.log("r.time: " + newLapMsg.time + "    | lastMsgTime: " + lastMsgTime);
