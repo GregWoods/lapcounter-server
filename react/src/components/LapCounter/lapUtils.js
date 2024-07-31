@@ -69,11 +69,9 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
 export const calculateLapTime = (
     newLapMsg, 
     driverLapData, 
-    race,
-    fastestLap, setFastestLap) => {
+    race) => {
 
     driverLapData.totalLaps += 1;
-    driverLapData.absoluteRaceTime = newLapMsg.time;
 
     if (DEBUG) { console.log("Total laps for driver: ", driverLapData.totalLaps); }
 
@@ -122,17 +120,6 @@ export const calculateLapTime = (
         driverLapData.bestLapTime = tempCalcLapTime;
     }
 
-    //Need to distinguish between fastest lap for the race, and fastest lap for the day
-    //To be moved to LapCounter.jsx
-    //set new fastest lap
-    if (fastestLap !== null) {
-        if (tempCalcLapTime < Number(fastestLap)) {
-            setFastestLap(tempCalcLapTime.toFixed(3));
-        }
-    } else {
-        //no fastest lap has been set... so this lap is now fastest
-        setFastestLap(tempCalcLapTime.toFixed(3));
-    }
     driverLapData.lastMessageTime = newLapMsg.time;
     return [driverLapData, race];
 }

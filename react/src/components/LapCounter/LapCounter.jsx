@@ -118,12 +118,12 @@ const LapCounter = () => {
 
     //used internally by processLaps
     const lapDataDefault = [
-        {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastlaptime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 }
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 }
     ];
     const [lapData, setLapData] = useState([...lapDataDefault]);
     const lapDataRef = useRef();
@@ -248,7 +248,7 @@ const LapCounter = () => {
     //This is a callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
     //  Hence we need to use useRef to access the current state values
     const processLapMsg = (lapMsg) => {
-        console.log("INCOMING LAP DATA: ", lapMsg)
+        //console.log("INCOMING LAP DATA: ", lapMsg)
         if (!hasRaceStartedRef.current || racePausedRef.current) { return }
         
         const carIdx = lapMsg.car - 1;
@@ -256,7 +256,7 @@ const LapCounter = () => {
         const oldLap = laps[carIdx];
         
         //convert websocket message into useful lap data
-        console.log("==ProcessMessage, car:" + lapMsg.car);
+        //console.log("==ProcessMessage, car:" + lapMsg.car);
 
         const [newLap, newRace] = calculateLapTime(lapMsg, oldLap, 
             //firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
@@ -267,6 +267,29 @@ const LapCounter = () => {
         setLapData(laps);
 
         setRace(newRace);
+
+        console.log('=-=-=-=- newLap, newRace -=-=-=-=');
+        console.dir(newLap);
+        console.dir(newRace);
+
+        /*
+        //Fastest lap of the day now goes here..
+
+        //Need to distinguish between fastest lap for the race, and fastest lap for the day
+        //To be moved to LapCounter.jsx
+        //set new fastest lap
+        if (fastestLap !== null) {
+            if (tempCalcLapTime < Number(fastestLap)) {
+                setFastestLap(tempCalcLapTime.toFixed(3));
+            }
+        } else {
+            //no fastest lap has been set... so this lap is now fastest
+            setFastestLap(tempCalcLapTime.toFixed(3));
+        }
+
+        */
+
+
 
         //Set Fastest Lap for this Race. Used to display purple lap time for a driver
         //  we do it here and not in processLapjs processMessage, because here, we only run it if the race is underway
