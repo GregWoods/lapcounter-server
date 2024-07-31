@@ -98,15 +98,16 @@ export const processMessage = (newLapMsg, driverLapData, //firstCarCrossedStart,
     //every other crossing of the line goes here
     
     //yes, there is duplication in these conditions. I stand by it, as it helps keep the logic clear
+    //  I'm also not keen on the early return... but the nesting would be worse.
 
-    //"Lap 0" is not lap. It is the time they crossed the line after starting from the grid
+    //"Lap 0" is not lap. It is the time taken to cross the line after starting from the grid position
     if (driverLapData.totalLaps == 0) {
         //this is lap0 for everyone except the very first car to cross the line (we already handled him, above)
         console.log("BBBB  totalLaps=0, ID: " + newLapMsg.car + " raceStartTime: " + raceStartTimeRef.current);
         console.log("BBBB Lap 0 offset to lead driver: " + (newLapMsg.time - raceStartTimeRef.current));
         //this is just to indicate in the UI they crossed the line for the first time after lights out
         // we don't any lap time calculations for this "lap"
-        driverLapData.lastLapTime = 0.00; 
+        driverLapData.lastLapTime = 0.000; 
         driverLapData.lastMessageTime = newLapMsg.time;
         return driverLapData;
     } 
@@ -128,14 +129,13 @@ export const processMessage = (newLapMsg, driverLapData, //firstCarCrossedStart,
     tempCalcLapTime = newLapMsg.time - lastMsgTime;
     driverLapData.lastLapTime = tempCalcLapTime;
 
-    //Calc driver best lap time
+    //Calc driver best lap time - leave this in here, because here we know about this lap and the previous one
     if (tempCalcLapTime < driverLapData.bestLapTime) {
         driverLapData.bestLapTime = tempCalcLapTime;
     }
 
-    //this function has too many side effects. it modified the return values and sets other global properties. 
-    // this whole area needs refactoring
-
+    //Need to distinguish between fastest lap for the race, and fastest lap for the day
+    //To be moved to LapCounter.jsx
     //set new fastest lap
     if (fastestLap !== null) {
         if (tempCalcLapTime < Number(fastestLap)) {
