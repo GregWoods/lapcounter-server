@@ -29,13 +29,13 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    /*
+    
     //developer defaults
     defaultConfig = {...defaultConfig,
         mqtthost: "ws://127.0.0.1:8080",
         apihost: "http://127.0.0.1:5001"
     };
-    */
+    
 
     let defaultRace = { 
         firstCarCrossedStart: false,
@@ -43,15 +43,18 @@ const LapCounter = () => {
         fastestLap: 99.999
     };
 
-    const [config, setConfig] = useLocalStorageState('config', defaultConfig);
+    const [config, setConfig] = useLocalStorageState('config', {defaultValue: defaultConfig});
 
-    const [race, setRace] = useLocalStorageState('race', defaultRace);
+    const [race, setRace] = useLocalStorageState('race', {defaultValue: defaultRace});
     const raceRef = useRef();
     raceRef.current = race;
 
-    //const [stats, setStats] = useLocalStorageState('stats');
-    //const stateRef = useRef();
-    //statsRef.current = stats;
+    const [stats, setStats] = useLocalStorageState('stats', {defaultValue: {
+        fastestLapToday: '99.999', 
+        fastestLapTodayUpdatedOn: Date()
+    }});
+    const statsRef = useRef();
+    statsRef.current = stats;
 
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
@@ -67,10 +70,6 @@ const LapCounter = () => {
     //    If we didn't use Refs (or some similar technique), then referring to the state
     //    variables would always return the initial value rather than the current value.
 
-
-    const [fastestLapToday, setFastestLapToday] = useState(localStorage.getItem("config_fastestLapToday"));
-    const fastestLapTodayRef = useRef();
-    fastestLapTodayRef.current = fastestLapToday;
 
     const [hasRaceStarted, setHasRaceStarted] = useState(false);
     const hasRaceStartedRef = useRef();
@@ -92,18 +91,21 @@ const LapCounter = () => {
     }
 
     const storeFastestLapToday = (lapTime) => {
-        localStorage.setItem("config_fastestLapToday", lapTime);
-        localStorage.setItem("config_fastestLapTodayUpdatedOn", Date());
-        setFastestLapToday(lapTime);
+        setStats({...statsRef.current, 
+            fastestLapToday: lapTime, 
+            fastestLapTodayUpdatedOn: Date()
+        });
     }
 
-    const resetTodaysFastestLap = () => {
-        //  reset lap record if it is more than 24h old. Good enough!
-        var fastestLapTodayUpdatedOn = new Date(localStorage.getItem("config_fastestLapTodayUpdatedOn")).getTime();
-        var now = new Date();
-        var twentyFourhoursAgo = now.setDate(now.getDate() - 1);
-
-        if (fastestLapToday === '' || fastestLapToday === null || fastestLapTodayUpdatedOn < twentyFourhoursAgo) {
+    const resetExpiredFastestLapToday = () => {
+        //  reset lap record if it is more than 24h old
+        const fastestLapTodayUpdatedOn = statsRef.current.fastestLapTodayUpdatedOn;
+        const fastestLapTodayUpdatedOnDate = new Date(fastestLapTodayUpdatedOn).getTime();
+        const now = new Date();
+        const twentyFourhoursAgo = now.setDate(now.getDate() - 1);
+        const fastestLapToday = statsRef.current.fastestLapToday;
+        
+        if (fastestLapToday === '' || fastestLapToday === null || fastestLapTodayUpdatedOnDate < twentyFourhoursAgo) {
             resetFastestLapToday();
         }
     }
@@ -113,17 +115,17 @@ const LapCounter = () => {
     }
 
     //setup localstorage defaults
-    resetTodaysFastestLap();
+    resetExpiredFastestLapToday();
 
 
     //used internally by processLaps
     const lapDataDefault = [
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.99 }
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 }
     ];
     const [lapData, setLapData] = useState([...lapDataDefault]);
     const lapDataRef = useRef();
@@ -149,7 +151,7 @@ const LapCounter = () => {
         hasStartedRacing: false
     }
 
-    var initialDrivers = []
+    let initialDrivers = []
     if (localStorage.getItem("drivers") == null) {
         initialDrivers = [
             {...driverDataDefault, number: 1, name: 'Driver A'},
@@ -220,7 +222,7 @@ const LapCounter = () => {
         setLapData([...lapDataDefault]);
 
         const newDrivers = [];
-        for (var driver of drivers) {
+        for (const driver of drivers) {
             newDrivers.push({...driver, 
                 lastLap: '', 
                 fastestLap: '', 
@@ -258,11 +260,11 @@ const LapCounter = () => {
         //convert websocket message into useful lap data
         //console.log("==ProcessMessage, car:" + lapMsg.car);
 
-        const [newLap, newRace] = calculateLapTime(lapMsg, oldLap, 
-            //firstCarCrossedStartRef.current, setFirstCarCrossedStart, 
-            raceRef.current,
-            fastestLapTodayRef.current, storeFastestLapToday);
-        
+        const [newLap, newRace] = calculateLapTime(
+            lapMsg, 
+            oldLap, 
+            raceRef.current);
+
         laps[carIdx] = newLap;
         setLapData(laps);
 
@@ -272,39 +274,15 @@ const LapCounter = () => {
         console.dir(newLap);
         console.dir(newRace);
 
-        /*
-        //Fastest lap of the day now goes here..
-
-        //Need to distinguish between fastest lap for the race, and fastest lap for the day
-        //To be moved to LapCounter.jsx
-        //set new fastest lap
-        if (fastestLap !== null) {
-            if (tempCalcLapTime < Number(fastestLap)) {
-                setFastestLap(tempCalcLapTime.toFixed(3));
-            }
-        } else {
-            //no fastest lap has been set... so this lap is now fastest
-            setFastestLap(tempCalcLapTime.toFixed(3));
+        //Fastest lap of the day
+        console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(fastestLapToday): ${Number(statsRef.current.fastestLapToday)}`);
+        if (newLap.bestLapTime < Number(statsRef.current.fastestLapToday)) {
+            storeFastestLapToday(newLap.bestLapTime.toFixed(3));
         }
-
-        */
-
-
-
-        //Set Fastest Lap for this Race. Used to display purple lap time for a driver
-        //  we do it here and not in processLapjs processMessage, because here, we only run it if the race is underway
-        //console.log("RACE FASTEST LAP: " + newLap.bestLapTime + " : " + raceFastestLapRef.current + " : " + newLap.bestLapTime <= raceFastestLapRef.current);
-
-        /*
-        if (newLap.bestLapTime <= raceFastestLapRef.current) {
-            setRaceFastestLap(newLap.bestLapTime.toFixed(3));
-            //console.log("New fastest Lap: " + newLap.bestLapTime);
-        }
-        */
 
         console.log(`newRace.startTime: ${newRace.startTime}`)
         //create "drivers" view-model from lap data
-        var modifiedDrivers = modifyDriversViewModel(
+        const modifiedDrivers = modifyDriversViewModel(
                 driversRef.current, 
                 carIdx, 
                 newLap, 
@@ -345,7 +323,7 @@ const LapCounter = () => {
                     onStartCountdown={handleStartCountdown}
                     onGoGoGo={handleGoGoGo}
 
-                    fastestLapToday={fastestLapToday}
+                    fastestLapToday={statsRef.current.fastestLapToday}
                     hasRaceStarted={hasRaceStarted}
                     onRaceEnd={handleManualRaceEnd}
                     yellowFlagAdvantageDuration = {3.8}

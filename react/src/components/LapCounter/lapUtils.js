@@ -22,7 +22,7 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
         "fastestLap": lapData.bestLapTime < 999 ? lapData.bestLapTime.toFixed(3) : '',
         "lapsRemaining": (lapData.totalLaps < targetLaps) ? targetLaps - lapData.totalLaps : 0,
         "lapsCompleted": lapData.totalLaps,
-        "totalRaceTime": (lapData.absoluteRaceTime - absoluteRaceStartTime).toFixed(3),
+        "totalRaceTime": (lapData.lastMessageTime - absoluteRaceStartTime).toFixed(3),
         "hasStartedRacing": true
     }
     //if (driverInfo.raceFastestLap) console.log("New Fastest Lap: " + driverInfo.fastestLap);
@@ -39,7 +39,6 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
     newDrivers.sort(driverSorter);
     const p1LapsRemaining = newDrivers[0].lapsRemaining;
 
-    //get latest absoluteRaceTime
     const latestRaceTime = Math.max.apply(null, drivers.map(function(drv) { return drv.totalRaceTime; }))
 
     //Do stuff which applies to all drivers at once, like determining position
@@ -86,10 +85,11 @@ export const calculateLapTime = (
         console.log("AAAA race start time: " + race.startTime);
 
         //this is just to indicate in the UI they crossed the line for the first time after lights out
-        driverLapData.lastLapTime = 0.00;
+        driverLapData.lastLapTime = 0.000;
 
         //the first driver to cross the line still needs their lastMessageTime setting, just like everyone else on their lap 0
         driverLapData.lastMessageTime = newLapMsg.time;
+        //driverLapData = {...driverLapData, lastMessageTime: newLapMsg.time};
         return [driverLapData, race];
     } 
 
@@ -103,12 +103,24 @@ export const calculateLapTime = (
         //this is just to indicate in the UI they crossed the line for the first time after lights out
         // we don't perform any lap time calculations for this "lap"
         driverLapData.lastLapTime = 0.000; 
-        driverLapData.lastMessageTime = race.startTime;
+        //for the next lap's lap time calulation, ```driverLapData.lastMessageTime = race.startTime``` is needed...
+        //  But so that the lap 0 sorting doesn't go completely random, we need to record the actual time the car crossed the line.
+        //  We then add a condition to account for this in the Lap 1 condition below
+        driverLapData.lastMessageTime = newLapMsg.time;
         return [driverLapData, race];
     } 
 
-    lastMsgTime = driverLapData.lastMessageTime
-    console.log("DDDD  totalLaps>1, ID: " + newLapMsg.car + " lastMessageTime: " + lastMsgTime);
+    
+    if (driverLapData.totalLaps == 1) {
+        //lap 1
+        //Special case, first countable lap for this driver, we time our lap from the time point the 
+        //  very first driver crossed the line (our pseudo race start)
+        lastMsgTime = race.startTime;
+        console.log("CCCC  totalLaps=1, ID: " + newLapMsg.car + " raceStartTime: " + race.startTime);
+    } else if (driverLapData.totalLaps > 1) {
+        lastMsgTime = driverLapData.lastMessageTime
+        console.log("DDDD  totalLaps>1, ID: " + newLapMsg.car + " lastMessageTime: " + lastMsgTime);
+    }
 
     //Calculate lap times
     console.log("r.time: " + newLapMsg.time + "    | lastMsgTime: " + lastMsgTime);
