@@ -287,7 +287,7 @@ const LapCounter = () => {
                 carIdx, 
                 newLap, 
                 raceTypeRef.current.details.laps, 
-                newRace.fastestLap,
+                statsRef.current.fastestLapToday,
                 newRace.startTime        //Feels like this shouldn't be needed. All calcs that might need this should have been done??
         );
 

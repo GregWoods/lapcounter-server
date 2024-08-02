@@ -35,8 +35,10 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
     //amend one row
     newDrivers[idx] = driverInfo
 
+
     //amend position info for all drivers... by sorting the array
     newDrivers.sort(driverSorter);
+
     const p1LapsRemaining = newDrivers[0].lapsRemaining;
 
     const latestRaceTime = Math.max.apply(null, drivers.map(function(drv) { return drv.totalRaceTime; }))
@@ -45,11 +47,11 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
     newDrivers.forEach((driver, idx) => { 
         driver.position = idx+1; 
         driver.p1LapsRemaining = p1LapsRemaining;
-        driver.isRaceFastestLap = !isNaN(parseFloat(driver.fastestLap)) && parseFloat(driver.fastestLap) == parseFloat(raceFastestLap);
-
+        driver.isRaceFastestLap = driver.fastestLap == raceFastestLap;
         //suspend a driver who hasn't posted a lap in 'suspendAfter' seconds
         driver.suspended = (parseInt(driver.totalRaceTime) + suspendAfter) < latestRaceTime;
     });
+    
     //now re-sort by driver number, so we have the original ordering.
     //  any visual reordering will be done with css "order"
     newDrivers.sort((a, b) => a.number - b.number);

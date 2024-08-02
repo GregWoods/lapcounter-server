@@ -14,22 +14,31 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
         //}
     }
 
-    const fastestLapClass = (driver.isRaceFastestLap) ? "fastestlaptime raceFastestLap" : "fastestlaptime personalFastestLap";
 
-
-    const driverPosition = driver.position;
-
-
-    let lastLapClass = "lastlaptime";
-    if  (driver.lastLap == driver.fastestLap) {
+    let lastLapClass = 'lastlaptime';
+    let fastestLapClass = 'fastestlaptime';
+    if (driver.lastLap == driver.fastestLap) {
+        //last lap broke the fastest lap
         if (driver.isRaceFastestLap) {
-            lastLapClass += " raceFastestLap"
+            //last lap was also race fastest lap
+            //both purple
+            lastLapClass += ' raceFastestLap';
+            fastestLapClass += ' raceFastestLap';
         } else {
-            lastLapClass += " personalFastestLap"
+            //both green
+            lastLapClass += ' personalFastestLap';
+            fastestLapClass += ' personalFastestLap';
+        }
+    } else {
+        //last lap was not fastest lap
+        //  but driver with race fastest still shows their fastest lap time in purple
+        if (driver.isRaceFastestLap) {
+            fastestLapClass += ' raceFastestLap';
         }
     }
 
 
+    const driverPosition = driver.position;
 
     return (
         <div className={className} data-order={driverPosition}>
