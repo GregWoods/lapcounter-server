@@ -29,17 +29,20 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    /*
+    
     //developer defaults
     defaultConfig = {...defaultConfig,
         mqtthost: "ws://127.0.0.1:8080",
         apihost: "http://127.0.0.1:5001"
     };
-    */
+    
 
-    let defaultRace = { 
+    let defaultRace = {
+        hasRaceStarted: false,
+        underStartersOrders: false,
         firstCarCrossedStart: false,
         startTime: null,
+        racePaused: false,
         fastestLap: 99.999,
         numberOfDriversRacing: 0
     };
@@ -69,21 +72,13 @@ const LapCounter = () => {
     //    If we didn't use Refs (or some similar technique), then referring to the state
     //    variables would always return the initial value rather than the current value.
 
-
-    const [hasRaceStarted, setHasRaceStarted] = useState(false);
-    const hasRaceStartedRef = useRef();
-    hasRaceStartedRef.current = hasRaceStarted;
-
     const [raceType, setRaceType] = useState(null);
     const raceTypeRef = useRef();
     raceTypeRef.current = raceType;
 
-
     const racePausedRef = useRef();
     racePausedRef.current = false;
 
-    const [underStartersOrders, setUnderStartersOrders] = useState(false);
-    
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtthost: newMqttHost});
         localStorage.setItem("config", config);
@@ -185,13 +180,20 @@ const LapCounter = () => {
 
     const handleStartCountdown = (raceTypeObj) => {
         resetRaceValues(raceTypeObj);
-        setUnderStartersOrders(true);
+
+        setRace({...raceRef.current, 
+            underStartersOrders:true,
+            hasRaceStarted:false,
+            racePaused:false
+        });
     }
 
     const handleGoGoGo = () => {
-        setHasRaceStarted(true);
-        setUnderStartersOrders(false);
-        racePausedRef.current = false;
+        setRace({...raceRef.current, 
+            underStartersOrders:false, 
+            hasRaceStarted:true, 
+            racePaused:false
+        });
 
         //ideally we'd set raceStartTime.current = wsMsg.time when the lights go out,
         //  but we don't have that time info which is obtained from the server side python.
@@ -201,22 +203,17 @@ const LapCounter = () => {
         //  until the first car crosses the line.
     }
 
-    const handleManualRaceEnd = () => {
-        console.log("handleManualRaceEnd inside LapCounter");
-        setHasRaceStarted(false);
-    }    
-
     const handleRaceEnd = () => {
-        setHasRaceStarted(false);
-        racePausedRef.current = false;
+        //must use raceRef.current here, as this is being called from the mqtt callback
+        //  "race" will always be the initial values in this and similar callbacks
+        setRace({...raceRef.current, 
+            underStartersOrders:false, 
+            hasRaceStarted:false, 
+            racePaused:false
+        });
     }
 
     const resetRaceValues = (raceTypeObj) => {
-        //TODO: this is first place we should use localStorage.
-        //  the goal is to resume a race in the event of browser refresh, so all driver info and race
-        //  statuses need to be stored
-
-        //console.log("LapCounter:resetRaceValues"), raceTypeObj;
         setLapData([...lapDataDefault]);
 
         const newDrivers = [];
@@ -237,18 +234,17 @@ const LapCounter = () => {
         }
         setDrivers(newDrivers);
         setRaceType(raceTypeObj);
-        setHasRaceStarted(false);
-        racePausedRef.current = false;
 
         setRace(defaultRace);
+        console.log(">>>>>>> resetRaceValues <<<<<<<<<<<");
     }
 
 
-    //This is a callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
+    //This is the callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
     //  Hence we need to use useRef to access the current state values
     const processLapMsg = (lapMsg) => {
-        //console.log("INCOMING LAP DATA: ", lapMsg)
-        if (!hasRaceStartedRef.current || racePausedRef.current) { return }
+        console.log("INCOMING LAP DATA: ", lapMsg)
+        if (!raceRef.current.hasRaceStarted || raceRef.current.racePaused) { return }
         
         const carIdx = lapMsg.car - 1;
         const laps = lapDataRef.current
@@ -274,7 +270,6 @@ const LapCounter = () => {
         //Fastest lap of this race
         console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(newRace.fastestLap): ${Number(newRace.fastestLap)}`);
         if (newLap.bestLapTime < Number(newRace.fastestLap)) {
-            //newRace = {...newRace, fastestLap: newLap.bestLapTime.toFixed(3)};
             newRace.fastestLap = newLap.bestLapTime.toFixed(3);
         }
 
@@ -291,9 +286,8 @@ const LapCounter = () => {
                 carIdx, 
                 newLap, 
                 raceTypeRef.current.details.laps, 
-                //statsRef.current.fastestLapToday,
                 newRace.fastestLap,
-                newRace.startTime        //Feels like this shouldn't be needed. All calcs that might need this should have been done??
+                newRace.startTime
         );
 
         console.log('modifiedDrivers');
@@ -332,8 +326,8 @@ const LapCounter = () => {
                     onGoGoGo={handleGoGoGo}
 
                     fastestLapToday={statsRef.current.fastestLapToday}
-                    hasRaceStarted={hasRaceStarted}
-                    onRaceEnd={handleManualRaceEnd}
+                    hasRaceStarted={race.hasRaceStarted}
+                    onRaceEnd={handleRaceEnd}
                     yellowFlagAdvantageDuration = {3.8}
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
                     onYellowFlag={() => {racePausedRef.current = true;}}
@@ -342,12 +336,12 @@ const LapCounter = () => {
                 />
                 <div id="driverCardOuter">
                     <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
-                        <DriverCard driver={drivers[0]} underStartersOrders={underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
-                        <DriverCard driver={drivers[1]} underStartersOrders={underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
-                        <DriverCard driver={drivers[2]} underStartersOrders={underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
-                        <DriverCard driver={drivers[3]} underStartersOrders={underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
-                        <DriverCard driver={drivers[4]} underStartersOrders={underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
-                        <DriverCard driver={drivers[5]} underStartersOrders={underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
+                        <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
+                        <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
+                        <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
+                        <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
+                        <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
+                        <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
                     </div>
                 </div>
             </div>
