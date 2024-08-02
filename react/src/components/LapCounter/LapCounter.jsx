@@ -29,18 +29,19 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    
+    /*
     //developer defaults
     defaultConfig = {...defaultConfig,
         mqtthost: "ws://127.0.0.1:8080",
         apihost: "http://127.0.0.1:5001"
     };
-    
+    */
 
     let defaultRace = { 
         firstCarCrossedStart: false,
         startTime: null,
-        fastestLap: 99.999
+        fastestLap: 99.999,
+        numberOfDriversRacing: 0
     };
 
     const [config, setConfig] = useLocalStorageState('config', {defaultValue: defaultConfig});
@@ -61,8 +62,6 @@ const LapCounter = () => {
 
     const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
-
-    const [numberOfDriversRacing, setNumberOfDriversRacing] = useState(0);
 
     // Using refs...
     //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
@@ -239,7 +238,6 @@ const LapCounter = () => {
         setDrivers(newDrivers);
         setRaceType(raceTypeObj);
         setHasRaceStarted(false);
-        setNumberOfDriversRacing(0);
         racePausedRef.current = false;
 
         setRace(defaultRace);
@@ -276,10 +274,9 @@ const LapCounter = () => {
         //Fastest lap of this race
         console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(newRace.fastestLap): ${Number(newRace.fastestLap)}`);
         if (newLap.bestLapTime < Number(newRace.fastestLap)) {
-            newRace = {...newRace, fastestLap: newLap.bestLapTime.toFixed(3)};
+            //newRace = {...newRace, fastestLap: newLap.bestLapTime.toFixed(3)};
+            newRace.fastestLap = newLap.bestLapTime.toFixed(3);
         }
-
-        setRace(newRace);
 
         //Fastest lap of the day
         console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(fastestLapToday): ${Number(statsRef.current.fastestLapToday)}`);
@@ -307,17 +304,20 @@ const LapCounter = () => {
             return acc + Number(driver.hasStartedRacing);
         }, 0);
         console.log(`Number of Drivers Racing: ${numberOfDriversRacing}`);
-        setNumberOfDriversRacing(numberOfDriversRacing);
+        newRace.numberOfDriversRacing = numberOfDriversRacing;
+
+        setRace(newRace);
 
         checkEndOfRace(modifiedDrivers, handleRaceEnd);
     }
+
 
     const handleRaceTypeChange = (raceTypeObj) => {
         console.log("LapCounter:handleRaceTypeChange", raceTypeObj);
         setRaceType(raceTypeObj);
     }
 
-    const numberOfDriversRacingClassName = `numberOfDriversRacing${numberOfDriversRacing}`; 
+    const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`; 
     
     return (
         <div id="top">
