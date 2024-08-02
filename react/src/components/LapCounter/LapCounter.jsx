@@ -99,8 +99,7 @@ const LapCounter = () => {
 
     const resetExpiredFastestLapToday = () => {
         //  reset lap record if it is more than 24h old
-        const fastestLapTodayUpdatedOn = statsRef.current.fastestLapTodayUpdatedOn;
-        const fastestLapTodayUpdatedOnDate = new Date(fastestLapTodayUpdatedOn).getTime();
+        const fastestLapTodayUpdatedOnDate = new Date(statsRef.current.fastestLapTodayUpdatedOn).getTime();
         const now = new Date();
         const twentyFourhoursAgo = now.setDate(now.getDate() - 1);
         const fastestLapToday = statsRef.current.fastestLapToday;
@@ -260,7 +259,7 @@ const LapCounter = () => {
         //convert websocket message into useful lap data
         //console.log("==ProcessMessage, car:" + lapMsg.car);
 
-        const [newLap, newRace] = calculateLapTime(
+        let [newLap, newRace] = calculateLapTime(
             lapMsg, 
             oldLap, 
             raceRef.current);
@@ -268,11 +267,19 @@ const LapCounter = () => {
         laps[carIdx] = newLap;
         setLapData(laps);
 
-        setRace(newRace);
+        
 
         console.log('=-=-=-=- newLap, newRace -=-=-=-=');
         console.dir(newLap);
         console.dir(newRace);
+
+        //Fastest lap of this race
+        console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(newRace.fastestLap): ${Number(newRace.fastestLap)}`);
+        if (newLap.bestLapTime < Number(newRace.fastestLap)) {
+            newRace = {...newRace, fastestLap: newLap.bestLapTime.toFixed(3)};
+        }
+
+        setRace(newRace);
 
         //Fastest lap of the day
         console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(fastestLapToday): ${Number(statsRef.current.fastestLapToday)}`);
@@ -287,7 +294,8 @@ const LapCounter = () => {
                 carIdx, 
                 newLap, 
                 raceTypeRef.current.details.laps, 
-                statsRef.current.fastestLapToday,
+                //statsRef.current.fastestLapToday,
+                newRace.fastestLap,
                 newRace.startTime        //Feels like this shouldn't be needed. All calcs that might need this should have been done??
         );
 

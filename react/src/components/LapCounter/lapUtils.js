@@ -51,7 +51,7 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
         //suspend a driver who hasn't posted a lap in 'suspendAfter' seconds
         driver.suspended = (parseInt(driver.totalRaceTime) + suspendAfter) < latestRaceTime;
     });
-    
+
     //now re-sort by driver number, so we have the original ordering.
     //  any visual reordering will be done with css "order"
     newDrivers.sort((a, b) => a.number - b.number);
@@ -133,6 +133,9 @@ export const calculateLapTime = (
     if (tempCalcLapTime < driverLapData.bestLapTime) {
         driverLapData.bestLapTime = tempCalcLapTime;
     }
+
+    //Check for fastest race lap
+    
 
     driverLapData.lastMessageTime = newLapMsg.time;
     return [driverLapData, race];
