@@ -47,7 +47,7 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
                 <div>{driver.name}</div>
             </div>
             <div className="carimg" onClick={onRequestOpenCarSelector}>
-                <img alt="FSR Logo" src="../../images/cars/car0.png" />
+                <img alt="Car Image" src={driver.carImgUrl ?? '../../images/cars/car0.png'} />
             </div>
 
             <div className="drivercontent">

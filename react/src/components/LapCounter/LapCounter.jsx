@@ -29,13 +29,13 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    /*
+    
     //developer defaults
     defaultConfig = {...defaultConfig,
         mqtthost: "ws://127.0.0.1:8080",
         apihost: "http://127.0.0.1:5001"
     };
-    */
+    
 
     let defaultRace = {
         raceType: defaultConfig.racepresets[0],
@@ -81,6 +81,35 @@ const LapCounter = () => {
     lapDataRef.current = lapData;
 
 
+    //The drivers viewmodel
+    const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
+    const driverDataDefault = {
+        lastLap: '', 
+        fastestLap: '', 
+        isRaceFastestLap: false, 
+        lapsRemaining: lapsPerRace, 
+        p1LapsRemaining: lapsPerRace, 
+        lapsCompleted: -1, 
+        totalRaceTime: null, 
+        position: null, 
+        finished: false, 
+        suspended: false,
+        hasStartedRacing: false,
+        //carImgUrl: null
+    };
+    const initialDrivers = [
+        {...driverDataDefault, number: 1, name: 'Driver A'},
+        {...driverDataDefault, number: 2, name: 'Driver B'},
+        {...driverDataDefault, number: 3, name: 'Driver C'},
+        {...driverDataDefault, number: 4, name: 'Driver D'},
+        {...driverDataDefault, number: 5, name: 'Driver E'},
+        {...driverDataDefault, number: 6, name: 'Driver F'}
+    ];
+    const [drivers, setDrivers] = useLocalStorageState('drivers', {defaultValue: [...initialDrivers]});
+    const driversRef = useRef();
+    driversRef.current = drivers;
+
+
     //Normal state variables for simple, non persistent state, such as dialog open state
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
@@ -90,6 +119,12 @@ const LapCounter = () => {
 
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtthost: newMqttHost});
+    }
+
+    const saveCars = (carImgUrls) => {
+        console.dir(carImgUrls);
+        //Not Implemented
+        //take the ordered list of car img urls and insert into the coresponding drivers array
     }
 
     const storeFastestLapToday = (lapTime) => {
@@ -116,48 +151,6 @@ const LapCounter = () => {
     }
 
     resetExpiredFastestLapToday();
-
-    //The viewmodel
-    const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
-    const driverDataDefault = {
-        number: 99, 
-        name: 'Driver X', 
-        lastLap: '', 
-        fastestLap: '', 
-        isRaceFastestLap: false, 
-        lapsRemaining: lapsPerRace, 
-        p1LapsRemaining: lapsPerRace, 
-        lapsCompleted: -1, 
-        totalRaceTime: 0, 
-        position: 0, 
-        finished: false, 
-        suspended: false,
-        hasStartedRacing: false
-    }
-
-    let initialDrivers = []
-    if (localStorage.getItem("drivers") == null) {
-        initialDrivers = [
-            {...driverDataDefault, number: 1, name: 'Driver A'},
-            {...driverDataDefault, number: 2, name: 'Driver B'},
-            {...driverDataDefault, number: 3, name: 'Driver C'},
-            {...driverDataDefault, number: 4, name: 'Driver D'},
-            {...driverDataDefault, number: 5, name: 'Driver E'},
-            {...driverDataDefault, number: 6, name: 'Driver F'}
-        ];
-    } else {
-        initialDrivers = JSON.parse(localStorage.getItem("drivers"))
-    }
-
-    const [drivers, setDrivers] = useState(initialDrivers);
-    const driversRef = useRef();
-    driversRef.current = drivers;
-
-
-    const saveDrivers = (drivers) => {
-        setDrivers(drivers);
-        localStorage.setItem("drivers", JSON.stringify(driversRef.current));
-    }
 
     const openDriverNamesModal = (driverIdx) => {
         setDriverNamesModalDriverIdx(driverIdx);
@@ -209,18 +202,11 @@ const LapCounter = () => {
 
         const newDrivers = [];
         for (const driver of drivers) {
-            newDrivers.push({...driver, 
-                lastLap: '', 
-                fastestLap: '', 
-                isRaceFastestLap: false,
+            newDrivers.push({
+                ...driver, 
+                ...driverDataDefault, 
                 lapsRemaining: raceTypeObj.details.laps, 
-                p1LapsRemaining: raceTypeObj.details.laps,
-                lapsCompleted: -1,
-                totalRaceTime: null, 
-                position: null,
-                finished: false,
-                suspended: false,
-                hasStartedRacing: false
+                p1LapsRemaining: raceTypeObj.details.laps
             });
         }
         setDrivers(newDrivers);
@@ -279,7 +265,7 @@ const LapCounter = () => {
 
         console.log('modifiedDrivers');
         console.dir(modifiedDrivers);
-        saveDrivers(modifiedDrivers);
+        setDrivers(modifiedDrivers);
 
         const numberOfDriversRacing = modifiedDrivers.reduce((acc, driver) => {
             return acc + Number(driver.hasStartedRacing);
@@ -337,7 +323,7 @@ const LapCounter = () => {
                 showMe={driverNamesModalShown}
                 onClose={() => setDriverNamesModalShown(false)}
                 drivers={drivers}
-                setDrivers={(d) => saveDrivers(d)} 
+                setDrivers={setDrivers} 
                 driverIdxToFocus={driverNamesModalDriverIdx} 
             />
 
@@ -346,9 +332,10 @@ const LapCounter = () => {
                 onClose={() => setCarSelectorModalShown(false)}
                 carImgListUrl={config.apihost + '/api/cars'}
                 drivers={drivers}
-                setDrivers={(d) => saveDrivers(d)} 
-                driverIdxToFocus={carSelectorModalDriverIdx} 
-            />        
+                setDrivers={setDrivers}
+                driverIdx={carSelectorModalDriverIdx} 
+                setDriverIdx={setCarSelectorModalDriverIdx}
+            />
        
         </div>
     );
