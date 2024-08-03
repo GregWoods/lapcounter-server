@@ -67,6 +67,20 @@ const LapCounter = () => {
     const statsRef = useRef();
     statsRef.current = stats;
 
+    //used internally by processLaps
+    const lapDataDefault = [
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
+        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 }
+    ];
+    const [lapData, setLapData] = useLocalStorageState('lap', {defaultValue: [...lapDataDefault]});
+    const lapDataRef = useRef();
+    lapDataRef.current = lapData;
+
+
     //Normal state variables for simple, non persistent state, such as dialog open state
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
@@ -101,27 +115,10 @@ const LapCounter = () => {
         storeFastestLapToday("99.999");
     }
 
-    //setup localstorage defaults
     resetExpiredFastestLapToday();
-
-
-    //used internally by processLaps
-    const lapDataDefault = [
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 }
-    ];
-    const [lapData, setLapData] = useState([...lapDataDefault]);
-    const lapDataRef = useRef();
-    lapDataRef.current = lapData;
-
 
     //The viewmodel
     const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
-
     const driverDataDefault = {
         number: 99, 
         name: 'Driver X', 
