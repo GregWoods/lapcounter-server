@@ -29,13 +29,13 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    
+    /*
     //developer defaults
     defaultConfig = {...defaultConfig,
         mqtthost: "ws://127.0.0.1:8080",
         apihost: "http://127.0.0.1:5001"
     };
-    
+    */
 
     let defaultRace = {
         raceType: defaultConfig.racepresets[0],
@@ -47,6 +47,12 @@ const LapCounter = () => {
         fastestLap: 99.999,
         numberOfDriversRacing: 0
     };
+
+    // Using refs...
+    //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
+    //  Each of the following values which are "ref'd up" are used inside the processLaps callback.
+    //    If we didn't use Refs (or some similar technique), then referring to the state
+    //    variables would always return the initial value rather than the current value.
 
     const [config, setConfig] = useLocalStorageState('config', {defaultValue: defaultConfig});
 
@@ -61,24 +67,15 @@ const LapCounter = () => {
     const statsRef = useRef();
     statsRef.current = stats;
 
+    //Normal state variables for simple, non persistent state, such as dialog open state
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
 
     const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
-    // Using refs...
-    //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
-    //  Each of the following values which are "ref'd up" are used inside the processLaps callback.
-    //    If we didn't use Refs (or some similar technique), then referring to the state
-    //    variables would always return the initial value rather than the current value.
-
-    const racePausedRef = useRef();
-    racePausedRef.current = false;
-
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtthost: newMqttHost});
-        localStorage.setItem("config", config);
     }
 
     const storeFastestLapToday = (lapTime) => {
@@ -323,8 +320,8 @@ const LapCounter = () => {
                     onRaceEnd={handleRaceEnd}
                     yellowFlagAdvantageDuration = {3.8}
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
-                    onYellowFlag={() => {racePausedRef.current = true;}}
-                    onEndYellowFlag={() => {racePausedRef.current = false;}}
+                    onYellowFlag={() => setRace({...race, racePaused: true})}
+                    onEndYellowFlag={() => setRace({...race, racePaused: false})}
                     resetFastestLapToday = {resetFastestLapToday}
                 />
                 <div id="driverCardOuter">
