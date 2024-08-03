@@ -38,12 +38,12 @@ const LapCounter = () => {
     
 
     let defaultRace = {
-        raceType: defaultConfig.racepresets[0],
-        hasRaceStarted: false,
+        type: defaultConfig.racepresets[0],
+        hasStarted: false,
         underStartersOrders: false,
-        firstCarCrossedStart: false,
+        firstCarCrossedStart: false,    //AKA: has race timing started
         startTime: null,
-        racePaused: false,
+        paused: false,
         fastestLap: 99.999,
         numberOfDriversRacing: 0
     };
@@ -168,15 +168,15 @@ const LapCounter = () => {
 
         setRace({...defaultRace, 
             underStartersOrders: true,
-            raceType: raceTypeObj
+            type: raceTypeObj
         });
     }
 
     const handleGoGoGo = () => {
         setRace({...raceRef.current, 
             underStartersOrders:false, 
-            hasRaceStarted:true, 
-            racePaused:false
+            hasStarted:true, 
+            paused:false
         });
 
         //ideally we'd set raceStartTime.current = wsMsg.time when the lights go out,
@@ -192,8 +192,8 @@ const LapCounter = () => {
         //  "race" will always be the initial values in this and similar callbacks
         setRace({...raceRef.current, 
             underStartersOrders:false, 
-            hasRaceStarted:false, 
-            racePaused:false
+            hasStarted:false, 
+            paused:false
         });
     }
 
@@ -217,7 +217,7 @@ const LapCounter = () => {
     //  Hence we need to use useRef to access the current state values
     const processLapMsg = (lapMsg) => {
         console.log("INCOMING LAP DATA: ", lapMsg)
-        if (!raceRef.current.hasRaceStarted || raceRef.current.racePaused) { return }
+        if (!raceRef.current.hasStarted || raceRef.current.paused) { return }
         
         const carIdx = lapMsg.car - 1;
         const laps = lapDataRef.current
@@ -258,7 +258,7 @@ const LapCounter = () => {
                 driversRef.current, 
                 carIdx, 
                 newLap, 
-                raceRef.current.raceType.details.laps, 
+                raceRef.current.type.details.laps, 
                 newRace.fastestLap,
                 newRace.startTime
         );
@@ -281,7 +281,7 @@ const LapCounter = () => {
 
     const handleRaceTypeChange = (raceTypeObj) => {
         console.log("++++++++++++++ LapCounter:handleRaceTypeChange", raceTypeObj);
-        setRace({...raceRef.current, raceType: raceTypeObj});
+        setRace({...raceRef.current, type: raceTypeObj});
     }
 
     const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`; 
@@ -299,12 +299,12 @@ const LapCounter = () => {
                     onGoGoGo={handleGoGoGo}
 
                     fastestLapToday={statsRef.current.fastestLapToday}
-                    hasRaceStarted={race.hasRaceStarted}
+                    hasStarted={race.hasStarted}
                     onRaceEnd={handleRaceEnd}
                     yellowFlagAdvantageDuration = {3.8}
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
-                    onYellowFlag={() => setRace({...race, racePaused: true})}
-                    onEndYellowFlag={() => setRace({...race, racePaused: false})}
+                    onYellowFlag={() => setRace({...race, paused: true})}
+                    onEndYellowFlag={() => setRace({...race, paused: false})}
                     resetFastestLapToday = {resetFastestLapToday}
                 />
                 <div id="driverCardOuter">

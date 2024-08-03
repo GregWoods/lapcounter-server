@@ -16,7 +16,7 @@ function Header({
     onGoGoGo, 
     onStartCountdown,
     fastestLapToday, 
-    hasRaceStarted, 
+    hasStarted, 
     onRaceEnd,
     yellowFlagAdvantageDuration,
     onYellowFlagCountdown,
@@ -89,7 +89,7 @@ function Header({
 
     const handleKeyup = (evt) => {
         console.log(evt.key);
-        if (hasRaceStarted && evt.key == ' ') {
+        if (hasStarted && evt.key == ' ') {
             if (!yellowCountdownShown && !yellowFlashingShown) {
                 handleYellowFlagCountdown();
             }
@@ -115,19 +115,19 @@ function Header({
                 */}
 
                 {
-                    !hasRaceStarted &&
+                    !hasStarted &&
                     <RaceFlagStart 
                         onSelect={() => setRaceTypeModalShown(true)}
                         handleColor='#FFF'
                     />
                 }
                 {
-                    hasRaceStarted &&
+                    hasStarted &&
                     <RaceFlagEnd 
                         onSelect={handleRaceEnd}
                     />
                 }
-                {   hasRaceStarted &&
+                {   hasStarted &&
                     <RaceFlagYellow 
                         onSelect={handleYellowFlagCountdown}
                     />                    
