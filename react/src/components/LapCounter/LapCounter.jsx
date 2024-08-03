@@ -38,6 +38,7 @@ const LapCounter = () => {
     
 
     let defaultRace = {
+        raceType: defaultConfig.racepresets[0],
         hasRaceStarted: false,
         underStartersOrders: false,
         firstCarCrossedStart: false,
@@ -71,10 +72,6 @@ const LapCounter = () => {
     //  Each of the following values which are "ref'd up" are used inside the processLaps callback.
     //    If we didn't use Refs (or some similar technique), then referring to the state
     //    variables would always return the initial value rather than the current value.
-
-    const [raceType, setRaceType] = useState(null);
-    const raceTypeRef = useRef();
-    raceTypeRef.current = raceType;
 
     const racePausedRef = useRef();
     racePausedRef.current = false;
@@ -126,7 +123,7 @@ const LapCounter = () => {
 
 
     //The viewmodel
-    const lapsPerRace = raceTypeRef.current?.details.laps ?? 0;
+    const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
 
     const driverDataDefault = {
         number: 99, 
@@ -179,12 +176,12 @@ const LapCounter = () => {
     }
 
     const handleStartCountdown = (raceTypeObj) => {
-        resetRaceValues(raceTypeObj);
+        //reset all appropriate values ready for race start
+        resetDrivers(raceTypeObj);
 
-        setRace({...raceRef.current, 
-            underStartersOrders:true,
-            hasRaceStarted:false,
-            racePaused:false
+        setRace({...defaultRace, 
+            underStartersOrders: true,
+            raceType: raceTypeObj
         });
     }
 
@@ -213,7 +210,7 @@ const LapCounter = () => {
         });
     }
 
-    const resetRaceValues = (raceTypeObj) => {
+    const resetDrivers = (raceTypeObj) => {
         setLapData([...lapDataDefault]);
 
         const newDrivers = [];
@@ -233,10 +230,6 @@ const LapCounter = () => {
             });
         }
         setDrivers(newDrivers);
-        setRaceType(raceTypeObj);
-
-        setRace(defaultRace);
-        console.log(">>>>>>> resetRaceValues <<<<<<<<<<<");
     }
 
 
@@ -285,7 +278,7 @@ const LapCounter = () => {
                 driversRef.current, 
                 carIdx, 
                 newLap, 
-                raceTypeRef.current.details.laps, 
+                raceRef.current.raceType.details.laps, 
                 newRace.fastestLap,
                 newRace.startTime
         );
@@ -307,8 +300,8 @@ const LapCounter = () => {
 
 
     const handleRaceTypeChange = (raceTypeObj) => {
-        console.log("LapCounter:handleRaceTypeChange", raceTypeObj);
-        setRaceType(raceTypeObj);
+        console.log("++++++++++++++ LapCounter:handleRaceTypeChange", raceTypeObj);
+        setRace({...raceRef.current, raceType: raceTypeObj});
     }
 
     const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`; 
