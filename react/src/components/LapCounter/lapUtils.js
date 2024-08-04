@@ -147,7 +147,7 @@ export const checkEndOfRace = (driversData, handleRaceEnd) => {
     //if at least one person has finished
     if (driversData.some(d => d.finished)) {    
         //and any remaining haven't even set off (totalRaceTime > 0), then the race is over
-        if (driversData.every(d => (d.finished || d.totalRaceTime < 0.1))) {
+        if (driversData.every(d => (d.finished || d.totalRaceTime < 0.1 || d.totalRaceTime === null))) {
             handleRaceEnd();
         }
     }

@@ -233,7 +233,7 @@ const LapCounter = () => {
         //rehide drivers who have not started racing (check totalRaceTime, we can't check hasStartedRacing, as we temporarily changed it)
         const tmpDrivers = [...drivers].map((driver, index) => {
             driver.spotlightMe = false;
-            driver.hasStartedRacing = driver.totalRaceTime !== null;
+            driver.hasStartedRacing = (driver.totalRaceTime !== null);
             console.log(`${index} ${driver.name} hasStartedRacing: ${driver.hasStartedRacing} spotlightMe: ${driver.spotlightMe}`);
             return driver;
         });
