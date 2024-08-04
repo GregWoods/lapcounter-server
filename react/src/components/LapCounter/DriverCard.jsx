@@ -6,7 +6,7 @@ import DriverCardTime from './DriverCardTime';
 
 const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
     let className = 'drivercard driver' + driver.number;
-    if (!underStartersOrders && driver.lapsCompleted > -1) {
+    if (!underStartersOrders && driver.hasStartedRacing) {
         //if (driver.suspended) {
         //    className += ' suspended';
         //} else {

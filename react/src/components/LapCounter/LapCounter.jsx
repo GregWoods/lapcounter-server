@@ -209,13 +209,41 @@ const LapCounter = () => {
         setCarSelectorModalDriverIdx(driverIdx);
         setCarSelectorModalShown(true);
         //
-        
+        unhideDrivers();
         //setSpotlightMe(driverIdx) is run inside modal component
+    }
+
+    const [tmpNumberOfDriversRacing, setTmpNumberOfDriversRacing] = useState();
+    const [unstartedDrivers, setUnstartedDrivers] = useState([]);
+
+    const unhideDrivers = () => {
+        //unhides drivers who have not started racing. Used when changing the car images. 
+        //  Allows for additional drivers joining the race later, with correct CarImg shown
+
+        //Adjust the left side of the DriverCards container element, which fake-centers the driverCards
+        setTmpNumberOfDriversRacing(race.numberOfDriversRacing);
+        setRace({...race, numberOfDriversRacing: 6});
+
+        //store any driverCards where the driver hasn't started racing (ie. they are currently hidden)
+        //  then unhide them
+        const tmpUnstartedDrivers = drivers.filter(driver => !driver.hasStartedRacing);
+        setUnstartedDrivers(tmpUnstartedDrivers);
+        const updatedDrivers = tmpUnstartedDrivers.map(driver => ({ ...driver, hasStartedRacing: true }));
+        setDrivers([...drivers.filter(driver => driver.hasStartedRacing), ...updatedDrivers]);
+    }
+
+    const rehideDrivers = () => {
+        setRace({...race, numberOfDriversRacing: tmpNumberOfDriversRacing});
+        //using the saved list of drivers who have not started racing, rehide them
+        const updatedDrivers = unstartedDrivers.map(driver => ({ ...driver, hasStartedRacing: false }));
+        //we use driver.totalRaceTime !== null as a synonym for hasStartedRacing, because totalRaceTime hasn't been altered by unhideDrivers
+        setDrivers([...drivers.filter(driver => driver.totalRaceTime !== null), ...updatedDrivers]);
     }
 
     const closeCarSelectorModal = () => {
         setCarSelectorModalShown(false);
         resetSpotlightMe();
+        rehideDrivers();
     }
 
     const resetSpotlightMe = () => {
