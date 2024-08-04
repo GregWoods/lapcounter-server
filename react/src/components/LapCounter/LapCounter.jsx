@@ -224,34 +224,33 @@ const LapCounter = () => {
         setTmpNumberOfDriversRacing(race.numberOfDriversRacing);
         setRace({...race, numberOfDriversRacing: 6});
 
-        //store any driverCards where the driver hasn't started racing (ie. they are currently hidden)
+        //store driver.number of any driver who hasn't started racing (ie. they are currently hidden)
         //  then unhide them
-        const tmpUnstartedDrivers = drivers.filter(driver => !driver.hasStartedRacing);
+        const tmpUnstartedDrivers = drivers.filter(drv => !drv.hasStartedRacing).map(drv => drv.number);
         setUnstartedDrivers(tmpUnstartedDrivers);
-        const updatedDrivers = tmpUnstartedDrivers.map(driver => ({ ...driver, hasStartedRacing: true }));
-        setDrivers([...drivers.filter(driver => driver.hasStartedRacing), ...updatedDrivers]);
+        console.log(`tmpUnstartedDrivers: ${tmpUnstartedDrivers}`);
+
+        //while the car image dialog is open, set all drivers' .hasStartedRacing to true, so they become visible
+        const updatedDrivers = drivers.map(drv => ({ ...drv, hasStartedRacing: true }));
+        setDrivers(updatedDrivers);
     }
 
     const rehideDrivers = () => {
         setRace({...race, numberOfDriversRacing: tmpNumberOfDriversRacing});
+
         //using the saved list of drivers who have not started racing, rehide them
-        const updatedDrivers = unstartedDrivers.map(driver => ({ ...driver, hasStartedRacing: false }));
-        //we use driver.totalRaceTime !== null as a synonym for hasStartedRacing, because totalRaceTime hasn't been altered by unhideDrivers
-        setDrivers([...drivers.filter(driver => driver.totalRaceTime !== null), ...updatedDrivers]);
+        const tmpDrivers = [...drivers].map((driver, index) => {
+            driver.spotlightMe = false;
+            driver.hasStartedRacing = unstartedDrivers.indexOf(driver.number) === -1;
+            console.log(`${index} ${driver.name} hasStartedRacing: ${driver.hasStartedRacing} spotlightMe: ${driver.spotlightMe}`);
+            return driver;
+        });
+        setDrivers(tmpDrivers);
     }
 
     const closeCarSelectorModal = () => {
         setCarSelectorModalShown(false);
-        resetSpotlightMe();
         rehideDrivers();
-    }
-
-    const resetSpotlightMe = () => {
-        //set all drivers' "spotlightMe" to false
-        const newDrivers = drivers.map((driver) => {
-            return { ...driver, spotlightMe: false };
-        });
-        setDrivers(newDrivers);
     }
 
     //This is the callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
@@ -303,9 +302,6 @@ const LapCounter = () => {
                 newRace.fastestLap,
                 newRace.startTime
         );
-
-        console.log('modifiedDrivers');
-        console.dir(modifiedDrivers);
         setDrivers(modifiedDrivers);
 
         const numberOfDriversRacing = modifiedDrivers.reduce((acc, driver) => {

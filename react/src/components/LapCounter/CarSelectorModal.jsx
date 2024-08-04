@@ -3,16 +3,13 @@ import CarImage from './CarImage';
 import './CarSelectorModal.css';
 import {driverSorter} from './lapUtils.js';
 
-// eslint-disable-next-line no-unused-vars
-const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers, driverIdx, setDriverIdx, parentSelector }) => {
+
+const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers, driverIdx, setDriverIdx }) => {
 
     //holds list of car Urls fetched from server
     const [cars, setCars] = useState([]);
-    //const [carSelectorModalContentRef, setCarSelectorModalContentRef] = useState(null);
 
     useEffect(() => {
-        console.log('This is supposed to be in the modal');
-        //console.log(process.env.PUBLIC_URL);
         fetch(carImgListUrl)
             .then((res) => res.json())
             .then((data) => {
@@ -33,6 +30,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
         let newDrivers = [...drivers];
         newDrivers[driverIdx] = {...drivers[driverIdx], carImgUrl: carUrl};
         setDrivers(newDrivers);
+        skipDriver();
     }
 
     const skipDriver = () => {
@@ -41,7 +39,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
         //  this is hampered a little by the fact that I omitted adding a unique key for each driver, and used index instead!
         const currentDriver = drivers[driverIdx];
         const tmpDrivers = [...drivers].sort(driverSorter);
-        const currentDriverSortedIdx = tmpDrivers.findIndex(driver => driver.name === currentDriver.name);
+        const currentDriverSortedIdx = tmpDrivers.findIndex(driver => driver.number === currentDriver.number);
 
         let nextDriverSortedIdx;
         if (currentDriverSortedIdx === tmpDrivers.length - 1) {
@@ -49,8 +47,8 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
         } else {
             nextDriverSortedIdx = currentDriverSortedIdx + 1;
         }
-        const nextDriverName = tmpDrivers[nextDriverSortedIdx].name;
-        const nextDriverIdx = drivers.findIndex(driver => driver.name === nextDriverName);
+        const nextDriverNumber = tmpDrivers[nextDriverSortedIdx].number;
+        const nextDriverIdx = drivers.findIndex(driver => driver.number === nextDriverNumber);
 
         setDriverIdx(nextDriverIdx);
     }
@@ -79,19 +77,6 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
             <>
                 <div className="fullscreenblur"></div>
                 <div className="carselectormodal"
-                    //isOpen={showMe}
-                    //onRequestClose={onClose}
-                    /*
-                    //id="carselectormodal"
-                    //contentLabel="Select Car"
-                    //closeTimeoutMS={400}
-                    //className="ReactModalContent"
-                    //overlayClassName="ReactModalOverlay"
-                    //ariaHideApp={false}
-                    //parentSelector={() => document.querySelector('#driverCardContainer')}   //doesn't work, as the whole entourage of <div>s is moved, so still impossible to "elevate" the actual modal using zIndex
-                    //contentRef={node => setCarSelectorModalContentRef(node)}
-                    onAfterOpen={setSpotlightMe}
-                    */
                 >
                     <div className="carcontainer">
                         {cars.map((car, idx) => {
