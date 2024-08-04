@@ -208,13 +208,11 @@ const LapCounter = () => {
     const openCarSelectorModal = (driverIdx) => {
         setCarSelectorModalDriverIdx(driverIdx);
         setCarSelectorModalShown(true);
-        //
         unhideDrivers();
         //setSpotlightMe(driverIdx) is run inside modal component
     }
 
     const [tmpNumberOfDriversRacing, setTmpNumberOfDriversRacing] = useState();
-    const [unstartedDrivers, setUnstartedDrivers] = useState([]);
 
     const unhideDrivers = () => {
         //unhides drivers who have not started racing. Used when changing the car images. 
@@ -224,12 +222,6 @@ const LapCounter = () => {
         setTmpNumberOfDriversRacing(race.numberOfDriversRacing);
         setRace({...race, numberOfDriversRacing: 6});
 
-        //store driver.number of any driver who hasn't started racing (ie. they are currently hidden)
-        //  then unhide them
-        const tmpUnstartedDrivers = drivers.filter(drv => !drv.hasStartedRacing).map(drv => drv.number);
-        setUnstartedDrivers(tmpUnstartedDrivers);
-        console.log(`tmpUnstartedDrivers: ${tmpUnstartedDrivers}`);
-
         //while the car image dialog is open, set all drivers' .hasStartedRacing to true, so they become visible
         const updatedDrivers = drivers.map(drv => ({ ...drv, hasStartedRacing: true }));
         setDrivers(updatedDrivers);
@@ -238,10 +230,10 @@ const LapCounter = () => {
     const rehideDrivers = () => {
         setRace({...race, numberOfDriversRacing: tmpNumberOfDriversRacing});
 
-        //using the saved list of drivers who have not started racing, rehide them
+        //rehide drivers who have not started racing (check totalRaceTime, we can't check hasStartedRacing, as we temporarily changed it)
         const tmpDrivers = [...drivers].map((driver, index) => {
             driver.spotlightMe = false;
-            driver.hasStartedRacing = unstartedDrivers.indexOf(driver.number) === -1;
+            driver.hasStartedRacing = driver.totalRaceTime !== null;
             console.log(`${index} ${driver.name} hasStartedRacing: ${driver.hasStartedRacing} spotlightMe: ${driver.spotlightMe}`);
             return driver;
         });
