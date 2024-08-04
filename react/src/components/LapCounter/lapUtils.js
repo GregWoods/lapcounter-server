@@ -52,7 +52,7 @@ export const modifyDriversViewModel = (drivers, idx, lapData, targetLaps, raceFa
         driver.suspended = (parseInt(driver.totalRaceTime) + suspendAfter) < latestRaceTime;
     });
 
-    //now re-sort by driver number, so we have the original ordering.
+    //now re-sort by driver number, so we have the original ordering. This is important as we rely on the index
     //  any visual reordering will be done with css "order"
     newDrivers.sort((a, b) => a.number - b.number);
     if (DEBUG) {console.log("sorted newDrivers: ", newDrivers)}
@@ -154,7 +154,7 @@ export const checkEndOfRace = (driversData, handleRaceEnd) => {
 }
 
 
-const driverSorter = (driverA, driverB) => {
+export const driverSorter = (driverA, driverB) => {
     //order by lapsCompleted asc
     if (driverA.lapsCompleted > driverB.lapsCompleted) {
         return -1;

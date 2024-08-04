@@ -13,6 +13,9 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
             className += ' show';
         //}
     }
+    if (driver.spotlightMe) {
+        className += ' spotlightme';
+    }
 
 
     let lastLapClass = 'lastlaptime';
@@ -62,7 +65,7 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
                 lapsCompleted={driver.lapsCompleted}
                 position={driver.position} 
                 totalRaceTime={driver.totalRaceTime} />
- 
+
         </div>
     );
 }

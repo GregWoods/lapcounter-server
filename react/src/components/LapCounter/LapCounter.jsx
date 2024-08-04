@@ -82,6 +82,7 @@ const LapCounter = () => {
 
 
     //The drivers viewmodel
+    //  Not all properties are set in the default, since we do not want to overwrite things like "name", "carImgUrl", even for a new race
     const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
     const driverDataDefault = {
         lastLap: '', 
@@ -95,7 +96,8 @@ const LapCounter = () => {
         finished: false, 
         suspended: false,
         hasStartedRacing: false,
-        //carImgUrl: null
+        //carImgUrl: null,
+        spotlightMe: false
     };
     const initialDrivers = [
         {...driverDataDefault, number: 1, name: 'Driver A'},
@@ -117,14 +119,10 @@ const LapCounter = () => {
     const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
+
+
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtthost: newMqttHost});
-    }
-
-    const saveCars = (carImgUrls) => {
-        console.dir(carImgUrls);
-        //Not Implemented
-        //take the ordered list of car img urls and insert into the coresponding drivers array
     }
 
     const storeFastestLapToday = (lapTime) => {
@@ -155,11 +153,6 @@ const LapCounter = () => {
     const openDriverNamesModal = (driverIdx) => {
         setDriverNamesModalDriverIdx(driverIdx);
         setDriverNamesModalShown(true);
-    }
-
-    const openCarSelectorModal = (driverIdx) => {
-        setCarSelectorModalDriverIdx(driverIdx);
-        setCarSelectorModalShown(true);
     }
 
     const handleStartCountdown = (raceTypeObj) => {
@@ -212,6 +205,26 @@ const LapCounter = () => {
         setDrivers(newDrivers);
     }
 
+    const openCarSelectorModal = (driverIdx) => {
+        setCarSelectorModalDriverIdx(driverIdx);
+        setCarSelectorModalShown(true);
+        //
+        
+        //setSpotlightMe(driverIdx) is run inside modal component
+    }
+
+    const closeCarSelectorModal = () => {
+        setCarSelectorModalShown(false);
+        resetSpotlightMe();
+    }
+
+    const resetSpotlightMe = () => {
+        //set all drivers' "spotlightMe" to false
+        const newDrivers = drivers.map((driver) => {
+            return { ...driver, spotlightMe: false };
+        });
+        setDrivers(newDrivers);
+    }
 
     //This is the callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
     //  Hence we need to use useRef to access the current state values
@@ -315,6 +328,16 @@ const LapCounter = () => {
                         <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
                         <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
                         <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
+
+                        <CarSelectorModal 
+                            showMe={carSelectorModalShown}
+                            onClose={closeCarSelectorModal}
+                            carImgListUrl={config.apihost + '/api/cars'}
+                            drivers={drivers}
+                            setDrivers={setDrivers}
+                            driverIdx={carSelectorModalDriverIdx} 
+                            setDriverIdx={setCarSelectorModalDriverIdx}
+                        />
                     </div>
                 </div>
             </div>
@@ -327,15 +350,7 @@ const LapCounter = () => {
                 driverIdxToFocus={driverNamesModalDriverIdx} 
             />
 
-            <CarSelectorModal 
-                showMe={carSelectorModalShown}
-                onClose={() => setCarSelectorModalShown(false)}
-                carImgListUrl={config.apihost + '/api/cars'}
-                drivers={drivers}
-                setDrivers={setDrivers}
-                driverIdx={carSelectorModalDriverIdx} 
-                setDriverIdx={setCarSelectorModalDriverIdx}
-            />
+
        
         </div>
     );

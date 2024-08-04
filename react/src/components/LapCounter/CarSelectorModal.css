@@ -1,3 +1,38 @@
+.fullscreenblur {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    z-index: 1; /*-1 when hidden*/
+}
+
+/* DriverCard which is being spotLighted gets z-index:2 */
+.drivercard.spotlightme {
+    z-index: 2;
+}
+
+.carselectormodal {
+    position: fixed;
+    top:480px;
+    height: 560px;
+    left: 30px;
+    width: 1860px;
+    z-index: 3;
+    background-color: white;
+    border-radius: 20px;
+}
+
+.carselectormodal button {
+    font-size: 1.5rem;
+    padding: 0.5rem 1.3rem;
+    border-radius: 15px;
+    border-width: 5px;
+    background-color: white;
+}
+
 img.carimage {
     height:200px; 
     border-radius: 12px;
