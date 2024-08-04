@@ -86,7 +86,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
             onRequestClose={onClose}
             id="racetypemodal"
             contentLabel="Choose Race Type"
-            closeTimeoutMS={800}
+            closeTimeoutMS={400}
             className={modalClassName}
             overlayClassName="ReactModalOverlay"
             onAfterClose={() => setModalClassName('ReactModalContent')}     //reset modalClassName to default, so that closing the dialog slides it off the top of the screen

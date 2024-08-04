@@ -18,7 +18,7 @@ const ResetFastestLapTodayModal = ({ showMe, onClose, resetFastestLapToday }) =>
             onRequestClose={onCancel}
             id="resetfastestlapsmodal"
             contentLabel="Reset Fastest Lap"
-            closeTimeoutMS={600}
+            closeTimeoutMS={400}
             className="ReactModalContent"
             overlayClassName="ReactModalOverlay" 
             ariaHideApp={false}

@@ -25,7 +25,7 @@ const EditSettingsModal = ({ showMe, onClose, mqttHost, setMqttHost }) =>
             onRequestClose={onCancel}
             id="editsettingsmodal"
             contentLabel="Edit Settings"
-            closeTimeoutMS={600}
+            closeTimeoutMS={400}
             className="ReactModalContent"
             overlayClassName="ReactModalOverlay"
             ariaHideApp={false}
