@@ -1,9 +1,9 @@
 # Standalone Scalextric Digital Lap Counter - Python API
 
-## Powershell ovewr Ubuntu
+## Powershell over Ubuntu
 
 I have set up the new python virtual env in Powershell, because I am also running the build-and-push
-scripts in POwershell. Mixing Powershell and Ubuntu causes permissions errors.
+scripts in Powershell. Mixing Powershell and Ubuntu causes permissions errors.
 Note that Ubuntu would have been fine... just stick to one!
 
 ## Use pyenv!
@@ -14,15 +14,6 @@ pyenv versions
 pyenv install --list
 pyenv install 3.12.2
  ```
-
- ## Running without Docker
-
-```
-./venv/Scripts/activate
-pip install -r requirements.txt
-./setenv.ps1
-python manage.py run
-```
 
 ## Running with Docker
 
@@ -42,3 +33,16 @@ http://127.0.0.1:5001/upload
 http://127.0.0.1:5001/media/01595327e5339118540a72a10b7c61521e3eafb74b.jpg
 ```
 
+
+ ## Running without Docker
+
+Not recomended. Docker saves installing a lot of stuff on your development PC, and 
+keeps your dev environment the same as the production environment on the 
+Raspberry Pi
+
+```
+./venv/Scripts/activate
+pip install -r requirements.txt
+./setenv.ps1
+python manage.py run
+```

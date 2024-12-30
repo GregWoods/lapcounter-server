@@ -61,20 +61,23 @@ services:
 
     
 
-
-
-
   react:
     container_name: react
     pull_policy: always
-    build: ./react
-    image: gregkwoods/lapcounter-server-react:latest
+    build: 
+      context: ./react
+      dockerfile: Dockerfile.dev
     volumes:
-      - ./web:/usr/src/app
+      - ./react:/app
+      - /app/node_modules
+    #image: gregkwoods/lapcounter-server-react:latest
+    #volumes:
+    #  - ./web:/usr/src/app
     ports:
-      - 8088:80
+      - 8088:5173
     env_file:
       - ./.env.dev
+
 
 
   db:
