@@ -6,30 +6,42 @@ import DriverCardTime from './DriverCardTime';
 
 const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
     let className = 'drivercard driver' + driver.number;
-    if (!underStartersOrders && driver.lapsCompleted > -1) {
+    if (!underStartersOrders && driver.hasStartedRacing) {
         //if (driver.suspended) {
         //    className += ' suspended';
         //} else {
             className += ' show';
         //}
     }
-
-    const fastestLapClass = (driver.isRaceFastestLap) ? "fastestlaptime raceFastestLap" : "fastestlaptime personalFastestLap";
-
-
-    const driverPosition = driver.position;
+    if (driver.spotlightMe) {
+        className += ' spotlightme';
+    }
 
 
-    let lastLapClass = "lastlaptime";
-    if  (driver.lastLap == driver.fastestLap) {
+    let lastLapClass = 'lastlaptime';
+    let fastestLapClass = 'fastestlaptime';
+    if (driver.lastLap == driver.fastestLap) {
+        //last lap broke the fastest lap
         if (driver.isRaceFastestLap) {
-            lastLapClass += " raceFastestLap"
+            //last lap was also race fastest lap
+            //both purple
+            lastLapClass += ' raceFastestLap';
+            fastestLapClass += ' raceFastestLap';
         } else {
-            lastLapClass += " personalFastestLap"
+            //both green
+            lastLapClass += ' personalFastestLap';
+            fastestLapClass += ' personalFastestLap';
+        }
+    } else {
+        //last lap was not fastest lap
+        //  but driver with race fastest still shows their fastest lap time in purple
+        if (driver.isRaceFastestLap) {
+            fastestLapClass += ' raceFastestLap';
         }
     }
 
 
+    const driverPosition = driver.position;
 
     return (
         <div className={className} data-order={driverPosition}>
@@ -38,12 +50,12 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
                 <div>{driver.name}</div>
             </div>
             <div className="carimg" onClick={onRequestOpenCarSelector}>
-                <img alt="FSR Logo" src="../../images/cars/car0.png" />
+                <img alt="Car Image" src={driver.carImgUrl ?? '../../images/cars/car0.png'} />
             </div>
 
             <div className="drivercontent">
-                <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
                 <DriverCardTime fastestLapClass={lastLapClass} label="Last Lap" lapTime={driver.lastLap} />
+                <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
             </div>
 
             <DriverCardPosition 
@@ -53,7 +65,7 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
                 lapsCompleted={driver.lapsCompleted}
                 position={driver.position} 
                 totalRaceTime={driver.totalRaceTime} />
- 
+
         </div>
     );
 }

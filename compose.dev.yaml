@@ -40,41 +40,49 @@ services:
       - mocked-gpio
 
 
-  #http://localhost:5001/upload
-  #http://localhost:5001/media/<uploaded_file_name>
-  #http://localhost:5001/static/hello.txt
+  #http://localhost:8000/upload
+  #http://localhost:8000/media/<uploaded_file_name>
+
+  #api:
+  #  container_name: api
+  #  pull_policy: always
+
+
   api:
     container_name: api
-    pull_policy: always
-    build: ./api
-    image: gregkwoods/lapcounter-server-api:latest
+    build:
+      context: ./api
+      dockerfile: Dockerfile.fastAPI.dev
     volumes:
-      - ./api/:/usr/src/app/
+      - ./api/app:/usr/src/app
     ports:
-      - 5001:5000
-    command: python manage.py run -h 0.0.0.0
-    env_file:
-      - ./api/.env.dev
-  #  depends_on:
-  #    - lapdata
+      - "8000:8000"
+    #env_file:
+    #  - ./api/.env.dev
+    #environment:
+    #  - PYTHONDONTWRITEBYTECODE=1
+    #  - PYTHONBUFFERED=1
 
 
     
 
-
-
-
   react:
     container_name: react
     pull_policy: always
-    build: ./react
-    image: gregkwoods/lapcounter-server-react:latest
+    build: 
+      context: ./react
+      dockerfile: Dockerfile.dev
     volumes:
-      - ./web:/usr/src/app
+      - ./react:/app
+      - /app/node_modules
+    #image: gregkwoods/lapcounter-server-react:latest
+    #volumes:
+    #  - ./web:/usr/src/app
     ports:
-      - 8088:80
+      - 8088:5173
     env_file:
       - ./.env.dev
+
 
 
   db:

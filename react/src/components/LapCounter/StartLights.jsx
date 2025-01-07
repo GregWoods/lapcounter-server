@@ -65,7 +65,7 @@ const StartLights = ({showMe, onClose, onLightsOut}) => {
             isOpen={showMe}
             onRequestClose={onClose}
             contentLabel="Start Lights"
-            closeTimeoutMS={1050}
+            closeTimeoutMS={400}
             className="ReactModalContent"
             overlayClassName="ReactModalOverlay"
             onAfterOpen={() => startCountdown()}

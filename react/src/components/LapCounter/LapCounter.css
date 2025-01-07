@@ -32,7 +32,6 @@ body {
     width: calc(1920px + 320px);      /* need a fixed width for overflow:hidden to work. Used to hide driverCards sitting out of view on the RHS */
     height: 905px;
     overflow: hidden;
-    transition: 0.5s;
 }
 
 /* we set the left edge to make it appear like the driverCards are always centered, but actually the
@@ -40,12 +39,12 @@ body {
     new driverCards can "fly in" from the right side
 */
 
-#driverCardContainer.numberOfDriversRacing1 { left: calc(((6 - 1) * 320px) / 2);}
-#driverCardContainer.numberOfDriversRacing2 { left: calc(((6 - 2) * 320px) / 2);}
-#driverCardContainer.numberOfDriversRacing3 { left: calc(((6 - 3) * 320px) / 2);}
-#driverCardContainer.numberOfDriversRacing4 { left: calc(((6 - 4) * 320px) / 2);}
-#driverCardContainer.numberOfDriversRacing5 { left: calc(((6 - 5) * 320px) / 2);}
-#driverCardContainer.numberOfDriversRacing6 { left: calc(((6 - 6) * 320px) / 2);}
+#driverCardContainer.numberOfDriversRacing1 { left: calc(((6 - 1) * 320px) / 2); transition: 0.1s;}
+#driverCardContainer.numberOfDriversRacing2 { left: calc(((6 - 2) * 320px) / 2); transition: 0.2s;}
+#driverCardContainer.numberOfDriversRacing3 { left: calc(((6 - 3) * 320px) / 2); transition: 0.3s;}
+#driverCardContainer.numberOfDriversRacing4 { left: calc(((6 - 4) * 320px) / 2); transition: 0.4s;}
+#driverCardContainer.numberOfDriversRacing5 { left: calc(((6 - 5) * 320px) / 2); transition: 0.5s;}
+#driverCardContainer.numberOfDriversRacing6 { left: calc(((6 - 6) * 320px) / 2); transition: 0.6s;}
 
 .ReactModalContent {
     width: 50vw;
@@ -87,7 +86,6 @@ body {
 .ReactModalContent .header {
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
-    background-color: white;
 }
 
 .ReactModalContent button {

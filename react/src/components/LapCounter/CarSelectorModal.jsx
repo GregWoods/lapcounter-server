@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react';
-import ReactModal from 'react-modal';
 import CarImage from './CarImage';
 import './CarSelectorModal.css';
+import {driverSorter} from './lapUtils.js';
 
 
-// eslint-disable-next-line no-unused-vars
-const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers, driverIdxToFocus }) => {
+const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers, driverIdx, setDriverIdx }) => {
 
+    //holds list of car Urls fetched from server
     const [cars, setCars] = useState([]);
+    const [selectedFile, setSelectedFile] = useState(null);
 
-    
     useEffect(() => {
-        console.log('This is supposed to be in the modal');
-        //console.log(process.env.PUBLIC_URL);
         fetch(carImgListUrl)
             .then((res) => res.json())
             .then((data) => {
@@ -26,24 +24,111 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
     }, [carImgListUrl]);
 
 
-    if (cars) {
+    const setCarImage = (carUrl) => {
+        console.log('setCarImage');
+        console.dir(carUrl);
+
+        let newDrivers = [...drivers];
+        newDrivers[driverIdx] = {...drivers[driverIdx], carImgUrl: carUrl};
+        setDrivers(newDrivers);
+        skipDriver();
+    }
+
+    const skipDriver = () => {
+        //need to find the index of the next driver on screen
+        //  this may not be the next driver in the array
+        //  this is hampered a little by the fact that I omitted adding a unique key for each driver, and used index instead!
+        const currentDriver = drivers[driverIdx];
+        const tmpDrivers = [...drivers].sort(driverSorter);
+        const currentDriverSortedIdx = tmpDrivers.findIndex(driver => driver.number === currentDriver.number);
+
+        let nextDriverSortedIdx;
+        if (currentDriverSortedIdx === tmpDrivers.length - 1) {
+            nextDriverSortedIdx = 0;
+        } else {
+            nextDriverSortedIdx = currentDriverSortedIdx + 1;
+        }
+        const nextDriverNumber = tmpDrivers[nextDriverSortedIdx].number;
+        const nextDriverIdx = drivers.findIndex(driver => driver.number === nextDriverNumber);
+
+        setDriverIdx(nextDriverIdx);
+    }
+
+
+    const setSpotlightMe = () => {
+        //Hack to allow z-index of modal to be set
+        console.log('setSpotlightMe');
+        console.log(driverIdx);
+
+        //document.getElementById('driverCardContainer')?.appendChild(carSelectorModalContentRef);
+
+        const newDrivers = drivers.map((driver, index) => {
+            return { ...driver, spotlightMe: (index === driverIdx) };
+        });
+        setDrivers(newDrivers);
+    }
+
+    const handleFileChange = (event) => {
+
+        console.log('handleFileChange 1');
+        const apiUri = process.env.REACT_APP_API_URI;
+        const file = event.target.files[0];
+        setSelectedFile(file);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        fetch(`${apiUri}/api/upload`, {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('File uploaded successfully:', data);
+            // You can add additional logic to handle the response data
+        })
+        .catch(error => {
+            console.error('Error uploading file:', error);
+        });
+        // You can add additional logic to handle the selected file
+    };
+
+    if (cars && showMe) {
+        console.log("car selector modal");
+        console.dir(drivers);
+        console.log(driverIdx);
+        setSpotlightMe();
+
         return (
-            <ReactModal
-                isOpen={showMe}
-                onRequestClose={onClose}
-                id="carselectormodal"
-                contentLabel="Select Car"
-                closeTimeoutMS={1050}
-                className="ReactModalContent"
-                overlayClassName="ReactModalOverlay"
-                ariaHideApp={false}
-            >
-            <div className="carcontainer">
+            <>
+            <div className="fullscreenblur"></div>
+            <div className="carselectormodal">
+                <div className="carcontainer">
                 {cars.map((car, idx) => {
-                    return <CarImage key={idx} url={car} />
+                    return <a key={idx} onClick={() => setCarImage(car)}>
+                    <CarImage url={car} />
+                    </a>
                 })}
+                </div>
+
+                <div>
+                    <button onClick={skipDriver}>Skip</button>&nbsp;&nbsp;
+                
+                    <button onClick={() => document.getElementById('file-upload').click()}>
+                        Upload
+                    </button>&nbsp;&nbsp;
+                    <input
+                        id="file-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        style={{ display: 'none' }}
+                    />
+
+                    <button onClick={onClose}>Done</button>
+                </div>
             </div>
-            </ReactModal>
+            </>
         );
     } else {
         return null;

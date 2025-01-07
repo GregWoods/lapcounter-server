@@ -1,11 +1,11 @@
-import './ResetFastestLapModal.css';
+import './ResetFastestLapTodayModal.css';
 import ReactModal from 'react-modal';
 
 
-const ResetFastestLapModal = ({ showMe, onClose, resetFastestLap }) => 
+const ResetFastestLapTodayModal = ({ showMe, onClose, resetFastestLapToday }) => 
 {
     const onDone = () => {
-        resetFastestLap();
+        resetFastestLapToday();
         onClose();
     }
     const onCancel = () => {
@@ -18,7 +18,7 @@ const ResetFastestLapModal = ({ showMe, onClose, resetFastestLap }) =>
             onRequestClose={onCancel}
             id="resetfastestlapsmodal"
             contentLabel="Reset Fastest Lap"
-            closeTimeoutMS={600}
+            closeTimeoutMS={400}
             className="ReactModalContent"
             overlayClassName="ReactModalOverlay" 
             ariaHideApp={false}
@@ -35,4 +35,4 @@ const ResetFastestLapModal = ({ showMe, onClose, resetFastestLap }) =>
     );
 }
 
-export default ResetFastestLapModal;
+export default ResetFastestLapTodayModal;

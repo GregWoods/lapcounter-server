@@ -1,6 +1,6 @@
 import React from 'react';
 
-const DriverCardTime = ({cssClass, label, lapTime}) => {
+const DriverCardTime = ({fastestLapClass, label, lapTime}) => {
     const fltTime = parseFloat(lapTime);
 
     let displayTime;
@@ -19,9 +19,9 @@ const DriverCardTime = ({cssClass, label, lapTime}) => {
     }
 
     return (
-        <div className={cssClass}>
+        <div className={fastestLapClass}>
             <div className="timelbl">{label}</div>
-            <div className="time">{displayTime}</div>
+            <div className="time">&#8203;{displayTime}</div>
         </div>
     );
 };

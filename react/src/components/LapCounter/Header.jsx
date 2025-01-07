@@ -8,7 +8,7 @@ import React, { useState, useEffect, createRef } from 'react';
 import RaceFlagYellow from './RaceFlagYellow';
 import YellowFlagCountdown from './YellowFlagCountdown';
 import YellowFlagRacePaused from './YellowFlagRacePaused';
-import ResetFastestLapModal from './ResetFastestLapModal';
+import ResetFastestLapTodayModal from './ResetFastestLapTodayModal';
 
 
 function Header({
@@ -16,13 +16,13 @@ function Header({
     onGoGoGo, 
     onStartCountdown,
     fastestLapToday, 
-    hasRaceStarted, 
+    hasStarted, 
     onRaceEnd,
     yellowFlagAdvantageDuration,
     onYellowFlagCountdown,
     onYellowFlag, 
     onEndYellowFlag,
-    forceResetFastestLap }) {
+    resetFastestLapToday }) {
 
     const [showStartLights, setShowStartLights] = useState(false);
 
@@ -31,7 +31,7 @@ function Header({
     const [settingsModalShown, setSettingsModalShown] = useState(false);
     const [yellowCountdownShown, setYellowCountdownShown] = useState(false);
     const [yellowFlashingShown, setYellowFlashingShown] = useState(false);
-    const [resetFastestLapModalShown, setResetFastestLapModalShown] = useState(false);
+    const [resetFastestLapTodayModalShown, setResetFastestLapTodayModalShown] = useState(false);
 
 
     //needed for onKeyUp
@@ -89,7 +89,7 @@ function Header({
 
     const handleKeyup = (evt) => {
         console.log(evt.key);
-        if (hasRaceStarted && evt.key == ' ') {
+        if (hasStarted && evt.key == ' ') {
             if (!yellowCountdownShown && !yellowFlashingShown) {
                 handleYellowFlagCountdown();
             }
@@ -115,19 +115,19 @@ function Header({
                 */}
 
                 {
-                    !hasRaceStarted &&
+                    !hasStarted &&
                     <RaceFlagStart 
                         onSelect={() => setRaceTypeModalShown(true)}
                         handleColor='#FFF'
                     />
                 }
                 {
-                    hasRaceStarted &&
+                    hasStarted &&
                     <RaceFlagEnd 
                         onSelect={handleRaceEnd}
                     />
                 }
-                {   hasRaceStarted &&
+                {   hasStarted &&
                     <RaceFlagYellow 
                         onSelect={handleYellowFlagCountdown}
                     />                    
@@ -135,7 +135,7 @@ function Header({
 
                 <h1>Wellington Raceway</h1>
                     
-                <div id="laprecord" onClick={() => {setResetFastestLapModalShown(true)}}>
+                <div id="laprecord" onClick={() => {setResetFastestLapTodayModalShown(true)}}>
                     <div id="laprecordlbl">Lap Record</div>
                     <div id="fastestlaptime">{fastestLapToday}</div>
                 </div>
@@ -176,10 +176,10 @@ function Header({
                 onEndYellowFlag={handleEndYellowFlag} />
 
 
-            <ResetFastestLapModal 
-                showMe={resetFastestLapModalShown}
-                onClose={() => setResetFastestLapModalShown(false)}
-                resetFastestLap = {forceResetFastestLap}
+            <ResetFastestLapTodayModal 
+                showMe={resetFastestLapTodayModalShown}
+                onClose={() => setResetFastestLapTodayModalShown(false)}
+                resetFastestLapToday = {resetFastestLapToday}
             />
 
 

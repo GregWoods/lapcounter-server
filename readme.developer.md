@@ -2,6 +2,21 @@
 
 See readme in the individual sub-project folders for instructions on how to build and run locally, and how to push updated docker images to dockerhub.
 
+## Quick Start
+
+Local development using docker
+
+```
+docker compose -f compose.dev.yaml up -build
+```
+
+React works with hot module reloading. 
+
+```
+http://localhost:8088
+```
+
+Suggest using the browser's developer tools to set up a new custom device which runs at a resolution of 1920x1080. Whilst other resolutions may work, there has been a lot of hardcoded css to make it work well at this resolution.
 
 ## Project Structure
 
@@ -13,7 +28,7 @@ The lap counter code itself is split amongst several containers. These are outli
 
 
 This layer only runs on a Raspberry Pi, it cannot be run on your developer machine. It uses the raspberry Pi's GPIO to read car ID data as each car crosses the start finish line.
-To keep this code really simple, in production, multiple containers are run from this image, one per track lane. 
+To keep this code really simple, in production, typically 2 of these containers are run from this image, one per track lane. 
 
 Example data, published to the MQTT host, under topic: **car_timestamp**
 
@@ -52,8 +67,6 @@ In production, these files will be served from the static folder of the Flask ap
 
 
 
-
-
 # Why this Project?
 
 The goal is that multiple clients can subscribe to this data. In theory, we could have multiple web browsers connected over WiFi. Each driver could have their own custom display on their phones (3D printed throttle-top phone holder anyone?) showing their personal lap times and relative positions to the driver in front and behind. We could also have additional client hardware displaying other useful info around the track. Hardware start lights, green, yellow, red flag illuminated boards could all be set up with a simple connection to a web page served from one of the containers running on the Pi. Old mobile phones could be put to use, as could ESP32 based gadgets. There are lots of possibilities.
@@ -79,12 +92,12 @@ In the meantime. All the code is public. It is just a series of experiments at t
 
 # Development Methodology
 
+Docker all the way!
+
+### Not recommended
 We can run any python scripts interactively using "py scriptname", but for production usage, we build into a docker image. This image will then run as a container on the Raspi3A server
 
 
-# Running Locally (without Docker)
-
-makes use of .env.local
 
 
 # Running on the Raspi
@@ -94,18 +107,6 @@ cd ~/lapcounter-server
 sudo docker compose --env-file .env.docker --profile production up  --pull always
 # see the compose file for the different profiles
 ```
-
-# Running Locally (Docker)
-
-```
-# Pulling image
-docker compose --profile dev up --pull always
-
-# Building image
-docker compose --profile dev up --build
-```
-
-
 
 
 ## Developer - Build & Push Docker Images

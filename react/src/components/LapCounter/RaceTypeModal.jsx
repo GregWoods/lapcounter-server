@@ -18,19 +18,9 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
     //WARNING: at the moment, id must match array index
     //TODO: going to need a more comprehensive data structure for the different types of races
     // eslint-disable-next-line no-unused-vars
-    const [raceDurationPresets, setRaceDurationPresets] = useLocalStorageState('racepresets', {
-        ssr: true,
-        defaultValue: [
-            { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
-            { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
-            { id: 2, type: 'laps', description: 'Standard (50 laps)', details: { laps: 50 }},
-            { id: 3, type: 'laps', description: 'Professional (160 laps)', details: { laps: 160 }},
-            /*{ id: 4, type: 'time', description: 'Endurance (60 minutes)', details: { time: '01:00:00' }},
-            { id: 5, type: 'time', description: 'Le-Mans (4 hours)', details: { time: '04:00:00' }},
-            { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
-        ]        
-    });
 
+    const [config] = useLocalStorageState('config');
+    const raceDurationPresets = config.racepresets;
 
     //some "reduce" trickery to create an array which we can store a ref to each race preset
     //https://www.robinwieruch.de/react-scroll-to-item/
@@ -96,7 +86,7 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
             onRequestClose={onClose}
             id="racetypemodal"
             contentLabel="Choose Race Type"
-            closeTimeoutMS={800}
+            closeTimeoutMS={400}
             className={modalClassName}
             overlayClassName="ReactModalOverlay"
             onAfterClose={() => setModalClassName('ReactModalContent')}     //reset modalClassName to default, so that closing the dialog slides it off the top of the screen

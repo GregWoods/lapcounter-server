@@ -83,6 +83,10 @@
     font-size: 1.3rem;
 }
 
+.spotlightme {
+    z-index: 1;
+}
+
 .carimg {
     cursor:pointer;
 }

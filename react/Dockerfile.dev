@@ -1,0 +1,13 @@
+# Dockerfile.dev
+FROM node:18-alpine
+
+WORKDIR /app
+ENV PATH /app/node_modules/.bin:$PATH
+
+COPY package.json package-lock.json vite.config.js index.html ./
+COPY ./src ./src
+
+RUN npm ci
+
+# Start the development server
+CMD ["npm", "run", "dev"]

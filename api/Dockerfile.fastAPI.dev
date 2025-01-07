@@ -1,0 +1,10 @@
+FROM python:3.12.4-slim-bookworm
+
+WORKDIR /usr/src/app
+
+COPY ./app/requirements.txt /usr/src/app/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r requirements.txt
+
+COPY ./app/. /usr/src/app/
+
+CMD ["fastapi", "dev", "--host", "0.0.0.0", "/usr/src/app/main/main.py"]

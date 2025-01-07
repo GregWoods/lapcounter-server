@@ -1,9 +1,11 @@
 FROM node:18-alpine AS build-step
 WORKDIR /app
 ENV PATH /app/node_modules/.bin:$PATH
+
 COPY package.json package-lock.json vite.config.js index.html ./
 COPY ./src ./src
 COPY ./public ./public
+
 RUN npm ci
 RUN npm run build
 
