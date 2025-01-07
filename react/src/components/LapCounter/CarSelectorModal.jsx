@@ -8,6 +8,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
 
     //holds list of car Urls fetched from server
     const [cars, setCars] = useState([]);
+    const [selectedFile, setSelectedFile] = useState(null);
 
     useEffect(() => {
         fetch(carImgListUrl)
@@ -67,6 +68,31 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
         setDrivers(newDrivers);
     }
 
+    const handleFileChange = (event) => {
+
+        console.log('handleFileChange 1');
+        const apiUri = process.env.REACT_APP_API_URI;
+        const file = event.target.files[0];
+        setSelectedFile(file);
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        fetch(`${apiUri}/api/upload`, {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('File uploaded successfully:', data);
+            // You can add additional logic to handle the response data
+        })
+        .catch(error => {
+            console.error('Error uploading file:', error);
+        });
+        // You can add additional logic to handle the selected file
+    };
+
     if (cars && showMe) {
         console.log("car selector modal");
         console.dir(drivers);
@@ -75,22 +101,33 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
 
         return (
             <>
-                <div className="fullscreenblur"></div>
-                <div className="carselectormodal"
-                >
-                    <div className="carcontainer">
-                        {cars.map((car, idx) => {
-                            return <a key={idx} onClick={() => setCarImage(car)}>
-                                <CarImage url={car} />
-                            </a>
-                        })}
-                    </div>
-
-                    <div>
-                        <button onClick={skipDriver}>Skip</button>&nbsp;&nbsp;
-                        <button onClick={onClose}>Done</button>
-                    </div>
+            <div className="fullscreenblur"></div>
+            <div className="carselectormodal">
+                <div className="carcontainer">
+                {cars.map((car, idx) => {
+                    return <a key={idx} onClick={() => setCarImage(car)}>
+                    <CarImage url={car} />
+                    </a>
+                })}
                 </div>
+
+                <div>
+                    <button onClick={skipDriver}>Skip</button>&nbsp;&nbsp;
+                
+                    <button onClick={() => document.getElementById('file-upload').click()}>
+                        Upload
+                    </button>&nbsp;&nbsp;
+                    <input
+                        id="file-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        style={{ display: 'none' }}
+                    />
+
+                    <button onClick={onClose}>Done</button>
+                </div>
+            </div>
             </>
         );
     } else {

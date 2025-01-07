@@ -7,10 +7,9 @@ See readme in the individual sub-project folders for instructions on how to buil
 Local development using docker
 
 ```
-docker compose up -build
+docker compose -f compose.dev.yaml up -build
 ```
 
-The default compose.yaml is set up for development.
 React works with hot module reloading. 
 
 ```

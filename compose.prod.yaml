@@ -102,6 +102,18 @@ services:
   #  depends_on:
   #    - db
 
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.fastAPI.prod
+    ports:
+      - "8000:8000"
+    #env_file:
+    #  - ./api/.env.prod
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONBUFFERED=1
+
 
   nginx:
     profiles: ["disabled"]

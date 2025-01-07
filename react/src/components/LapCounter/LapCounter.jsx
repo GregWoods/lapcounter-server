@@ -18,7 +18,7 @@ const LapCounter = () => {
         // These defaults are based on the production docker setup
         // They are stored in localstorage
         mqtthost: "ws://192.168.8.3:8080",
-        apihost: "http://192.168.8.3:5001",
+        apihost: "http://192.168.8.3:8000",
         racepresets: [
             { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
             { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
@@ -33,7 +33,7 @@ const LapCounter = () => {
     //developer defaults
     defaultConfig = {...defaultConfig,
         mqtthost: "ws://127.0.0.1:8080",
-        apihost: "http://127.0.0.1:5001"
+        apihost: "http://127.0.0.1:8000"
     };
     
 

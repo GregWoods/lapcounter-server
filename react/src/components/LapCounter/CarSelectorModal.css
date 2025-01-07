@@ -25,7 +25,8 @@
     border-radius: 20px;
 }
 
-.carselectormodal button {
+.carselectormodal button,
+.carselectormodal input[type="file"] {
     font-size: 1.5rem;
     padding: 0.5rem 1.3rem;
     border-radius: 15px;
