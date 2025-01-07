@@ -96,7 +96,7 @@ const LapCounter = () => {
         finished: false, 
         suspended: false,
         hasStartedRacing: false,
-        //carImgUrl: null,
+        carImgUrl: defaultConfig.apihost.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg',
         spotlightMe: false
     };
     const initialDrivers = [
