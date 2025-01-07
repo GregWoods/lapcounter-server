@@ -6,7 +6,6 @@ ENV PATH /app/node_modules/.bin:$PATH
 
 COPY package.json package-lock.json vite.config.js index.html ./
 COPY ./src ./src
-COPY ./public ./public
 
 RUN npm ci
 
