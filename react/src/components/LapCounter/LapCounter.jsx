@@ -96,16 +96,16 @@ const LapCounter = () => {
         finished: false, 
         suspended: false,
         hasStartedRacing: false,
-        carImgUrl: defaultConfig.apihost.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg',
         spotlightMe: false
     };
+    const defaultCarImg = defaultConfig.apihost.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg';
     const initialDrivers = [
-        {...driverDataDefault, number: 1, name: 'Driver A'},
-        {...driverDataDefault, number: 2, name: 'Driver B'},
-        {...driverDataDefault, number: 3, name: 'Driver C'},
-        {...driverDataDefault, number: 4, name: 'Driver D'},
-        {...driverDataDefault, number: 5, name: 'Driver E'},
-        {...driverDataDefault, number: 6, name: 'Driver F'}
+        {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg},
+        {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg},
+        {...driverDataDefault, number: 3, name: 'Driver C', carImgUrl: defaultCarImg},
+        {...driverDataDefault, number: 4, name: 'Driver D', carImgUrl: defaultCarImg},
+        {...driverDataDefault, number: 5, name: 'Driver E', carImgUrl: defaultCarImg},
+        {...driverDataDefault, number: 6, name: 'Driver F', carImgUrl: defaultCarImg}
     ];
     const [drivers, setDrivers] = useLocalStorageState('drivers', {defaultValue: [...initialDrivers]});
     const driversRef = useRef();
