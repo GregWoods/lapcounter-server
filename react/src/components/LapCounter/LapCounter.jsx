@@ -17,6 +17,7 @@ const LapCounter = () => {
     let defaultConfig = {
         // These defaults are based on the production docker setup
         // They are stored in localstorage
+        circuitname: "Barton Road Grand Prix",
         mqtthost: "ws://192.168.8.3:8080",
         apihost: "http://192.168.8.3:8000",
         racepresets: [
@@ -321,6 +322,7 @@ const LapCounter = () => {
             <div id={'lapcounter'}>
                 <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={processLapMsg} debug={DEBUG} />
                 <Header
+                    circuitName={config.circuitname}
                     mqttHost={config.mqtthost}
                     setMqtthost={storeMqttHost}
                     onRaceTypeChange={handleRaceTypeChange}

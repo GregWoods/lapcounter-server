@@ -12,6 +12,7 @@ import ResetFastestLapTodayModal from './ResetFastestLapTodayModal';
 
 
 function Header({
+    circuitName,
     mqttHost, setMqttHost, 
     onGoGoGo, 
     onStartCountdown,
@@ -133,7 +134,7 @@ function Header({
                     />                    
                 }
 
-                <h1>Wellington Raceway</h1>
+                <h1>{ circuitName }</h1>
                     
                 <div id="laprecord" onClick={() => {setResetFastestLapTodayModalShown(true)}}>
                     <div id="laprecordlbl">Lap Record</div>
