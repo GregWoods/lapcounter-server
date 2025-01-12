@@ -104,16 +104,14 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
             <div className="fullscreenblur"></div>
             <div className="carselectormodal">
                 <div className="carcontainer">
-                {cars.map((car, idx) => {
-                    return <a key={idx} onClick={() => setCarImage(car)}>
-                    <CarImage url={car} />
-                    </a>
-                })}
+                    {cars.map((car, idx) => {
+                        return <a className="carimage" key={idx} onClick={() => setCarImage(car)}><CarImage url={car} /></a>
+                    })}
                 </div>
 
-                <div>
+                <div className="carselectorbuttons">
                     <button onClick={skipDriver}>Skip</button>&nbsp;&nbsp;
-                
+                    {/*
                     <button onClick={() => document.getElementById('file-upload').click()}>
                         Upload
                     </button>&nbsp;&nbsp;
@@ -124,6 +122,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
                         onChange={handleFileChange}
                         style={{ display: 'none' }}
                     />
+                    */}
 
                     <button onClick={onClose}>Done</button>
                 </div>
