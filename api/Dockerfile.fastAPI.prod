@@ -1,13 +1,20 @@
-FROM python:3.12.4-slim-bookworm
+FROM python:3.12.8-bookworm
 
 WORKDIR /usr/src/app
 
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONBUFFERED=1
 
-COPY ./requirements.txt /usr/src/app/requirements.txt
+
+COPY ./app/requirements.txt /usr/src/app/requirements.txt
 RUN pip install -r requirements.txt
-COPY . /usr/src/app
+COPY ./app/. /usr/src/app/
 
-RUN cd app
 CMD ["fastapi", "run", "main.py"]
+
+
+# Interactive build
+#RUN apt-get update && apt-get install -y \
+# curl \ 
+# vim
+#CMD ["bash"]

@@ -35,4 +35,5 @@ Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to set up your 
 curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/raspi-setup.sh
 chmod 755 raspi-setup.sh
 sudo ./raspi-setup.sh
+# You will need to press a key at the Docker installation warning message
 ```
