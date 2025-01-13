@@ -106,6 +106,7 @@ services:
     #build:
     #  context: ./api
     #  dockerfile: Dockerfile.fastAPI.prod
+    image: gregkwoods/lapcounter-server-api:latest
     ports:
       - "8000:8000"
     #env_file:
