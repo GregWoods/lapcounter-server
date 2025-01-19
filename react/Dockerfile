@@ -9,11 +9,12 @@ COPY ./public ./public
 RUN npm ci
 RUN npm run build
 
+
 # Build step #2: build an nginx container
 FROM nginx:stable-alpine
 COPY --from=build-step /app/dist /usr/share/nginx/html
-#COPY ./nginx.conf /etc/nginx/conf.d/default.conf
+COPY ./nginx.conf /etc/nginx/conf.d/default.conf
 
-##EXPOSE 8080
-##CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 

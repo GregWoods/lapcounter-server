@@ -56,21 +56,6 @@ services:
       - gpio-lane2
 
 
-  web:
-    profiles: ["disabled"]
-    image: gregkwoods/lapcounter-server-web:latest
-    pull_policy: never
-    command: gunicorn --bind 0.0.0.0:5000 manage:app
-    volumes:
-      - static_volume:/home/app/web/project/static
-      - media_volume:/home/app/web/project/media
-    expose:
-      - 5000
-    env_file:
-      - ./.env.prod
-    depends_on:
-      - db
-
   react:
     container_name: react
     image: gregkwoods/lapcounter-server-react:latest
@@ -79,9 +64,8 @@ services:
       - 8087:80
     volumes:
       - static_volume:/usr/src/app/dist
-    #for debugging. Use docker compose "run" instead of "up"
-    #restart: unless-stopped
-    #entrypoint: /bin/sh
+    restart: unless-stopped
+
 
 
   api:
@@ -94,6 +78,7 @@ services:
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONBUFFERED=1
+    restart: unless-stopped
 
 
   nginx:
@@ -104,6 +89,7 @@ services:
       - media_volume:/home/app/web/project/media
     ports:
       - 1337:80
+    restart: unless-stopped
 
 
   db:
