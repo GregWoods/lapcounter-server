@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Bootstrap instructions
+#
+# curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/raspi-setup1.sh
+# chmod 755 raspi-setup1.sh
+# sudo ./raspi-setup1.sh
+
 echo "Lapcounter-Server Setup"
 echo "IMPORTANT: Run under 'sudo'"
 
