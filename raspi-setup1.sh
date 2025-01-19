@@ -1,5 +1,7 @@
 #!/bin/bash
+
 echo "Lapcounter-Server Setup"
+echo "IMPORTANT: Run under 'sudo'"
 
 echo "Get all bootstrap files"
 curl -fsSL https://get.docker.com -o get-docker.sh
@@ -12,8 +14,7 @@ for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
 echo "Install Docker"
 sudo sh get-docker.sh && rm get-docker.sh
 
-echo "Run the lapcounter-server container"
-curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/compose.prod.yaml
-curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/.env.prod
-sudo docker compose --file compose.prod.yaml up --detach
- 
+echo "Docker installed. Now running raspi-setup2.sh"
+curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/raspi-setup2.sh
+chmod 755 raspi-setup2.sh
+source ./raspi-setup2.sh
