@@ -57,20 +57,21 @@ services:
 
 
   react:
+    # uses an nginx based image in production
     container_name: react
     image: gregkwoods/lapcounter-server-react:latest
     pull_policy: never
     ports:
       - 8088:80
-    volumes:
-      - static_volume:/usr/src/app/dist
+    #volumes:
+    #  - static_volume:/usr/src/app/dist
     restart: unless-stopped
-
 
 
   api:
     container_name: api
     image: gregkwoods/lapcounter-server-api:latest
+    pull_policy: never
     ports:
       - "8000:8000"
     #env_file:
@@ -78,17 +79,6 @@ services:
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONBUFFERED=1
-    restart: unless-stopped
-
-
-  nginx:
-    profiles: ["disabled"]
-    container_name: nginx
-    volumes:
-      - static_volume:/home/app/web/project/static
-      - media_volume:/home/app/web/project/media
-    ports:
-      - 1337:80
     restart: unless-stopped
 
 
@@ -105,4 +95,3 @@ services:
 volumes:
   postgres_data_prod:
   static_volume:
-  media_volume:
