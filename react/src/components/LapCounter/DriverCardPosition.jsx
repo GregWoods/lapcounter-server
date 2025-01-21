@@ -25,7 +25,8 @@ const showInRacePositionInfo = (position, lapsRemaining, p1LapsRemaining) => {
 }
 
 const showEndOfRacePositionInfo = (position, lapsRemaining, lapsCompleted) => {
-    const laps = (lapsRemaining > 0) ? "-" + lapsRemaining + " laps " : lapsCompleted + " laps";
+    //const laps = (lapsRemaining > 0) ? "-" + lapsRemaining + " laps " : lapsCompleted + " laps";
+    const laps = lapsCompleted + " laps";
     return(
         <div className="lapsremaining emphasized">
             <div className="timelbl">{laps}</div>

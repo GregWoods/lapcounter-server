@@ -10,9 +10,6 @@ docker login -u gregkwoods
 
 docker buildx create --use
 
-#cd ./lapcounter-server-test-mqtt-latency
-#docker buildx build --platform linux/amd64,linux/arm/v7 -t gregkwoods/lapcounter-server-test-mqtt-latency:$version -t gregkwoods/lapcounter-server-test-mqtt-latency:latest . --push
-
 cd gpio
 ./build-and-push-gpio.ps1
 cd ..
