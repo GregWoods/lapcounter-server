@@ -43,7 +43,7 @@ In an Ubuntu shell
 ```bash
 cd /mnt/c/Users/gregw/projects/lapcounter-server/
 source ./setenv.sh
-export MQTT_HOSTNAME=localhost
+
 # optional: printenv
 cd lapcounter-server-gpio/
 source ./.venv/Scripts/activate

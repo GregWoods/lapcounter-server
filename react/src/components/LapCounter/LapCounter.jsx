@@ -6,6 +6,7 @@ import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
 import { useState, useRef } from 'react';
+import process from 'process';
 import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
 
 
@@ -17,9 +18,9 @@ const LapCounter = () => {
     let defaultConfig = {
         // These defaults are based on the production docker setup
         // They are stored in localstorage
-        circuitname: "Barton Road Grand Prix",
-        mqtthost: "ws://192.168.8.3:8080",
-        apihost: "http://192.168.8.3:8000",
+        circuitname: process.env.CIRCUIT_NAME,
+        mqtthost: `${process.env.MQTT_PROTOCOL}://${process.env.SERVER_IP_ADDR}:${process.env.MQTT_PORT}`,
+        apihost: `${process.env.HTTP_PROTCOL}://${process.env.SERVER_BASE_URL}:${process.env.API_PORT}`,
         racepresets: [
             { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
             { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},

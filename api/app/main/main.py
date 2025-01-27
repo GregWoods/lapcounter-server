@@ -6,20 +6,19 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    server_base_url: str = "http://192.168.8.3"
-    api_port: str = "8000"
-    react_port: str = "8088"
-    app_name: str = "Lapcounter Server API"
-    admin_email: str = "gregwoodslancs@gmail.com"
+    http_protocol: str
+    server_ip_addr: str
+    api_port: str
+    react_port: str
     media_folder: str = "media/cars"
 
     @property
     def api_base_url(self) -> str:
-        return f"{self.server_base_url}:{self.api_port}"
+        return f"{self.http_protocol}://{self.server_ip_addr}:{self.api_port}"
     
     @property
     def api_react_url(self) -> str:
-        return f"{self.server_base_url}:{self.react_port}"
+        return f"{self.http_protocol}://{self.server_ip_addr}:{self.react_port}"
 
 
 settings = Settings()

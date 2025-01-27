@@ -14,7 +14,7 @@ import RPi.GPIO as GPIO             # actually uses the lgpio library for compat
 lane_idx = int(os.getenv('LANE_NUMBER')) - 1
 print(f"LANE_NUMBER: {lane_idx}")
 
-mqtt_hostname = os.getenv('MQTT_HOSTNAME')
+mqtt_hostname = f"{os.getenv('MQTT_PROTOCOL')}://{os.getenv('SERVER_IP_ADDR')}:{os.getenv('MQTT_PORT')}"
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
 
 # setup GPIO pin constants

@@ -10,10 +10,7 @@ import os
 from dotenv import load_dotenv
 
 
-# Load dev environment variables. We don't override existing variables set using docker compose --env-file
-#   which is used in production
-#load_dotenv('../.env.local', override=False)        #only needed if we are running the script outside of the container
-mqtt_hostname = os.getenv('MQTT_HOSTNAME')
+mqtt_hostname = f"{os.getenv('MQTT_PROTOCOL')}://{os.getenv('SERVER_IP_ADDR')}:{os.getenv('MQTT_PORT')}"
 print(mqtt_hostname)
 
 async def subscribe():
