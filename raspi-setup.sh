@@ -11,6 +11,8 @@ if [ "$(id -u)" -ne 0 ]; then
   echo "This script must be run as root" >&2
   exit 1
 fi
+sudo apt-get update
+sudo apt-get upgrade -y
 
 echo "Get all bootstrap files"
 curl -fsSL https://get.docker.com -o get-docker.sh
@@ -23,7 +25,12 @@ for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
 echo "Install Docker"
 sudo sh get-docker.sh && rm get-docker.sh
 
+sudo usermod -aG docker $USER
+echo "You must log out and back in to use docker without sudo"
+
 echo "Docker installed. Downloading and running run-prod-with-internet.sh"
 curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/run-prod-with-internet.sh
-chmod 755 run-prod-with-internet.sh
+chmod 755 run-prod-with-internet.sh  
+
+#why did i use source instead of ./ or sh?
 source ./run-prod-with-internet.sh

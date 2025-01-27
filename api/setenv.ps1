@@ -1,8 +1,0 @@
-$env:FLASK_RUN_PORT = "5001"
-$env:FLASK_APP = "project/__init__.py"
-$env:FLASK_DEBUG = "1"
-$env:DATABASE_URL = "postgresql://hello_flask:hello_flask@db:5432/hello_flask_dev"
-$env:SQL_HOST = "db"
-$env:SQL_PORT = "5432"
-$env:DATABASE = "postgres"
-$env:APP_FOLDER = "/usr/src/app"

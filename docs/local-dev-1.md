@@ -1,6 +1,13 @@
 # Developer Workflow - Layer 1: GPIO and layer 2: Lap Data
 
+## DEPRECATED Document
+
+These instructions are DEPRECATED. I now generally recommend docker for local development.
+This should still be useful if Docker proves to be too much of a pain.
+
+
 ## Overview
+
 
 This page is all about the developer workflow whilst working on the first 2 layers of the architecture
 

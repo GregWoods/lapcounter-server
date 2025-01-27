@@ -7,12 +7,12 @@ Use `build-and-push.ps1` from the parent folder
 Note that we build 2 versions:
 
 * linux/amd64 for local use (run from WSL2)
-* arm/v7 for Raspberry Pi 3A
+* arm/v8 for Raspberry Pi 3A
 
 Sample build command
 
 ```
-docker buildx build --platform linux/amd64,linux/arm/v7 --push -t gregkwoods/lapcounter-server-gpio:latest .
+docker buildx build --platform linux/amd64,linux/arm/v8 --push -t gregkwoods/lapcounter-server-gpio:latest .
 ```
 
 ## Create a local image which creates mock lapdata

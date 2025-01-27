@@ -5,6 +5,8 @@ services:
   mosquitto:
     image: eclipse-mosquitto
     container_name: mosquitto
+    env_file:
+      - ./.env.dev
     volumes:
       - ./mosquitto:/mosquitto
       - ./mosquitto/data:/mosquitto/data
@@ -16,85 +18,57 @@ services:
     restart: unless-stopped
 
 
+
   mocked-gpio:
-    image: gregkwoods/lapcounter-server-mocked-gpio:latest
-    pull_policy: always
+    container_name: mocked-gpio
+    env_file:
+      - ./.env.dev 
     build: 
       context: ./gpio
-      dockerfile: Dockerfile.Mocked
-    env_file:
-      - .env.dev
-    container_name: mocked-gpio
+      dockerfile: Dockerfile.Mocked 
     depends_on:
       - mosquitto
+    restart: unless-stopped
 
 
   lapdata:
-    image: gregkwoods/lapcounter-server-lapdata:latest
-    pull_policy: always
+    container_name: lapdata
     env_file:
       - .env.dev
     build: ./lapdata
-    container_name: lapdata
     depends_on:
       - mocked-gpio
-
-
-  #http://localhost:8000/upload
-  #http://localhost:8000/media/<uploaded_file_name>
-
-  #api:
-  #  container_name: api
-  #  pull_policy: always
+    restart: unless-stopped
 
 
   api:
     container_name: api
+    env_file:
+      - ./.env.dev
     build:
       context: ./api
-      dockerfile: Dockerfile.fastAPI.dev
+      dockerfile: Dockerfile.dev
     volumes:
       - ./api/app:/usr/src/app
     ports:
       - "8000:8000"
-    #env_file:
-    #  - ./api/.env.dev
-    #environment:
-    #  - PYTHONDONTWRITEBYTECODE=1
-    #  - PYTHONBUFFERED=1
-
 
     
 
   react:
     container_name: react
-    pull_policy: always
+    env_file:
+      - ./.env.dev
     build: 
       context: ./react
       dockerfile: Dockerfile.dev
     volumes:
       - ./react:/app
       - /app/node_modules
-    #image: gregkwoods/lapcounter-server-react:latest
-    #volumes:
-    #  - ./web:/usr/src/app
     ports:
       - 8088:5173
-    env_file:
-      - ./.env.dev
 
 
-
-  db:
-    container_name: db
-    image: postgres:16
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      # only for local dev. Production uses .env.prod.db
-      POSTGRES_USER: hello_flask
-      POSTGRES_PASSWORD: hello_flask
-      POSTGRES_DB: hello_flask_dev
 
 
   #nginx-proxy-manager:
@@ -132,12 +106,3 @@ services:
     volumes:
       - ./portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
-
-
-volumes:
-  postgres_data:
-
-#   db-data:
-# secrets:
-#   db-password:
-#     file: db/password.txt

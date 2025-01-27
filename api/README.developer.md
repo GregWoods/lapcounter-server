@@ -1,7 +1,7 @@
 # Standalone Scalextric Digital Lap Counter - Python API
 
 For local development I am favouring using Docker.
-Sometimes though, things are just easier running localy. In those hopefully rare occasions...
+Sometimes though, things are just easier running locally. In those hopefully rare occasions...
 
 ## Use pyenv!
 

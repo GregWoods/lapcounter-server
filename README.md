@@ -16,7 +16,7 @@ The hardware is a Raspberry Pi 3A connected to a 2 lane car id sensor circuit cr
     * The carID of a car passing the sensor is sent to the Pi over a parallel 3 bit signal via the IO header pins
 
 ## Software
-the original project, well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/), was a great accomplishment during a few months of lockdown. I did dislike the UI (I have a pet hate for 7 segment LED fonts!), so I developed my own ReactJs based front end. Once that was in a decent state, I started to look at reworking the backend so I could add features not possible with all the logic in the front end code. 
+The project upon which this is based, is well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/). Whilst it was a great accomplishment during a few months of lockdown. I did dislike the UI. So, I developed my own ReactJs based front end. Once that was in a decent state, I started to look at reworking the backend so I could add features not possible with all the logic in the front end code.
 
 ![My reworked React JS UI](docs/shakedown.gif)
 
@@ -35,16 +35,17 @@ the original project, well documented on [slotforum](https://www.slotforum.com/t
     * The deslotted driver retreives their car. The green flag icon is clicked and a brief countdown resumes the race.
     * Unfortunately we cannot stop cars during a yellow flag event, as we have no control over the track signals.  
         * Actually, we could use a smart plug to kill all power to the powerbase. 
-        * In lieu of stopping cars, we simply stop counting their laps. This means that cunning drivers can gain more than a 3 second advantage if they continue their lap to just before the lap counting sensor. When the race resumes they immediately register a lap. 
+        * In lieu of stopping cars, we simply stop counting their laps. This means that sneaky drivers can gain more than the 3 second advantage if they continue their lap to just before the lap counting sensor. When the race resumes they immediately register a lap. 
             * In real races, this will result in frequent pileups on the the restart, so should probably be disallowed by the marshalls
 * Driver with fastest lap of the race has their fastest lap time shown in purple
 * Driver names quickly editable (not shown)
-* [Coming Soon] A nice UI for uploading and using car images
+* Previously uploaded car images can be quickly selected
+* [Coming Soon] A nice UI for uploading the car images
 
 
 ## Notes from the GIF
 
-* The UI to modify the car images is not finished. The old FSR logo from the Zoomroom original code has been left in for now
+* The UI to modify the car images was not finished when this was made. The old FSR logo from the Zoomroom original code has been left in for now
 * Note that the GIF was generated from fake data, so it takes longer than in most real races for all 6 cars to cross the line and appear on the board
 
 
