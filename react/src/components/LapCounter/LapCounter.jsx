@@ -46,7 +46,7 @@ const LapCounter = () => {
         startTime: null,
         paused: false,
         fastestLap: 99.999,
-        numberOfDriversRacing: 0
+        numberOfDriversRacing: 6
     };
 
     // Using refs...
@@ -101,17 +101,16 @@ const LapCounter = () => {
     };
     const defaultCarImg = defaultConfig.apihost.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg';
     const initialDrivers = [
-        {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg},
-        {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg},
-        {...driverDataDefault, number: 3, name: 'Driver C', carImgUrl: defaultCarImg},
-        {...driverDataDefault, number: 4, name: 'Driver D', carImgUrl: defaultCarImg},
-        {...driverDataDefault, number: 5, name: 'Driver E', carImgUrl: defaultCarImg},
-        {...driverDataDefault, number: 6, name: 'Driver F', carImgUrl: defaultCarImg}
+        {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 1},
+        {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 2},
+        {...driverDataDefault, number: 3, name: 'Driver C', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 3},
+        {...driverDataDefault, number: 4, name: 'Driver D', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 4},
+        {...driverDataDefault, number: 5, name: 'Driver E', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 5},
+        {...driverDataDefault, number: 6, name: 'Driver F', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 6}
     ];
     const [drivers, setDrivers] = useLocalStorageState('drivers', {defaultValue: [...initialDrivers]});
     const driversRef = useRef();
     driversRef.current = drivers;
-
 
     //Normal state variables for simple, non persistent state, such as dialog open state
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
@@ -221,11 +220,10 @@ const LapCounter = () => {
 
         //Adjust the left side of the DriverCards container element, which fake-centers the driverCards
         setTmpNumberOfDriversRacing(race.numberOfDriversRacing);
-        setRace({...race, numberOfDriversRacing: 6});
+        setRace({...race, numberOfDriversRacing: 6, underStartersOrders: false});
 
         //while the car image dialog is open, set all drivers' .hasStartedRacing to true, so they become visible
-        const updatedDrivers = drivers.map(drv => ({ ...drv, hasStartedRacing: true }));
-        setDrivers(updatedDrivers);
+        setDrivers(drivers.map(drv => ({ ...drv, hasStartedRacing: true })));
     }
 
     const rehideDrivers = () => {
