@@ -12,7 +12,7 @@ Note that we build 2 versions:
 Sample build command
 
 ```
-docker buildx build --platform linux/amd64,linux/arm/v8 --push -t gregkwoods/lapcounter-server-gpio:latest .
+docker buildx build --platform linux/arm/v7,linux/arm64/v8,linux/amd64 --push -t gregkwoods/ lapcounter-server-gpio:latest .
 ```
 
 ## Create a local image which creates mock lapdata
