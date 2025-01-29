@@ -205,42 +205,11 @@ const LapCounter = () => {
     const openCarSelectorModal = (driverIdx) => {
         setCarSelectorModalDriverIdx(driverIdx);
         setCarSelectorModalShown(true);
-        //unhideDrivers();
-        //setSpotlightMe(driverIdx) is run inside modal component
     }
-
-    //const [tmpNumberOfDriversRacing, setTmpNumberOfDriversRacing] = useState();
-
-    /*
-    const unhideDrivers = () => {
-        //unhides drivers who have not started racing. Used when changing the car images. 
-        //  Allows for additional drivers joining the race later, with correct CarImg shown
-
-        //Adjust the left side of the DriverCards container element, which fake-centers the driverCards
-        setTmpNumberOfDriversRacing(race.numberOfDriversRacing);
-        setRace({...race, numberOfDriversRacing: 6, underStartersOrders: false});
-
-        //while the car image dialog is open, set all drivers' .hasStartedRacing to true, so they become visible
-        setDrivers(drivers.map(drv => ({ ...drv, hasStartedRacing: true })));
-    }
-
-    const rehideDrivers = () => {
-        setRace({...race, numberOfDriversRacing: tmpNumberOfDriversRacing});
-
-        //rehide drivers who have not started racing (check totalRaceTime, we can't check hasStartedRacing, as we temporarily changed it)
-        const tmpDrivers = [...drivers].map((driver, index) => {
-            driver.spotlightMe = false;
-            driver.hasStartedRacing = (driver.totalRaceTime !== null);
-            console.log(`${index} ${driver.name} hasStartedRacing: ${driver.hasStartedRacing} spotlightMe: ${driver.spotlightMe}`);
-            return driver;
-        });
-        setDrivers(tmpDrivers);
-    }
-    */
 
     const closeCarSelectorModal = () => {
         setCarSelectorModalShown(false);
-        //rehideDrivers();
+        //TODO: unspotlight all drivers
     }
 
     //This is the callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
@@ -263,9 +232,6 @@ const LapCounter = () => {
 
         laps[carIdx] = newLap;
         setLapData(laps);
-
-        //console.dir(newLap);
-        //console.dir(newRace);
 
         //Fastest lap of this race
         console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(newRace.fastestLap): ${Number(newRace.fastestLap)}`);
