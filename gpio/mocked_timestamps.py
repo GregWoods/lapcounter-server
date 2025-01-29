@@ -14,7 +14,7 @@ import aiomqtt
 #   which is used in production
 #load_dotenv('../.env.local', override=False)   #only needed if we are running the script outside of the container
 
-mqtt_hostname = f"{os.getenv('MQTT_PROTOCOL')}://{os.getenv('SERVER_IP_ADDR')}:{os.getenv('MQTT_PORT')}"
+mqtt_hostname = os.getenv('VITE_MQTT_HOSTNAME')
 print(f"MQTT hostname: {mqtt_hostname}")
 
 publish_topic = "car_timestamp"

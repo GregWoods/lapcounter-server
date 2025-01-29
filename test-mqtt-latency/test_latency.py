@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 
 
-mqtt_hostname = f"{os.getenv('MQTT_PROTOCOL')}://{os.getenv('SERVER_IP_ADDR')}:{os.getenv('MQTT_PORT')}"
+mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(mqtt_hostname)
 
 async def subscribe():

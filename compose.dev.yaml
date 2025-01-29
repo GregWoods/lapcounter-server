@@ -6,7 +6,7 @@ services:
     image: eclipse-mosquitto
     container_name: mosquitto
     env_file:
-      - ./.env.dev
+      - ./.env.development
     volumes:
       - ./mosquitto:/mosquitto
       - ./mosquitto/data:/mosquitto/data
@@ -22,7 +22,7 @@ services:
   mocked-gpio:
     container_name: mocked-gpio
     env_file:
-      - ./.env.dev 
+      - ./.env.development 
     build: 
       context: ./gpio
       dockerfile: Dockerfile.Mocked 
@@ -34,7 +34,7 @@ services:
   lapdata:
     container_name: lapdata
     env_file:
-      - .env.dev
+      - .env.development
     build: ./lapdata
     depends_on:
       - mocked-gpio
@@ -44,7 +44,7 @@ services:
   api:
     container_name: api
     env_file:
-      - ./.env.dev
+      - ./.env.development
     build:
       context: ./api
       dockerfile: Dockerfile.dev
@@ -57,8 +57,9 @@ services:
 
   react:
     container_name: react
+    #environment variables are useless to a react app, though Vite can be used to read them and compile them into the app
     env_file:
-      - ./.env.dev
+      - ./.env.development
     build: 
       context: ./react
       dockerfile: Dockerfile.dev
@@ -86,7 +87,7 @@ services:
   test-mqtt-latency:
     profiles: ["disabled"]
     env_file:
-      - .env.dev
+      - .env.development
     image: gregkwoods/lapcounter-server-test-mqtt-latency:latest
     build: ./test-mqtt-latency
     container_name: test-mqtt-latency

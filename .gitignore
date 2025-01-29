@@ -5,3 +5,9 @@
 build
 public
 /data/logs
+
+#This file is a copy of ./.env.dev. not to be edited
+react/.env.development
+
+#This file is a copy of ./.env.prod. Not to be edited
+react/.env.production

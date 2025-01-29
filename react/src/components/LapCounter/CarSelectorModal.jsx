@@ -8,7 +8,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
 
     //holds list of car Urls fetched from server
     const [cars, setCars] = useState([]);
-    const [selectedFile, setSelectedFile] = useState(null);
+    //const [selectedFile, setSelectedFile] = useState(null);
 
     useEffect(() => {
         fetch(carImgListUrl)
@@ -68,10 +68,10 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
         setDrivers(newDrivers);
     }
 
+    /*
     const handleFileChange = (event) => {
-
         console.log('handleFileChange 1');
-        const apiUri = process.env.REACT_APP_API_URI;
+        const apiUri = `${import.meta.env.VITE_HTTP_PROTOCOL}://${import.meta.env.VITE_SERVER_IP_ADDR}:${import.meta.env.VITE_API_PORT}`;
         const file = event.target.files[0];
         setSelectedFile(file);
 
@@ -92,6 +92,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
         });
         // You can add additional logic to handle the selected file
     };
+    */
 
     if (cars && showMe) {
         console.log("car selector modal");

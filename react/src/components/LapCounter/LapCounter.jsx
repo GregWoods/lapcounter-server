@@ -6,7 +6,6 @@ import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
 import { useState, useRef } from 'react';
-import process from 'process';
 import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
 
 
@@ -14,13 +13,14 @@ const DEBUG = true;
 
 
 const LapCounter = () => {
-
+    //TODO: move all default and initial configs to a separate file
     let defaultConfig = {
         // These defaults are based on the production docker setup
         // They are stored in localstorage
-        circuitname: process.env.CIRCUIT_NAME,
-        mqtthost: `${process.env.MQTT_PROTOCOL}://${process.env.SERVER_IP_ADDR}:${process.env.MQTT_PORT}`,
-        apihost: `${process.env.HTTP_PROTCOL}://${process.env.SERVER_BASE_URL}:${process.env.API_PORT}`,
+        circuitname: import.meta.env.VITE_CIRCUIT_NAME,
+        //Note that from the React app, we use the generic IP address, not the mqtt host name, which is used within the python backend containers
+        mqtturl: `${import.meta.env.VITE_MQTT_PROTOCOL}://${import.meta.env.VITE_SERVER_IP_ADDR}:${import.meta.env.VITE_MQTT_PORT}`,
+        apiurl: `${import.meta.env.VITE_HTTP_PROTOCOL}://${import.meta.env.VITE_SERVER_IP_ADDR}:${import.meta.env.VITE_API_PORT}`,
         racepresets: [
             { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
             { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
@@ -31,14 +31,9 @@ const LapCounter = () => {
             { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
         ]
     }
-    
-    //developer defaults
-    defaultConfig = {...defaultConfig,
-        mqtthost: "ws://127.0.0.1:8080",
-        apihost: "http://127.0.0.1:8000"
-    };
-    
 
+    //console.log('defaultConfig', defaultConfig);
+    
     let defaultRace = {
         type: defaultConfig.racepresets[0],
         hasStarted: false,
@@ -56,7 +51,8 @@ const LapCounter = () => {
     //    If we didn't use Refs (or some similar technique), then referring to the state
     //    variables would always return the initial value rather than the current value.
 
-    const [config, setConfig] = useLocalStorageState('config', {defaultValue: defaultConfig});
+    const [config, setConfig] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
+    //console.log('config', config);
 
     const [race, setRace] = useLocalStorageState('race', {defaultValue: defaultRace});
     const raceRef = useRef();
@@ -100,7 +96,7 @@ const LapCounter = () => {
         hasStartedRacing: false,
         spotlightMe: false
     };
-    const defaultCarImg = defaultConfig.apihost.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg';
+    const defaultCarImg = defaultConfig.apiurl.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg';
     const initialDrivers = [
         {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 1},
         {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 2},
@@ -123,7 +119,7 @@ const LapCounter = () => {
 
 
     const storeMqttHost = (newMqttHost) => {
-        setConfig({...config, mqtthost: newMqttHost});
+        setConfig({...config, mqtturl: newMqttHost});
     }
 
     const storeFastestLapToday = (lapTime) => {
@@ -209,12 +205,13 @@ const LapCounter = () => {
     const openCarSelectorModal = (driverIdx) => {
         setCarSelectorModalDriverIdx(driverIdx);
         setCarSelectorModalShown(true);
-        unhideDrivers();
+        //unhideDrivers();
         //setSpotlightMe(driverIdx) is run inside modal component
     }
 
-    const [tmpNumberOfDriversRacing, setTmpNumberOfDriversRacing] = useState();
+    //const [tmpNumberOfDriversRacing, setTmpNumberOfDriversRacing] = useState();
 
+    /*
     const unhideDrivers = () => {
         //unhides drivers who have not started racing. Used when changing the car images. 
         //  Allows for additional drivers joining the race later, with correct CarImg shown
@@ -239,10 +236,11 @@ const LapCounter = () => {
         });
         setDrivers(tmpDrivers);
     }
+    */
 
     const closeCarSelectorModal = () => {
         setCarSelectorModalShown(false);
-        rehideDrivers();
+        //rehideDrivers();
     }
 
     //This is the callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
@@ -266,11 +264,8 @@ const LapCounter = () => {
         laps[carIdx] = newLap;
         setLapData(laps);
 
-        
-
-        console.log('=-=-=-=- newLap, newRace -=-=-=-=');
-        console.dir(newLap);
-        console.dir(newRace);
+        //console.dir(newLap);
+        //console.dir(newRace);
 
         //Fastest lap of this race
         console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(newRace.fastestLap): ${Number(newRace.fastestLap)}`);
@@ -319,10 +314,10 @@ const LapCounter = () => {
         <div id="top">
 
             <div id={'lapcounter'}>
-                <MqttSubscriber mqttHost={config.mqtthost} onIncomingLapMessage={processLapMsg} debug={DEBUG} />
+                <MqttSubscriber mqttHost={config.mqtturl} onIncomingLapMessage={processLapMsg} debug={DEBUG} />
                 <Header
                     circuitName={config.circuitname}
-                    mqttHost={config.mqtthost}
+                    mqttHost={config.mqtturl}
                     setMqtthost={storeMqttHost}
                     onRaceTypeChange={handleRaceTypeChange}
                     onStartCountdown={handleStartCountdown}
@@ -349,7 +344,7 @@ const LapCounter = () => {
                         <CarSelectorModal 
                             showMe={carSelectorModalShown}
                             onClose={closeCarSelectorModal}
-                            carImgListUrl={config.apihost + '/api/cars'}
+                            carImgListUrl={config.apiurl + '/api/cars'}
                             drivers={drivers}
                             setDrivers={setDrivers}
                             driverIdx={carSelectorModalDriverIdx} 
