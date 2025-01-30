@@ -5,8 +5,6 @@ services:
   mosquitto:
     image: eclipse-mosquitto
     container_name: mosquitto
-    env_file:
-      - ./.env.development
     volumes:
       - ./mosquitto:/mosquitto
       - ./mosquitto/data:/mosquitto/data
@@ -61,7 +59,6 @@ services:
 
   react:
     container_name: react
-    #environment variables are useless to a react app, though Vite can be used to read them and compile them into the app
     build: 
       context: ./react
       dockerfile: Dockerfile.dev
@@ -70,6 +67,12 @@ services:
       - /app/node_modules
     ports:
       - 8088:5173
+    #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
+    environment:
+      - VITE_CIRCUIT_NAME="Wellington Raceway"
+      - VITE_MQTT_URL="ws://localhost:8080"
+      - VITE_API_URL="http://localhost:8000"
+      - VITE_CAR_MEDIA_FOLDER=media/cars      
 
 
 
@@ -88,11 +91,11 @@ services:
 
   test-mqtt-latency:
     profiles: ["disabled"]
-    env_file:
-      - .env.development
     image: gregkwoods/lapcounter-server-test-mqtt-latency:latest
     build: ./test-mqtt-latency
     container_name: test-mqtt-latency
+    environment: 
+      - MQTT_HOSTNAME="mosquitto"
     depends_on:
       - mosquitto
 

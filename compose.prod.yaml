@@ -20,8 +20,6 @@ services:
   gpio-lane1:
     image: gregkwoods/lapcounter-server-gpio:latest
     pull_policy: never
-    env_file:
-      - .env.production
     environment:
       - LANE_NUMBER=1
       - MQTT_HOSTNAME="mosquitto"
@@ -35,8 +33,6 @@ services:
   gpio-lane2:
     image: gregkwoods/lapcounter-server-gpio:latest
     pull_policy: never
-    env_file:
-      - ./gpio/.env.production
     environment:
       - LANE_NUMBER=2
       - MQTT_HOSTNAME="mosquitto"
@@ -66,9 +62,12 @@ services:
     pull_policy: never
     ports:
       - 8088:80
-    #unsure if this needed, or the env params are baked into the npm build
-    env_file:
-      - ./react/.env.production
+    #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
+    environment:
+      - VITE_CIRCUIT_NAME="Barton Road Grand Prix"
+      - VITE_MQTT_URL="ws://mosquitto:8080"
+      - VITE_API_URL="http://api:8000"
+      - VITE_CAR_MEDIA_FOLDER=/media/cars
     #volumes:
     #  - static_volume:/usr/src/app/dist
     restart: unless-stopped
@@ -80,8 +79,6 @@ services:
     pull_policy: never
     ports:
       - "8000:8000"
-    env_file:
-      - ./api/.env.production
     environment:
       - API_URL="http://192.168.8.3:8000"
       - REACT_URL="http://192.168.8.3:8080"
@@ -98,8 +95,6 @@ services:
     image: postgres:16
     volumes:
       - postgres_data_prod:/var/lib/postgresql/data/
-    env_file:
-      - ./db/.env.production.db
 
 
 volumes:
