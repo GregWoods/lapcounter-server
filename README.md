@@ -1,7 +1,9 @@
-# What is Lapcounter-Server
+# Standalone Scalextric Digital Lap Counter
+
+AKA: Lapcounter-Server - because it is capable of being used with other systems.
 
 Lapcounter-Server is the software portion of a Scalextric Digital Race Management System.
-A combination of hardware and software counts laps on a Scalextric Digital slot racing circuit.
+A combination of hardware and software, which counts laps on a Scalextric Digital slot racing circuit.
 It includes a real time leaderboard viewable in a web browser.
 
 For more technical details, please see **readme.developer.md**
@@ -9,11 +11,12 @@ For more technical details, please see **readme.developer.md**
 ## Hardware
 The hardware is a Raspberry Pi 3A connected to a 2 lane car id sensor circuit created by [ZoomRoom](https://www.slotforum.com/members/zoomroom.24952/) 
 * A Raspberry Pi 3A
-* Fittd into a 3D printed case clipped to the edge of a modified half straight track piece
+* Fitted into a 3D printed case clipped to the edge of a modified half straight track piece
   * which house optical sensors in each lane
   * The sensors are connected to a transistor circuit to amplify and clean up the edges of the signal
   * This optical signal feeds into a PIC microcontroller which converts the "PWM-ish" signal from the car's IR LED into numeric Card IDs 1-6
     * The carID of a car passing the sensor is sent to the Pi over a parallel 3 bit signal via the IO header pins
+* [Optional] A Wirelesss Access Point so that the whole system is standalone and transportable (i.e. it is not tied to your home WiFi, and can be run without any internet access)
 
 ## Software
 The project upon which this is based, is well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/). Whilst it was a great accomplishment during a few months of lockdown. I did dislike the UI. So, I developed my own ReactJs based front end. Once that was in a decent state, I started to look at reworking the backend so I could add features not possible with all the logic in the front end code.
@@ -51,11 +54,17 @@ The project upon which this is based, is well documented on [slotforum](https://
 
 ## Future Enhancements
 
-* Under Yellow Flag, subtract a lap each time a driver crosses the line during a yellow flag event. This should be indicated on screen to make it clear who was naughty!
+* Allow it to use data from an Arc Pro instead of the custom track sensor IDs
+    * This would allow fuel usage calculations, de-slot detection and  enforced penalties
+Under Yellow Flag, subtract a lap each time a driver crosses the line during a yellow flag event. This should be indicated on screen to make it clear who was naughty!
 * A "number of lives" system, where each yellow flag reduces a drivers lives by one. Unfortunately drivers will try to avoid the yellow flag if the car is in easy reach
-* Reading the track data would be EXTREMELY useful as "zero" throttle for a pre-determined time period could result in an auto yellow flag and penalty for that driver. This requires extra hardware, but is possible
-
-
+* Multi-client access - i.e. more than one web browser can cvonnect to the back end
+    * Individual driver screen
+    * Trackside screens
+* Race meeting management
+    * Keep track of points scored for an entire session
+    * Persistent driver results
+    * Statistics
 
 
 
