@@ -2,8 +2,7 @@
 
 # Bootstrap instructions
 #
-# curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/raspi-setup.sh
-# chmod 755 raspi-setup.sh && sudo ./raspi-setup.sh
+# curl -O https://raw.githubusercontent.com/GregWoods/lapcounter-server/main/raspi-setup.sh && chmod 755 raspi-setup.sh && sudo ./raspi-setup.sh
 
 echo "Lapcounter-Server Setup"
 # Ensure the script is run as root

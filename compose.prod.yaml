@@ -24,6 +24,7 @@ services:
       - .env.production
     environment:
       - LANE_NUMBER=1
+      - MQTT_HOSTNAME="mosquitto"
     container_name: gpio-1
     privileged: true
     restart: unless-stopped
@@ -38,6 +39,7 @@ services:
       - ./gpio/.env.production
     environment:
       - LANE_NUMBER=2
+      - MQTT_HOSTNAME="mosquitto"
     container_name: gpio-2
     privileged: true
     restart: unless-stopped
@@ -48,8 +50,9 @@ services:
   lapdata:
     image: gregkwoods/lapcounter-server-lapdata:latest
     pull_policy: never
-    env_file:
-      - ./gpio/.env.production
+    environment:
+      - MQTT_HOSTNAME="mosquitto"
+      - MINIMUM_LAP_TIME="4"
     container_name: lapdata
     restart: unless-stopped
     depends_on:
@@ -80,6 +83,10 @@ services:
     env_file:
       - ./api/.env.production
     environment:
+      - API_URL="http://192.168.8.3:8000"
+      - REACT_URL="http://192.168.8.3:8080"
+      - MEDIA_FOLDER="/media"
+      - CARS_MEDIA_FOLDER="/media/cars"
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONBUFFERED=1
     restart: unless-stopped

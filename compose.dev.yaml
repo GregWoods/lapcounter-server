@@ -21,8 +21,8 @@ services:
 
   mocked-gpio:
     container_name: mocked-gpio
-    env_file:
-      - ./.env.development 
+    environment:
+      - MQTT_HOSTNAME="mosquitto"
     build: 
       context: ./gpio
       dockerfile: Dockerfile.Mocked 
@@ -33,8 +33,9 @@ services:
 
   lapdata:
     container_name: lapdata
-    env_file:
-      - .env.development
+    environment:
+      - MQTT_HOSTNAME="localhost"
+      - MINIMUM_LAP_TIME="2"
     build: ./lapdata
     depends_on:
       - mocked-gpio
@@ -43,8 +44,11 @@ services:
 
   api:
     container_name: api
-    env_file:
-      - ./.env.development
+    environment:
+      - API_URL="http://localhost:8000"
+      - REACT_URL="http://localhost:8080"
+      - MEDIA_FOLDER="/media"
+      - CARS_MEDIA_FOLDER="/media/cars"    
     build:
       context: ./api
       dockerfile: Dockerfile.dev
@@ -58,8 +62,6 @@ services:
   react:
     container_name: react
     #environment variables are useless to a react app, though Vite can be used to read them and compile them into the app
-    env_file:
-      - ./.env.development
     build: 
       context: ./react
       dockerfile: Dockerfile.dev
