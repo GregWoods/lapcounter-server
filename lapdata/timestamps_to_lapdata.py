@@ -5,7 +5,7 @@ import json
 import paho.mqtt.client as mqtt
 
 
-mqtt_hostname = os.getenv('VITE_MQTT_HOSTNAME')
+mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_URL: {mqtt_hostname}")
 
 min_lap_time = int(os.getenv('MINIMUM_LAP_TIME')) * 1e9

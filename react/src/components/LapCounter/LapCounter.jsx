@@ -14,13 +14,14 @@ const DEBUG = true;
 
 const LapCounter = () => {
     //TODO: move all default and initial configs to a separate file
+    //TODO: split true environment settings from advanced user  focused settings
     let defaultConfig = {
         // These defaults are based on the production docker setup
         // They are stored in localstorage
         circuitname: import.meta.env.VITE_CIRCUIT_NAME,
-        //Note that from the React app, we use the generic IP address, not the mqtt host name, which is used within the python backend containers
-        mqtturl: `${import.meta.env.VITE_MQTT_PROTOCOL}://${import.meta.env.VITE_SERVER_IP_ADDR}:${import.meta.env.VITE_MQTT_PORT}`,
-        apiurl: `${import.meta.env.VITE_HTTP_PROTOCOL}://${import.meta.env.VITE_SERVER_IP_ADDR}:${import.meta.env.VITE_API_PORT}`,
+        mqtturl: import.meta.env.VITE_MQTT_URL,
+        apiurl: import.meta.env.VITE_API_URL,
+        carmediafolder: import.meta.env.VITE_CAR_MEDIA_FOLDER,
         racepresets: [
             { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
             { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
@@ -96,7 +97,7 @@ const LapCounter = () => {
         hasStartedRacing: false,
         spotlightMe: false
     };
-    const defaultCarImg = defaultConfig.apiurl.replace(/\/$/, '') + '/media/cars/GT_AA_Generic.jpg';
+    const defaultCarImg = defaultConfig.apiurl.replace(/\/$/, '') + defaultConfig.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
     const initialDrivers = [
         {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 1},
         {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 2},

@@ -35,7 +35,7 @@ services:
     image: gregkwoods/lapcounter-server-gpio:latest
     pull_policy: never
     env_file:
-      - .env.production
+      - ./gpio/.env.production
     environment:
       - LANE_NUMBER=2
     container_name: gpio-2
@@ -49,7 +49,7 @@ services:
     image: gregkwoods/lapcounter-server-lapdata:latest
     pull_policy: never
     env_file:
-      - .env.production
+      - ./gpio/.env.production
     container_name: lapdata
     restart: unless-stopped
     depends_on:
@@ -63,6 +63,9 @@ services:
     pull_policy: never
     ports:
       - 8088:80
+    #unsure if this needed, or the env params are baked into the npm build
+    env_file:
+      - ./react/.env.production
     #volumes:
     #  - static_volume:/usr/src/app/dist
     restart: unless-stopped
@@ -75,7 +78,7 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - ./.env.production
+      - ./api/.env.production
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONBUFFERED=1
@@ -89,7 +92,7 @@ services:
     volumes:
       - postgres_data_prod:/var/lib/postgresql/data/
     env_file:
-      - ./.env.production.db
+      - ./db/.env.production.db
 
 
 volumes:

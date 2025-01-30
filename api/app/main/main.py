@@ -6,23 +6,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    vite_http_protocol: str
-    vite_server_ip_addr: str
-    vite_api_port: str
-    react_port: str
-    react_cors_origin: str
-    vite_mqtt_protocol: str
-    vite_mqtt_hostname: str
-    vite_mqtt_port: str
-    vite_media_folder: str
-
-    @property
-    def api_base_url(self) -> str:
-        return f"{self.vite_http_protocol}://{self.vite_server_ip_addr}:{self.vite_api_port}"
-    
-    @property
-    def api_react_url(self) -> str:
-        return f"{self.vite_http_protocol}://{self.vite_server_ip_addr}:{self.react_port}"
+    API_URL: str
+    REACT_URL: str
+    MEDIA_FOLDER: str
+    CARS_MEDIA_FOLDER: str
 
 
 settings = Settings()
@@ -31,7 +18,7 @@ app = FastAPI()
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
 cors_origins = [
-    settings.react_cors_origin 
+    settings.REACT_URL 
 ]
 
 print(f"CORS origins: {cors_origins}")
@@ -47,17 +34,17 @@ app.add_middleware(
 
 @app.get("/api/settings")
 async def info():
-    return settings.api_react_url
+    return settings.REACT_URL
 
 
 @app.get("/api/cars")
 def get_cars():
-    folder_path = os.path.join(settings.vite_media_folder)
+    folder_path = os.path.join(settings.CARS_MEDIA_FOLDER)
     print(f"Folder path: {folder_path}")
-    api_base_url = settings.api_base_url
+    api_base_url = settings.API_URL
     print(f"API base URL: {api_base_url}")
     print(f"CORS origins: {cors_origins}")
     print(os.listdir(folder_path))
 
-    files = [f"{api_base_url}/{settings.vite_media_folder}/{filename}" for filename in os.listdir(folder_path)]
+    files = [f"{api_base_url}/{settings.CARS_MEDIA_FOLDER}/{filename}" for filename in os.listdir(folder_path)]
     return files

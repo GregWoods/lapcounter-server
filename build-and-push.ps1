@@ -1,10 +1,5 @@
 # Note: For internal use only. No other developer can push to my Docker Hub account. 
 
-# Note: Use Ubuntu not Powershell
-## Why???
-
-#cd /mnt/c/Users/gregw/projects/lapcounter-server/
-
 docker login -u gregkwoods
 #  supplying password/personal access token in CLI isn't allowed anymore. Interactive login is required
 

@@ -10,11 +10,13 @@ import paho.mqtt.client as mqtt     #uses >= 2.0.0
 import sys
 import RPi.GPIO as GPIO             # actually uses the lgpio library for compativility with newer Linux kernels
 
-# LANE_NUMBER starts from 1
+# LANE_NUMBER starts from 1. 
+#   It is passed in as an environment variable in the docker compose file. 
+#   This value must not be set in a .env file
 lane_idx = int(os.getenv('LANE_NUMBER')) - 1
 print(f"LANE_NUMBER: {lane_idx}")
 
-mqtt_hostname = os.getenv('VITE_MQTT_HOSTNAME')
+mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
 
 # setup GPIO pin constants

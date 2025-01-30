@@ -71,7 +71,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
     /*
     const handleFileChange = (event) => {
         console.log('handleFileChange 1');
-        const apiUri = `${import.meta.env.VITE_HTTP_PROTOCOL}://${import.meta.env.VITE_SERVER_IP_ADDR}:${import.meta.env.VITE_API_PORT}`;
+        const apiUri = import.meta.env.VITE_API_URL;
         const file = event.target.files[0];
         setSelectedFile(file);
 

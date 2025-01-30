@@ -2,13 +2,16 @@ FROM node:18-alpine AS build-step
 WORKDIR /app
 ENV PATH=/app/node_modules/.bin:$PATH
 
-COPY package.json package-lock.json vite.config.js index.html ../.env.production ./
+COPY package.json package-lock.json vite.config.js index.html ./
 RUN npm ci
 
 COPY ./src ./src
 COPY ./public ./public
+##COPY outsideof the build context is not allowed. build-and-push-react.ps1 makes a copy of the .env file before running docker build.
+#COPY ../.env.production .env
 
 RUN npm run build
+
 
 # Build step #2: build an nginx container
 FROM nginx:stable-alpine
