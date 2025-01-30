@@ -54,18 +54,7 @@ The project upon which this is based, is well documented on [slotforum](https://
 
 ## Future Enhancements
 
-* Allow it to use data from an Arc Pro instead of the custom track sensor IDs
-    * This would allow fuel usage calculations, de-slot detection and  enforced penalties
-Under Yellow Flag, subtract a lap each time a driver crosses the line during a yellow flag event. This should be indicated on screen to make it clear who was naughty!
-* A "number of lives" system, where each yellow flag reduces a drivers lives by one. Unfortunately drivers will try to avoid the yellow flag if the car is in easy reach
-* Multi-client access - i.e. more than one web browser can cvonnect to the back end
-    * Individual driver screen
-    * Trackside screens
-* Race meeting management
-    * Keep track of points scored for an entire session
-    * Persistent driver results
-    * Statistics
-
+see GitHub Issues
 
 
 
