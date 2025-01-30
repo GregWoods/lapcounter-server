@@ -1,36 +1,23 @@
-# Build Instructions
+# Standalone Scalextric Digital Lap Counter - GPIO Data Acquisition Layer
 
 ## Create and push a cross platform build.
 
-Use `build-and-push.ps1` from the parent folder
+```build-and-push-gpio.ps1```
 
-Note that we build 2 versions:
+The commands in this script can be run individually and modified, if for example, during development you didn't want to push an interim
+build to DockerHub, replace `--push` with `--load`.
 
-* linux/amd64 for local use (run from WSL2)
-* arm/v8 for Raspberry Pi 3A
+The script builds 2 images, one for mocked gpi data and the other which uses the actual gpio pins on a Raspberry Pi.
 
-Sample build command
+Note that we build for 3 architectures:
 
-```
-docker buildx build --platform linux/arm/v7,linux/arm64/v8,linux/amd64 --push -t gregkwoods/ lapcounter-server-gpio:latest .
-```
+* `linux/amd64`for local use (run from WSL2 or Docker) using the mocked gpio 
+* `linux/arm/v7` for 32 bit Raspberry Pi OS running on the Pi Zero 2 W or Pi 3A+
+* `linux/arm64/v8` for 64 bit Raspberry Pi OS running on a 1Gb+ Pi 3 or later
 
-## Create a local image which creates mock lapdata
 
-It has no dependencies on GPIO, so can be run on a developer laptop.
-There is no need to push it to dockerHub, so we will just use the regular docker build
+## Run it locally in Docker
 
-```
-docker build -f ./Dockerfile.Mock -t lapcounter-server-gpio:latest .
-```
+Correctly set up environment variables are needed for any of these containers to run. So instead of using `docker run` directly, we run can run the container using docker compose.
 
-And to run it locally
-
-```
-docker run --env-file ../.env.dev lapcounter-server-gpio
-```
-
-## Running Locally Without Docker
-
-For consistency, I;d prefer the Docker workflow is used, but for rapid iterations where a local copy is useful, remember to set local
-enviroment variables as per ../.env.dev
+```docker compose -f ../compose.dev.yaml up --build mocked-gpio```

@@ -1,3 +1,7 @@
+# This script generates mock lap times for ALL lanes and all drivers and sends them to the MQTT broker.
+#   whereas gpio_to_timestamps.py generates data for only ONE lane (but we run one docker container per lane)
+
+
 import asyncio
 import json
 import random
@@ -7,20 +11,15 @@ import os
 import aiomqtt
 
 
-# This script generates mock lap times for ALL lanes and all drivers and sends them to the MQTT broker.
-#   whereas gpio_to_timestamps.py generates data for only ONE lane (but we run one docker container per lane)
-
-# Load dev environment variables. We don't override existing variables set using docker compose --env-file
-#   which is used in production
-#load_dotenv('../.env.local', override=False)   #only needed if we are running the script outside of the container
-
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
-print(f"MQTT hostname: {mqtt_hostname}")
+numberOfDrivers = int(os.getenv('MOCK_NUMBER_OF_DRIVERS'))
+
+print(f"MQTT_HOSTNAME: {mqtt_hostname}")
+print(f"MOCK_NUMBER_OF_DRIVERS: {numberOfDrivers}")
 
 publish_topic = "car_timestamp"
 print(f"Publishing to topic: {publish_topic}")
 
-numberOfDrivers = int(os.getenv('MOCK_NUMBER_OF_DRIVERS'))
 baseLapTime = 5
 abilityRangeMax = 4.2
 lapTimeRangeMax = 3.5

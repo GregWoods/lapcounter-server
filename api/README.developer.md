@@ -1,28 +1,30 @@
 # Standalone Scalextric Digital Lap Counter - Python API
 
-For local development I am favouring using Docker.
-Sometimes though, things are just easier running locally. In those hopefully rare occasions...
+## Create and push a cross platform build.
 
-## Use pyenv!
+```build-and-push-api.ps1```
 
-It is installed globalled, and allows changing python version
- ```
-pyenv versions
-pyenv install --list
-pyenv install 3.12.2
- ```
+The commands in this script can be run individually and modified, if for example, during development you didn't want to push an interim
+build to DockerHub, replace `--push` with `--load`.
 
-## Running with Docker
+Note that we build for 3 architectures:
 
-From the ```api``` folder, we need to specify the compose file in the parent folder
+* `linux/amd64`for local use (run from WSL2 or Docker) using the mocked gpio 
+* `linux/arm/v7` for 32 bit Raspberry Pi OS running on the Pi Zero 2 W or Pi 3A+
+* `linux/arm64/v8` for 64 bit Raspberry Pi OS running on a 1Gb+ Pi 3 or later
+
+
+## Run it locally in Docker
+
+Correctly set up environment variables are needed for any of these containers to run. So instead of using `docker run` directly, we run can run the container using docker compose.
+
 ```
-docker compose -f ../compose.dev.yaml up --build --detach api
+docker compose -f ../compose.dev.yaml up --build api
 ```
 
 
-### Endpoints (see app/main/main.py)
+## Endpoints (see app/main/main.py)
 
 Auto generated API documentation.
-```
-http://127.0.0.1:8000/docs
-```
+
+```http://127.0.0.1:8000/docs```

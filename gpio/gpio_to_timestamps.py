@@ -1,7 +1,10 @@
-# Non-docker, local Ubuntu, run with the following commands
-#   . ./setenv.sh
+# Non-docker, local Ubuntu, run with the following commands:
+#
+#   export LANE_NUMBER=1
+#   export MQTT_HOSTNAME=mosquitto
 #   sudo -E python3 gpio_to_timestamps.py
-#   -E is needed to pass the environment variables to sudo
+#
+# Note: -E is needed to pass the environment variables to sudo
 
 import json
 import time
@@ -12,12 +15,13 @@ import RPi.GPIO as GPIO             # actually uses the lgpio library for compat
 
 # LANE_NUMBER starts from 1. 
 #   It is passed in as an environment variable in the docker compose file. 
-#   This value must not be set in a .env file
 lane_idx = int(os.getenv('LANE_NUMBER')) - 1
 print(f"LANE_NUMBER: {lane_idx}")
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 print(f"MQTT_HOSTNAME: {mqtt_hostname}")
+
+MQTT_TIMESTAMP_TOPIC = "car_timestamp"
 
 # setup GPIO pin constants
 lanes = [{
@@ -53,7 +57,7 @@ def send_lap_time(car_number, crossing_time):
     lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_idx + 1}
     lapjson = json.dumps(lapdata)
     print(lapjson)
-    client.publish("car_timestamp", payload=lapjson)
+    client.publish(MQTT_TIMESTAMP_TOPIC, payload=lapjson)
 
 def handshake_end(_):
     GPIO.output(lane["HSHAKE"], False)
