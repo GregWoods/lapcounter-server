@@ -63,7 +63,7 @@ In a second Ubuntu shell
 ```bash
 cd /mnt/c/Users/gregw/projects/lapcounter-server/
 source ./setenv.sh
-export VITE_MQTT_HOSTNAME=localhost
+export MQTT_HOSTNAME=localhost
 cd lapcounter-server-lapdata/
 source ./.venv/Scripts/activate
 # Run the following once

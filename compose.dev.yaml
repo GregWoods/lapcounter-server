@@ -20,7 +20,8 @@ services:
   mocked-gpio:
     container_name: mocked-gpio
     environment:
-      - MQTT_HOSTNAME="mosquitto"
+      - MQTT_HOSTNAME=mosquitto
+      - MOCK_NUMBER_OF_DRIVERS=6
     build: 
       context: ./gpio
       dockerfile: Dockerfile.Mocked 
@@ -32,8 +33,8 @@ services:
   lapdata:
     container_name: lapdata
     environment:
-      - MQTT_HOSTNAME="localhost"
-      - MINIMUM_LAP_TIME="2"
+      - MQTT_HOSTNAME=mosquitto
+      - MINIMUM_LAP_TIME=2
     build: ./lapdata
     depends_on:
       - mocked-gpio
@@ -43,10 +44,10 @@ services:
   api:
     container_name: api
     environment:
-      - API_URL="http://localhost:8000"
-      - REACT_URL="http://localhost:8080"
-      - MEDIA_FOLDER="/media"
-      - CARS_MEDIA_FOLDER="/media/cars"    
+      - API_URL=http://localhost:8000   # as seen by external users including the react app
+      - REACT_URL=http://localhost:8088
+      - MEDIA_FOLDER=media
+      - CARS_MEDIA_FOLDER=media/cars
     build:
       context: ./api
       dockerfile: Dockerfile.dev
@@ -69,10 +70,10 @@ services:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
     environment:
-      - VITE_CIRCUIT_NAME="Wellington Raceway"
-      - VITE_MQTT_URL="ws://localhost:8080"
-      - VITE_API_URL="http://localhost:8000"
-      - VITE_CAR_MEDIA_FOLDER=media/cars      
+      - VITE_CIRCUIT_NAME=Wellington Raceway
+      - VITE_MQTT_URL=ws://localhost:8080
+      - VITE_API_URL=http://localhost:8000
+      - VITE_CAR_MEDIA_FOLDER=media/cars
 
 
 
@@ -95,7 +96,7 @@ services:
     build: ./test-mqtt-latency
     container_name: test-mqtt-latency
     environment: 
-      - MQTT_HOSTNAME="mosquitto"
+      - MQTT_HOSTNAME=mosquitto
     depends_on:
       - mosquitto
 

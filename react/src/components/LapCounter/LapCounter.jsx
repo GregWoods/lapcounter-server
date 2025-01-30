@@ -97,7 +97,8 @@ const LapCounter = () => {
         hasStartedRacing: false,
         spotlightMe: false
     };
-    const defaultCarImg = defaultConfig.apiurl.replace(/\/$/, '') + defaultConfig.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
+    const defaultCarImg = defaultConfig.apiurl.replace(/\/$/, '') + "/" + defaultConfig.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
+    console.log('defaultCarImg', defaultCarImg);
     const initialDrivers = [
         {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 1},
         {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 2},

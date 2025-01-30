@@ -39,12 +39,8 @@ async def info():
 
 @app.get("/api/cars")
 def get_cars():
-    folder_path = os.path.join(settings.CARS_MEDIA_FOLDER)
-    print(f"Folder path: {folder_path}")
-    api_base_url = settings.API_URL
-    print(f"API base URL: {api_base_url}")
-    print(f"CORS origins: {cors_origins}")
-    print(os.listdir(folder_path))
-
-    files = [f"{api_base_url}/{settings.CARS_MEDIA_FOLDER}/{filename}" for filename in os.listdir(folder_path)]
+    car_pics_local_path = os.path.join(os.getcwd(), settings.CARS_MEDIA_FOLDER)
+    car_pic_base_url = f"{settings.API_URL}/{settings.CARS_MEDIA_FOLDER}"
+    files = [f"{car_pic_base_url}/{filename}" for filename in os.listdir(car_pics_local_path)]
+    print(f"Car pics: {files}")
     return files

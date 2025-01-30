@@ -22,7 +22,7 @@ services:
     pull_policy: never
     environment:
       - LANE_NUMBER=1
-      - MQTT_HOSTNAME="mosquitto"
+      - MQTT_HOSTNAME=mosquitto
     container_name: gpio-1
     privileged: true
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
     pull_policy: never
     environment:
       - LANE_NUMBER=2
-      - MQTT_HOSTNAME="mosquitto"
+      - MQTT_HOSTNAME=mosquitto
     container_name: gpio-2
     privileged: true
     restart: unless-stopped
@@ -47,8 +47,8 @@ services:
     image: gregkwoods/lapcounter-server-lapdata:latest
     pull_policy: never
     environment:
-      - MQTT_HOSTNAME="mosquitto"
-      - MINIMUM_LAP_TIME="4"
+      - MQTT_HOSTNAME=mosquitto
+      - MINIMUM_LAP_TIME=4
     container_name: lapdata
     restart: unless-stopped
     depends_on:
@@ -64,10 +64,10 @@ services:
       - 8088:80
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
     environment:
-      - VITE_CIRCUIT_NAME="Barton Road Grand Prix"
-      - VITE_MQTT_URL="ws://mosquitto:8080"
-      - VITE_API_URL="http://api:8000"
-      - VITE_CAR_MEDIA_FOLDER=/media/cars
+      - VITE_CIRCUIT_NAME=Barton Road Grand Prix
+      - VITE_MQTT_URL=ws://mosquitto:8080
+      - VITE_API_URL=http://api:8000
+      - VITE_CAR_MEDIA_FOLDER=media/cars
     #volumes:
     #  - static_volume:/usr/src/app/dist
     restart: unless-stopped
@@ -80,10 +80,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - API_URL="http://192.168.8.3:8000"
-      - REACT_URL="http://192.168.8.3:8080"
-      - MEDIA_FOLDER="/media"
-      - CARS_MEDIA_FOLDER="/media/cars"
+      - API_URL=http://192:168.8.3:8000  # as seen by external users including the react app
+      - REACT_URL=http://192.168.8.3:8088
+      - MEDIA_FOLDER=media
+      - CARS_MEDIA_FOLDER=media/cars
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONBUFFERED=1
     restart: unless-stopped
