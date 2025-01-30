@@ -18,7 +18,9 @@ app = FastAPI()
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
 cors_origins = [
-    settings.REACT_URL 
+    settings.REACT_URL,
+    "http://localhost:5173",    # when using the development vite server not in docker
+    "http://localhost:8088"     # when using the development vite server using docker compose
 ]
 
 print(f"CORS origins: {cors_origins}")
