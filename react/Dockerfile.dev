@@ -7,8 +7,8 @@ ENV PATH=/app/node_modules/.bin:$PATH
 COPY package.json package-lock.json vite.config.js index.html ./
 RUN npm ci
 
-COPY ./src ./src
-COPY ./public ./public
+COPY ./public ./public/
+COPY ./src ./src/
 
 # Start the development server
 CMD ["npm", "run", "dev"]
