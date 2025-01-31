@@ -13,6 +13,7 @@ const DEBUG = true;
 
 
 const LapCounter = () => {
+    console.log("LAPCOUNTER")
     //TODO: move all default and initial configs to a separate file
     //TODO: split true environment settings from advanced user  focused settings
     let defaultConfig = {

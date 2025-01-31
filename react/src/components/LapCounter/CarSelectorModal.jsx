@@ -18,6 +18,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
                 console.dir(data);
             },
                 (error) => {
+                    console.log('Error fetching carImgListUrl: ', carImgListUrl)
                     console.log(error);
                 }
             );

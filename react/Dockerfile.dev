@@ -10,4 +10,4 @@ RUN npm ci
 COPY ./src ./src
 
 # Start the development server
-CMD ["npm", "run", "devdocker"]
+CMD ["npm", "run", "dev"]
