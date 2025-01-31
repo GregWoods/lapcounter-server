@@ -8,6 +8,7 @@ COPY package.json package-lock.json vite.config.js index.html ./
 RUN npm ci
 
 COPY ./src ./src
+COPY ./public ./public
 
 # Start the development server
 CMD ["npm", "run", "dev"]

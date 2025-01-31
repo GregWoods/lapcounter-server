@@ -32,6 +32,7 @@ const StartLights = ({showMe, onClose, onLightsOut}) => {
         //  https://bugs.chromium.org/p/chromium/issues/detail?id=33023
         //  Still doesn't work. I suspect I need to use the events on the Audio objects
         var shortBeep = new Audio('sounds/Beep.wav');
+        shortBeep.setAttribute("crossOrigin", "anonymous");
         setTimeout(() => { shortBeep.volume = 0; }, 0 );
         //shortBeep.volume = 0.0;
         shortBeep.preload = 'auto';    
@@ -39,6 +40,7 @@ const StartLights = ({showMe, onClose, onLightsOut}) => {
         setTimeout(() => { shortBeep.volume = 1; }, 0 );
 
         var longBeep = new Audio('sounds/LongBeep.wav');
+        longBeep.setAttribute("crossOrigin", "anonymous");
         //setTimeout(() => { longBeep.volume = 0; }, 0 );
         longBeep.preload = 'auto';
         //longBeep.play();
