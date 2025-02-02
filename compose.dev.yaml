@@ -76,6 +76,18 @@ services:
       - VITE_CAR_MEDIA_FOLDER=media/cars
 
 
+  db:
+    image: postgres:latest
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: lapcounter_server
+      POSTGRES_USER: lap
+      POSTGRES_PASSWORD: lap
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
 
 
   #nginx-proxy-manager:
@@ -113,3 +125,7 @@ services:
     volumes:
       - ./portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+ 
+
+volumes:
+  postgres_data:
