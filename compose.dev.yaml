@@ -76,9 +76,9 @@ services:
       - VITE_CAR_MEDIA_FOLDER=media/cars
 
 
-  db:
+  database:
     image: postgres:latest
-    container_name: postgres_db
+    container_name: database
     environment:
       POSTGRES_DB: lapcounter_server
       POSTGRES_USER: lap
