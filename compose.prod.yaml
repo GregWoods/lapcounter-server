@@ -87,15 +87,25 @@ services:
       - CARS_MEDIA_FOLDER=media/cars
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONBUFFERED=1
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_HOST=database
+      - DB_PORT=5432
     restart: unless-stopped
 
 
-  db:
-    profiles: ["disabled"]
-    container_name: db
-    image: postgres:16
+  database:
+    image: postgres:latest
+    container_name: database
+    environment:
+      POSTGRES_DB: lapcounter_server
+      POSTGRES_USER: lap
+      POSTGRES_PASSWORD: lap
     volumes:
-      - postgres_data_prod:/var/lib/postgresql/data/
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 
 
 volumes:
