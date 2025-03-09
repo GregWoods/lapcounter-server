@@ -13,7 +13,6 @@ DROP TABLE IF EXISTS car_categories;
 DROP TABLE IF EXISTS chip_firmware;
 DROP TABLE IF EXISTS chip_hardware;
 DROP TABLE IF EXISTS car_tyres;
-
 DROP TABLE IF EXISTS car_manufacturers;
 
 
@@ -26,8 +25,6 @@ CREATE TABLE car_categories (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL
 );
-
-
 
 --The cars as they came out of the box.
 CREATE TABLE car_models (
@@ -94,7 +91,6 @@ CREATE TABLE meeting_drivers (
     driver_id INT REFERENCES drivers(id),
     driver_name VARCHAR(255),   -- Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
     PRIMARY KEY (meeting_id, driver_id)
-
 );
 
 CREATE TABLE meeting_cars (
