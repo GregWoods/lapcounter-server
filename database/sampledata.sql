@@ -33,16 +33,16 @@ INSERT INTO car_tyres (id, compound, size) VALUES (3, 'Slot.it P6', '18x10 Dwg 1
 INSERT INTO car_tyres (id, compound, size) VALUES (4, 'PCS F22 Grey Race Control Tyre', '18x10') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO chip_hardware (id, name) VALUES (1, 'Scalextric C8515 Rev H') ON CONFLICT (id) DO NOTHING;
-INSERT INTO chip_hardware (id, name) VALUES (2, 'Scalextric C8515 Rev G') ON CONFLICT (id) DO NOTHING;
-INSERT INTO chip_hardware (id, name) VALUES (3, 'Scalextric C8515 Rev F') ON CONFLICT (id) DO NOTHING;
-INSERT INTO chip_hardware (id, name) VALUES (4, 'Scalextric C7005') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_hardwares (id, name) VALUES (1, 'Scalextric C8515 Rev H') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_hardwares (id, name) VALUES (2, 'Scalextric C8515 Rev G') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_hardwares (id, name) VALUES (3, 'Scalextric C8515 Rev F') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_hardwares (id, name) VALUES (4, 'Scalextric C7005') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO chip_firmware (id, name) VALUES (1, 'Scalextric Factory Firmware') ON CONFLICT (id) DO NOTHING;  
-INSERT INTO chip_firmware (id, name) VALUES (2, 'InCar Pro 3.3') ON CONFLICT (id) DO NOTHING;
-INSERT INTO chip_firmware (id, name) VALUES (3, 'InCar Pro 4.0') ON CONFLICT (id) DO NOTHING;
-INSERT INTO chip_firmware (id, name) VALUES (4, 'InCar Pro 4.01') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_firmwares (id, name) VALUES (1, 'Scalextric Factory Firmware') ON CONFLICT (id) DO NOTHING;  
+INSERT INTO chip_firmwares (id, name) VALUES (2, 'InCar Pro 3.3') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_firmwares (id, name) VALUES (3, 'InCar Pro 4.0') ON CONFLICT (id) DO NOTHING;
+INSERT INTO chip_firmwares (id, name) VALUES (4, 'InCar Pro 4.01') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO cars (id, name, car_model_id, tyre_id, magnet, modifications_notes, weight_added, chip_hardware_id, chip_firmware_id, picture, rfid) 
@@ -133,52 +133,52 @@ INSERT INTO races (id, session_id, state) VALUES (3, 2, 'Running') ON CONFLICT (
 INSERT INTO races (id, session_id, state) VALUES (4, 2, 'NotStarted') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO driver_race (id, driver_id, race_id, car_id) VALUES (1, 1, 2, 1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_race (id, driver_id, race_id, car_id) VALUES (2, 2, 2, 1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_race (id, driver_id, race_id, car_id) VALUES (3, 3, 2, 2) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_race (id, driver_id, race_id, car_id) VALUES (4, 4, 2, 3) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_race (id, driver_id, race_id, car_id) VALUES (5, 5, 2, 4) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_race (id, driver_id, race_id, car_id) VALUES (6, 6, 2, 5) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id) VALUES (1, 1, 2, 1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id) VALUES (2, 2, 2, 1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id) VALUES (3, 3, 2, 2) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id) VALUES (4, 4, 2, 3) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id) VALUES (5, 5, 2, 4) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id) VALUES (6, 6, 2, 5) ON CONFLICT (id) DO NOTHING;
 
 -- sample driver_laps data for the race which has already finished
 
 -- Driver 1, 5 laps completed
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (1, 1, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (2, 1, 11.567, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (3, 1, 9.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (4, 1, 14.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (5, 1, 16.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (1, 1, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (2, 1, 11.567, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (3, 1, 9.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (4, 1, 14.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (5, 1, 16.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
 
 --Driver 2, 6 laps completed
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (6, 2, 13.456, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (7, 2, 12.678, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (8, 2, 11.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (9, 2, 10.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (10, 2, 14.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (11, 2, 15.789, '2024-06-01 14:30:50') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (6, 2, 13.456, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (7, 2, 12.678, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (8, 2, 11.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (9, 2, 10.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (10, 2, 14.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (11, 2, 15.789, '2024-06-01 14:30:50') ON CONFLICT (id) DO NOTHING;
 
 --Driver 3, 2 laps completed
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (12, 3, 10.123, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (13, 3, 11.456, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (12, 3, 10.123, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (13, 3, 11.456, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
 
 -- Driver 4, 5 laps completed
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (14, 4, 13.567, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (15, 4, 12.789, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (16, 4, 11.345, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (17, 4, 14.678, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (18, 4, 15.789, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (14, 4, 13.567, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (15, 4, 12.789, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (16, 4, 11.345, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (17, 4, 14.678, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (18, 4, 15.789, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
 
 -- Driver 5, 6 laps completed
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (19, 5, 12.123, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (20, 5, 11.456, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (21, 5, 10.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (22, 5, 13.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (23, 5, 14.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (24, 5, 15.789, '2024-06-01 14:30:50') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (19, 5, 12.123, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (20, 5, 11.456, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (21, 5, 10.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (22, 5, 13.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (23, 5, 14.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (24, 5, 15.789, '2024-06-01 14:30:50') ON CONFLICT (id) DO NOTHING;
 
 -- Driver 6, 2 laps completed
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (25, 6, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_lap (id, driver_race_id, lap_time, created_at) VALUES (26, 6, 11.567, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (25, 6, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (26, 6, 11.567, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
 
 
 -- leave driver laps empty for the current race... they will be generated in code

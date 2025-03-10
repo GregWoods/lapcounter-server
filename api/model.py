@@ -129,7 +129,7 @@ class DriverRace(SQLModel, table=True):
 
 
 class DriverLap(SQLModel, table=True):
-    __tablename__ = "driver_lap"
+    __tablename__ = "driver_laps"
     id: Optional[int] = Field(default=None, primary_key=True)
     driver_race_id: Optional[int] = Field(default=None, foreign_key="driver_races.id")
     #Used only for sorting, not for calculations

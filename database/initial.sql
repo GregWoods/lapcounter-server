@@ -1,6 +1,6 @@
 
-DROP TABLE IF EXISTS driver_lap;
-DROP TABLE IF EXISTS driver_race;
+DROP TABLE IF EXISTS driver_laps;
+DROP TABLE IF EXISTS driver_races;
 DROP TABLE IF EXISTS races;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS meeting_cars;
@@ -10,8 +10,8 @@ DROP TABLE IF EXISTS drivers;
 DROP TABLE IF EXISTS cars;
 DROP TABLE IF EXISTS car_models;
 DROP TABLE IF EXISTS car_categories;
-DROP TABLE IF EXISTS chip_firmware;
-DROP TABLE IF EXISTS chip_hardware;
+DROP TABLE IF EXISTS chip_firmwares;
+DROP TABLE IF EXISTS chip_hardwares;
 DROP TABLE IF EXISTS car_tyres;
 DROP TABLE IF EXISTS car_manufacturers;
 
@@ -43,12 +43,12 @@ CREATE TABLE car_tyres (
 );
 
 
-CREATE TABLE chip_hardware (
+CREATE TABLE chip_hardwares (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL
 );
 
-CREATE TABLE chip_firmware (
+CREATE TABLE chip_firmwares (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL
 );
@@ -62,8 +62,8 @@ CREATE TABLE cars (
     magnet BOOLEAN, 
     weight_added DECIMAL, 
     modifications_notes TEXT,
-    chip_hardware_id INT REFERENCES chip_hardware(id), 
-    chip_firmware_id INT REFERENCES chip_firmware(id), 
+    chip_hardware_id INT REFERENCES chip_hardwares(id), 
+    chip_firmware_id INT REFERENCES chip_firmwares(id), 
     picture VARCHAR(255), -- Filename of car pic. No path or url
     rfid VARCHAR(255)
 );
@@ -120,7 +120,7 @@ CREATE TABLE races (
 -- links drivers with their cars for a particular race,
 --   and links all drivers who are racing together.
 -- Does not store any lap related data, which can all be derived from driver_lap
-CREATE TABLE driver_race (
+CREATE TABLE driver_races (
     id SERIAL PRIMARY KEY,
     driver_id INT REFERENCES drivers(id),
     race_id INT REFERENCES races(id),
@@ -131,9 +131,9 @@ CREATE TABLE driver_race (
     UNIQUE (driver_id, race_id)
 );
 
-CREATE TABLE driver_lap (
+CREATE TABLE driver_laps (
     id SERIAL PRIMARY KEY,
-    driver_race_id INT REFERENCES driver_race(id),
+    driver_race_id INT REFERENCES driver_races(id),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     --not used for laptimes, just for sorting
     --lap_number INT,     -- canbe derived
     lap_time DECIMAL(10,3)
