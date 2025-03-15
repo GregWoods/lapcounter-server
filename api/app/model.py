@@ -2,8 +2,6 @@ from typing import Optional
 from decimal import Decimal
 from datetime import date, datetime
 from sqlmodel import Column, Field, Integer, Identity, Session, SQLModel, create_engine, select, UniqueConstraint
-#from sqlalchemy import Table, Column, MetaData, Integer, Computed
-
 
 
 class CarManufacturer(SQLModel, table=True):
@@ -46,6 +44,7 @@ class ChipFirmware(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
 
+
 class Car(SQLModel, table=True):
     __tablename__ = "cars"
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -70,12 +69,19 @@ class Driver(SQLModel, table=True):
     picture: Optional[str]
     rfid: Optional[str]
 
+
+#class Meeting(SQLModel, table=True):
+#    __tablename__ = "meetings"
+#    id: Optional[int] = Field(default=None, primary_key=True)
+#    name: str
+    #date: date
+    #venue: Optional[str]
+
 class Meeting(SQLModel, table=True):
-    __tablename__ = "meetings"
+    """Simple meeting model for testing"""
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
-    date: date
-    venue: Optional[str]
+
 
 class MeetingDriver(SQLModel, table=True):
     __tablename__ = "meeting_drivers"
@@ -90,8 +96,8 @@ class MeetingCar(SQLModel, table=True):
     car_id: Optional[int] = Field(default=None, foreign_key="cars.id", primary_key=True)
 
 
-class Session(SQLModel, table=True): 
-    __tablename__ = "sessions"
+class RaceSession(SQLModel, table=True): 
+    __tablename__ = "sessions"  #To be renamed to race_sessions
     id: Optional[int] = Field(default=None, primary_key=True)
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id")
     session_type: str               # 'Points', 'FastestLap', 'Championship'
@@ -124,8 +130,8 @@ class DriverRace(SQLModel, table=True):
     car_id: Optional[int] = Field(default=None, foreign_key="cars.id")
     # For later use
     laps_completed: Optional[int]
-    last_lap_time: Optional[Decimal] = Field(default=0, max_digits=10, decimal_places=3)
-    fastest_lap_time: Optional[Decimal] = Field(default=0, max_digits=10, decimal_places=3)
+    last_lap_time: Optional[Decimal] = Field(default=0)
+    fastest_lap_time: Optional[Decimal] = Field(default=0)
 
 
 class DriverLap(SQLModel, table=True):
@@ -134,22 +140,10 @@ class DriverLap(SQLModel, table=True):
     driver_race_id: Optional[int] = Field(default=None, foreign_key="driver_races.id")
     #Used only for sorting, not for calculations
     created_at: datetime = Field(default=datetime.now)
-    lap_time: Decimal = Field(default=0, max_digits=10, decimal_places=3)
+    lap_time: Decimal = Field(default=0)
     #lap_number can be derived
 
 
 # not using relationships yet
 #  https://sqlmodel.tiangolo.com/tutorial/relationship-attributes/define-relationships-attributes/#declare-relationship-attributes
 
-
-# localhost" will be "database" on live/docker env... so need it in an env var
-dbHost = "localhost"
-engine = create_engine(f"postgresql://{dbHost}/lapcounter_server?user=lap&password=lap", echo=True)
-
-
-def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
-
-
-if __name__ == "__main__":
-    create_db_and_tables()

@@ -1,4 +1,3 @@
-
 DROP TABLE IF EXISTS driver_laps;
 DROP TABLE IF EXISTS driver_races;
 DROP TABLE IF EXISTS races;
