@@ -94,28 +94,10 @@ def get_cars():
     return files
 
 
-@app.get("/verify-db")
-def verify_db():
-    try:
-        from sqlalchemy import inspect
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        return {"status": "connected", "tables": tables}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 # NEXT: GET Meetings
 @app.get("/meetings")
-def read_meetings(session: SessionDep):
+def get_all_meetings(session: SessionDep):
     try:
-        # Print meeting class information for debugging
-        print(f"Meeting class: {Meeting}")
-        print(f"Meeting.__tablename__: {getattr(Meeting, '__tablename__', None)}")
-        
-        # Try to manually execute a simple SQL query to test the connection
-        result = session.execute("SELECT 1").fetchone()
-        print(f"Test query result: {result}")
-        
         # Create query and print it
         query = select(Meeting)
         print(f"Query: {query}")
@@ -123,90 +105,17 @@ def read_meetings(session: SessionDep):
         # Execute query and print results
         meetings = session.exec(query).all()
         print(f"Meetings found: {len(meetings)}")
-        
         return meetings
     except Exception as e:
         logger.error(f"Error retrieving meetings: {str(e)}")
         logger.error(traceback.format_exc())
-        
         # Return detailed error information
         error_detail = {
             "message": str(e),
             "traceback": traceback.format_exc(),
             "meeting_model": str(Meeting.__dict__),
         }
-        
         raise HTTPException(status_code=500, detail=error_detail)
-
-@app.get("/meetings-schema")
-def get_meetings_schema():
-    try:
-        from sqlalchemy import inspect
-        inspector = inspect(engine)
-        
-        # Get table schema
-        columns = inspector.get_columns("meetings") if "meetings" in inspector.get_table_names() else []
-        schema = {col["name"]: str(col["type"]) for col in columns}
-        
-        # Get model definition
-        model_attrs = {
-            attr: str(type(getattr(Meeting, attr)))
-            for attr in dir(Meeting)
-            if not attr.startswith("_") and attr != "metadata"
-        }
-        
-        return {
-            "table_exists": "meetings" in inspector.get_table_names(),
-            "table_schema": schema,
-            "model_definition": model_attrs
-        }
-    except Exception as e:
-        return {"error": str(e), "traceback": traceback.format_exc()}
-
-
-
-
-@app.get("/diagnose-meeting-issue")
-def diagnose_meeting_issue(session: SessionDep):
-    results = {}
-    
-    # Step 1: Check if session works
-    try:
-        results["basic_query"] = str(session.execute("SELECT 1").fetchone())
-    except Exception as e:
-        results["basic_query_error"] = str(e)
-    
-    # Step 2: Check Meeting class
-    try:
-        results["meeting_class"] = str(Meeting.__dict__)
-        results["meeting_tablename"] = getattr(Meeting, "__tablename__", "Not found")
-    except Exception as e:
-        results["meeting_class_error"] = str(e)
-    
-    # Step 3: Check if meetings table exists and content
-    try:
-        raw_results = session.execute("SELECT COUNT(*) FROM meetings").fetchone()
-        results["table_count"] = raw_results[0]
-    except Exception as e:
-        results["table_query_error"] = str(e)
-    
-    # Step 4: Try to construct a query
-    try:
-        query = select(Meeting)
-        results["query_str"] = str(query)
-    except Exception as e:
-        results["query_construction_error"] = str(e)
-    
-    return results
-
-#@app.get("/heroes/")
-#def read_heroes(
-#    session: SessionDep,
-#    offset: int = 0,
-#    limit: Annotated[int, Query(le=100)] = 100,
-#) -> list[Hero]:
-#    heroes = session.exec(select(Hero).offset(offset).limit(limit)).all()
-#    return heroes
 
 
 
@@ -220,7 +129,7 @@ def create_driver(driver: Driver, session: SessionDep) -> Driver:
     return driver
 
 @app.get("/drivers/")
-def read_drivers(
+def get_all_drivers(
     session: SessionDep,
     offset: int = 0,
     limit: Annotated[int, Query(le=100)] = 100,
@@ -229,7 +138,7 @@ def read_drivers(
     return drivers
 
 @app.get("/drivers/{driver_id}")
-def read_driver(driver_id: int, session: SessionDep) -> Driver:
+def get_driver(driver_id: int, session: SessionDep) -> Driver:
     driver = session.get(Driver, driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
@@ -243,6 +152,31 @@ def delete_driver(driver_id: int, session: SessionDep):
     session.delete(driver)
     session.commit()
     return {"ok": True}
+
+
+
+
+
+
+
+# === Diagnostic Endpoints ===
+
+@app.get("/verify-db")
+def verify_db():
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        return {"status": "connected", "tables": tables}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/import-check")
+def import_check():
+    import sys
+    modules = [name for name in sys.modules if "model" in name.lower()]
+    return {"modules": modules}    
 
 
 @app.get("/minimal-debug")
@@ -273,45 +207,28 @@ def minimal_debug():
     return {"message": "Debug info written to debug_output.txt"}
 
 
-
-@app.get("/raw-meetings")
-def raw_meetings(session: SessionDep):
+@app.get("/meetings-schema")
+def get_meetings_schema():
     try:
-        # Use raw SQL instead of SQLModel
-        result = session.execute("SELECT * FROM meetings LIMIT 10").fetchall()
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
         
-        # Convert to dictionary
-        columns = session.execute("SELECT column_name FROM information_schema.columns WHERE table_name='meetings'").fetchall()
-        column_names = [col[0] for col in columns]
+        # Get table schema
+        columns = inspector.get_columns("meetings") if "meetings" in inspector.get_table_names() else []
+        schema = {col["name"]: str(col["type"]) for col in columns}
         
-        meetings = []
-        for row in result:
-            meeting_dict = {column_names[i]: value for i, value in enumerate(row)}
-            meetings.append(meeting_dict)
-            
-        return meetings
+        # Get model definition
+        model_attrs = {
+            attr: str(type(getattr(Meeting, attr)))
+            for attr in dir(Meeting)
+            if not attr.startswith("_") and attr != "metadata"
+        }
+        
+        return {
+            "table_exists": "meetings" in inspector.get_table_names(),
+            "table_schema": schema,
+            "model_definition": model_attrs
+        }
     except Exception as e:
         return {"error": str(e), "traceback": traceback.format_exc()}
 
-
-# Add this temporary model to main.py (not model.py)
-class SimpleMeeting(SQLModel, table=True):
-    __tablename__ = "meetings"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str
-    
-@app.get("/simple-meetings")
-def simple_meetings(session: SessionDep):
-    try:
-        # Use the simple model
-        results = session.exec(select(SimpleMeeting)).all()
-        return results
-    except Exception as e:
-        return {"error": str(e), "traceback": traceback.format_exc()}
-    
-
-@app.get("/import-check")
-def import_check():
-    import sys
-    modules = [name for name in sys.modules if "model" in name.lower()]
-    return {"modules": modules}    

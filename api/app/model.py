@@ -70,17 +70,12 @@ class Driver(SQLModel, table=True):
     rfid: Optional[str]
 
 
-#class Meeting(SQLModel, table=True):
-#    __tablename__ = "meetings"
-#    id: Optional[int] = Field(default=None, primary_key=True)
-#    name: str
-    #date: date
-    #venue: Optional[str]
-
 class Meeting(SQLModel, table=True):
-    """Simple meeting model for testing"""
+    __tablename__ = "meetings"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
+    date: date
+    venue: Optional[str]
 
 
 class MeetingDriver(SQLModel, table=True):
