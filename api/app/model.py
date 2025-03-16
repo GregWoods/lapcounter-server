@@ -139,22 +139,11 @@ class DriverLap(SQLModel, table=True):
     #lap_number can be derived
 
 
+
 # not using relationships yet
 #  https://sqlmodel.tiangolo.com/tutorial/relationship-attributes/define-relationships-attributes/#declare-relationship-attributes
 
 
 
-# When this file is run manually (not imported), it will create the database and tables
-def create_db_and_tables():
-    try:
-        settings = Settings()
-        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
-        print(f"Connection string: {connection_string}")
-        engine = create_engine(connection_string)
-    except Exception as e:
-        print(f"Error creating engine: {e}")
-        raise    
-    SQLModel.metadata.create_all(engine)
 
-if __name__ == "__main__":
-    create_db_and_tables()
+

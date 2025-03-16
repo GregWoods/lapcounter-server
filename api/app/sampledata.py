@@ -252,11 +252,41 @@ def add_driver_laps(session: Session):
     session.commit()
 
 
-if __name__ == "__main__":
-    settings = Settings()
-    connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
-    engine = create_engine(connection_string)
-    
+
+
+
+def drop_tables():
+    try:
+        settings = Settings()
+        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
+        print(f"Connection string: {connection_string}")
+        engine = create_engine(connection_string)
+    except Exception as e:
+        print(f"Error creating engine: {e}")
+        raise    
+    SQLModel.metadata.drop_all(engine)
+
+
+def create_db_and_tables():
+    try:
+        settings = Settings()
+        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
+        print(f"Connection string: {connection_string}")
+        engine = create_engine(connection_string)
+    except Exception as e:
+        print(f"Error creating engine: {e}")
+        raise    
+    SQLModel.metadata.create_all(engine)
+
+def add_sample_data():
+    try:
+        settings = Settings()
+        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
+        print(f"Connection string: {connection_string}")
+        engine = create_engine(connection_string)
+    except Exception as e:
+        print(f"Error creating engine: {e}")
+        raise    
     with Session(engine) as session:
         # Add data in the correct dependency order
         add_car_manufacturers(session)
@@ -274,5 +304,15 @@ if __name__ == "__main__":
         add_races(session)
         add_driver_races(session)
         add_driver_laps(session)
-        
     print("Sample data has been added successfully!")
+
+if __name__ == "__main__":
+    drop_tables()
+    print("All tables dropped successfully")
+    create_db_and_tables()
+    print("All tables created successfully")
+    add_sample_data()
+    print("Sample data added successfully")
+
+
+
