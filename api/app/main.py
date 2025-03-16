@@ -3,25 +3,12 @@ import logging
 import traceback
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from typing import Annotated, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from model import * 
-
-class Settings(BaseSettings):
-    API_URL: str
-    REACT_URL: str
-    MEDIA_FOLDER: str
-    CARS_MEDIA_FOLDER: str
-    DB_DATABASE: str
-    DB_HOST: str
-    DB_USER: str
-    DB_PASSWORD: str
-    DB_PORT: int
-    model_config = SettingsConfigDict(env_file=".env")
-
+from settings import Settings
 
 settings = Settings()
 
@@ -94,27 +81,38 @@ def get_cars():
     return files
 
 
-# NEXT: GET Meetings
 @app.get("/meetings")
 def get_all_meetings(session: SessionDep):
     try:
-        # Create query and print it
-        query = select(Meeting)
-        print(f"Query: {query}")
-        
-        # Execute query and print results
-        meetings = session.exec(query).all()
-        print(f"Meetings found: {len(meetings)}")
+        meetings = session.exec(select(Meeting)).all()
         return meetings
     except Exception as e:
         logger.error(f"Error retrieving meetings: {str(e)}")
         logger.error(traceback.format_exc())
-        # Return detailed error information
-        error_detail = {
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-            "meeting_model": str(Meeting.__dict__),
-        }
+        error_detail = { "message": str(e), "traceback": traceback.format_exc(), "model": str(Meeting.__dict__) }
+        raise HTTPException(status_code=500, detail=error_detail)
+
+@app.get("/meetings/upcoming")
+def get_upcoming_meetings(session: SessionDep):
+    try:
+        meetings = session.exec(select(Meeting).where(Meeting.date >= datetime.now())).all()
+        return meetings
+    except Exception as e:
+        logger.error(f"Error retrieving meetings: {str(e)}")
+        logger.error(traceback.format_exc())
+        error_detail = { "message": str(e), "traceback": traceback.format_exc(), "model": str(Meeting.__dict__) }
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
+@app.get("/sessions/{meetingId}")
+def get_sessions_by_meeting_id(meetingId: int, session: SessionDep):
+    try:
+        sessions = session.exec(select(RaceSession).where(RaceSession.meeting_id == meetingId)).all()
+        return sessions
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {str(e)}")
+        logger.error(traceback.format_exc())
+        error_detail = { "message": str(e), "traceback": traceback.format_exc(), "model": str(RaceSession.__dict__) }
         raise HTTPException(status_code=500, detail=error_detail)
 
 

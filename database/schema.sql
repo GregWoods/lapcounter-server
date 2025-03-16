@@ -55,7 +55,7 @@ CREATE TABLE chip_firmwares (
 --My cars, as they are configured for racing.
 CREATE TABLE cars (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL, -- defaults to car_model.name, but can be overridden in the UI
+    name CHAR(255) NOT NULL, -- defaults to car_model.name, but can be overridden in the UI
     car_model_id INT REFERENCES car_models(id), 
     tyre_id INT REFERENCES car_tyres(id),
     magnet BOOLEAN, 
@@ -104,11 +104,13 @@ CREATE TABLE sessions (
     session_type VARCHAR(255) CHECK (session_type IN ('Points', 'FastestLap', 'Championship')),
     end_condition VARCHAR(255) CHECK (end_condition IN ('Laps', 'Time')),
     end_condition_info INT,
-    scoring VARCHAR(255) CHECK (scoring IN ('LapPoints', 'PositionPoints', 'FastestLap')),
-    scoring_info TEXT,
+    scoring_method VARCHAR(255) CHECK (scoring IN ('LapPoints', 'PositionPoints', 'FastestLap')),
+    scoring_points TEXT,
     start_time TIME NULL,
     end_time TIME NULL
 );
+
+
 
 CREATE TABLE races (
     id SERIAL PRIMARY KEY,

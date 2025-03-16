@@ -1,8 +1,8 @@
 from typing import Optional
 from decimal import Decimal
-from datetime import date, datetime
-from sqlmodel import Column, Field, Integer, Identity, Session, SQLModel, create_engine, select, UniqueConstraint
-
+from datetime import date, datetime, time
+from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
+from settings import Settings
 
 class CarManufacturer(SQLModel, table=True):
     __tablename__ = "car_manufacturers"
@@ -100,8 +100,8 @@ class RaceSession(SQLModel, table=True):
     end_condition_info: Optional[int]   #number of laps or time  in minutes
     scoring_method: str             # 'LapPoints', 'PositionPoints', 'FastestLap'
     scoring_points: Optional[str]   # JSON string with points array used for PositionPoints (and FastestLap points?)
-    start_time: Optional[datetime]
-    end_time: Optional[datetime]
+    start_time: Optional[time]
+    end_time: Optional[time]
 
 
 class Race(SQLModel, table=True):
@@ -142,3 +142,19 @@ class DriverLap(SQLModel, table=True):
 # not using relationships yet
 #  https://sqlmodel.tiangolo.com/tutorial/relationship-attributes/define-relationships-attributes/#declare-relationship-attributes
 
+
+
+# When this file is run manually (not imported), it will create the database and tables
+def create_db_and_tables():
+    try:
+        settings = Settings()
+        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
+        print(f"Connection string: {connection_string}")
+        engine = create_engine(connection_string)
+    except Exception as e:
+        print(f"Error creating engine: {e}")
+        raise    
+    SQLModel.metadata.create_all(engine)
+
+if __name__ == "__main__":
+    create_db_and_tables()

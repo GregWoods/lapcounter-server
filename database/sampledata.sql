@@ -27,10 +27,10 @@ INSERT INTO car_models (id, car_category_id, manufacturer_id, name, race_number,
     VALUES (7, 1, 1, 'Porsche 997 Silver Street', '', 'C3021') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO car_tyres (id, compound, size) VALUES (1, 'Scalextric Factory Rubber', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO car_tyres (id, compound, size) VALUES (2, 'WASP', 'WASP 04') ON CONFLICT (id) DO NOTHING;
-INSERT INTO car_tyres (id, compound, size) VALUES (3, 'Slot.it P6', '18x10 Dwg 1207') ON CONFLICT (id) DO NOTHING;
-INSERT INTO car_tyres (id, compound, size) VALUES (4, 'PCS F22 Grey Race Control Tyre', '18x10') ON CONFLICT (id) DO NOTHING;
+INSERT INTO car_tyres (id, brand, compound, size) VALUES (1, 'Scalextric', ' Factory Rubber', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO car_tyres (id, brand, compound, size) VALUES (2, 'WASP', 'WASP 04', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO car_tyres (id, brand, compound, size) VALUES (3, 'Slot.it', 'P6', '18x10 Dwg 1207') ON CONFLICT (id) DO NOTHING;
+INSERT INTO car_tyres (id, brand, compound, size) VALUES (4, 'PCS', 'F22 Grey Race Control Tyre', '18x10') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO chip_hardwares (id, name) VALUES (1, 'Scalextric C8515 Rev H') ON CONFLICT (id) DO NOTHING;
@@ -100,6 +100,8 @@ INSERT INTO meetings (id, name, date, venue)
     VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage') ON CONFLICT (id) DO NOTHING;
 INSERT INTO meetings (id, name, date, venue) 
     VALUES (3, 'Village Hall Grand Prix', '2025-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue) 
+    VALUES (4, '2027 Village Hall Grand Prix', '2027-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;    
 
 
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 1, 'Driver A') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
@@ -121,10 +123,10 @@ INSERT INTO meeting_cars (meeting_id, car_id) VALUES (3, 5) ON CONFLICT (meeting
 INSERT INTO meeting_cars (meeting_id, car_id) VALUES (3, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring, scoring_info, start_time, end_time) 
-    VALUES (1, 3, 'FastestLap', 'Laps', 3, 'FastestLap', NULL, '14:30', '15:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring, scoring_info, start_time, end_time) 
-    VALUES (2, 3, 'Points', 'Laps', 20, 'PositionPoints', NULL, '15:00', NULL) ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
+    VALUES (1, 3, 'FastestLap', 'Laps', 3, 'FastestLap', NULL, TIME '14:30:00', TIME '15:00:00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
+    VALUES (2, 3, 'Points', 'Laps', 20, 'PositionPoints', NULL, TIME '15:00:00', NULL) ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO races (id, session_id, state) VALUES (1, 2, 'Finished') ON CONFLICT (id) DO NOTHING;
