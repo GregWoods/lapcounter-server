@@ -22,6 +22,18 @@ Correctly set up environment variables are needed for any of these containers to
 docker compose -f ../compose.dev.yaml up --build api
 ```
 
+http://localhost:8000/docs
+
+
+## Running locally without Docker
+
+```
+./api/.venv/Scripts/activate
+cd api/app
+fastapi dev main.py
+```
+
+http://localhost:8000/docs
 
 ## Endpoints (see app/main/main.py)
 
