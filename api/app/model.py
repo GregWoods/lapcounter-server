@@ -2,7 +2,6 @@ from typing import Optional
 from decimal import Decimal
 from datetime import date, datetime, time
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
-from settings import Settings
 
 class CarManufacturer(SQLModel, table=True):
     __tablename__ = "car_manufacturers"
@@ -68,6 +67,7 @@ class Driver(SQLModel, table=True):
     mobile_number: Optional[str]
     picture: Optional[str]
     rfid: Optional[str]
+    sit_out_next_race: bool = Field(default=False)
 
 
 class Meeting(SQLModel, table=True):
@@ -82,7 +82,7 @@ class MeetingDriver(SQLModel, table=True):
     __tablename__ = "meeting_drivers"
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id", primary_key=True)
     driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
-    driver_name: str    #Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
+    #driver_name: str    #Removed. Generate on the fly in cas enew drivers are added mid-meeting. #Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
 
 
 class MeetingCar(SQLModel, table=True):
@@ -123,6 +123,7 @@ class DriverRace(SQLModel, table=True):
     driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id")
     race_id: Optional[int] = Field(default=None, foreign_key="races.id")
     car_id: Optional[int] = Field(default=None, foreign_key="cars.id")
+    lane: int = Field(default=0)    #1 to 6
     # For later use
     laps_completed: Optional[int]
     last_lap_time: Optional[Decimal] = Field(default=0)

@@ -116,7 +116,7 @@ def add_drivers(session: Session):
         Driver(id=6, first_name='Driver F', last_name='', mobile_number='', picture='', rfid=''),
         Driver(id=7, first_name='Driver G', last_name='', mobile_number='', picture='', rfid=''),
         Driver(id=8, first_name='Driver H', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=9, first_name='Driver J', last_name='', mobile_number='', picture='', rfid='')
+        Driver(id=9, first_name='Driver J', last_name='', mobile_number='', picture='', rfid='', sit_out_next_race=True)
     ])
     session.commit()
 
@@ -133,15 +133,15 @@ def add_meetings(session: Session):
 
 def add_meeting_drivers(session: Session):
     session.add_all([
-        MeetingDriver(meeting_id=3, driver_id=1, driver_name='Driver A'),
-        MeetingDriver(meeting_id=3, driver_id=2, driver_name='Driver B'),
-        MeetingDriver(meeting_id=3, driver_id=3, driver_name='Driver C'),
-        MeetingDriver(meeting_id=3, driver_id=4, driver_name='Driver D'),
-        MeetingDriver(meeting_id=3, driver_id=5, driver_name='Driver E'),
-        MeetingDriver(meeting_id=3, driver_id=6, driver_name='Driver F'),
-        MeetingDriver(meeting_id=3, driver_id=7, driver_name='Driver G'),
-        MeetingDriver(meeting_id=3, driver_id=8, driver_name='Driver H'),
-        MeetingDriver(meeting_id=3, driver_id=9, driver_name='Driver J')
+        MeetingDriver(meeting_id=3, driver_id=1),
+        MeetingDriver(meeting_id=3, driver_id=2),
+        MeetingDriver(meeting_id=3, driver_id=3),
+        MeetingDriver(meeting_id=3, driver_id=4),
+        MeetingDriver(meeting_id=3, driver_id=5),
+        MeetingDriver(meeting_id=3, driver_id=6),
+        MeetingDriver(meeting_id=3, driver_id=7),
+        MeetingDriver(meeting_id=3, driver_id=8),
+        MeetingDriver(meeting_id=3, driver_id=9)
     ])
     session.commit()
 
@@ -184,12 +184,15 @@ def add_races(session: Session):
 
 def add_driver_races(session: Session):
     session.add_all([
-        DriverRace(id=1, driver_id=1, race_id=2, car_id=1),
-        DriverRace(id=2, driver_id=2, race_id=2, car_id=1),
-        DriverRace(id=3, driver_id=3, race_id=2, car_id=2),
-        DriverRace(id=4, driver_id=4, race_id=2, car_id=3),
-        DriverRace(id=5, driver_id=5, race_id=2, car_id=4),
-        DriverRace(id=6, driver_id=6, race_id=2, car_id=5)
+        DriverRace(id=1, driver_id=1, race_id=2, car_id=1, lane=1),
+        DriverRace(id=2, driver_id=2, race_id=2, car_id=1, lane=2),
+        DriverRace(id=3, driver_id=3, race_id=2, car_id=2, lane=3),
+        DriverRace(id=4, driver_id=4, race_id=2, car_id=3, lane=4),
+        DriverRace(id=5, driver_id=5, race_id=2, car_id=4, lane=5),
+        DriverRace(id=6, driver_id=6, race_id=2, car_id=5, lane=6),
+        DriverRace(id=7, driver_id=1, race_id=1, car_id=1, lane=1),
+        DriverRace(id=8, driver_id=1, race_id=3, car_id=1, lane=1),
+        DriverRace(id=9, driver_id=2, race_id=4, car_id=2, lane=1),
     ])
     session.commit()
 
@@ -265,7 +268,6 @@ def drop_tables():
         print(f"Error creating engine: {e}")
         raise    
     SQLModel.metadata.drop_all(engine)
-
 
 def create_db_and_tables():
     try:

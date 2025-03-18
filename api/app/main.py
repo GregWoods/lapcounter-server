@@ -7,8 +7,9 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 from typing import Annotated, Optional
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from model import * 
 from settings import Settings
+from model import *
+from responsemodel import DriverForNextRace
 
 settings = Settings()
 
@@ -115,10 +116,62 @@ def get_sessions_by_meeting_id(meetingId: int, session: SessionDep):
         error_detail = { "message": str(e), "traceback": traceback.format_exc(), "model": str(RaceSession.__dict__) }
         raise HTTPException(status_code=500, detail=error_detail)
 
+  
+
+@app.get("/drivers/nextrace/")
+def get_drivers_for_next_race(session: SessionDep):
+    try:
+        from sqlalchemy import text
+        query = text("""
+            SELECT 
+                d.id,
+                d.first_name, 
+                d.last_name,
+                d.sit_out_next_race,
+                COUNT(r.id) as completed_races,
+                COUNT(CASE WHEN dr.lane = 1 THEN 1 END) as lane1_count,
+                COUNT(CASE WHEN dr.lane = 2 THEN 1 END) as lane2_count,
+                COUNT(CASE WHEN dr.lane = 3 THEN 1 END) as lane3_count,
+                COUNT(CASE WHEN dr.lane = 4 THEN 1 END) as lane4_count,
+                COUNT(CASE WHEN dr.lane = 5 THEN 1 END) as lane5_count,
+                COUNT(CASE WHEN dr.lane = 6 THEN 1 END) as lane6_count
+            FROM 
+                drivers d
+            LEFT JOIN 
+                driver_races dr ON d.id = dr.driver_id
+            LEFT JOIN 
+                races r ON dr.race_id = r.id AND r.state = 'Finished'
+            GROUP BY 
+                d.id, d.first_name, d.last_name, d.sit_out_next_race
+            ORDER BY 
+                completed_races ASC
+        """)
+        results = session.exec(query)
+        drivers = []
+        for row in results:
+            driver = DriverForNextRace(
+                id=row.id,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                sit_out_next_race=row.sit_out_next_race,
+                completed_races = row.completed_races,
+                lane1_count = row.lane1_count,
+                lane2_count = row.lane2_count,
+                lane3_count = row.lane3_count,
+                lane4_count = row.lane4_count,
+                lane5_count = row.lane5_count,
+                lane6_count = row.lane6_count,
+            )
+            drivers.append(driver)
+        print(drivers)
+        return drivers
+    except Exception as e:
+        logger.error(f"Error retrieving drivers for next race: {str(e)}")
+        logger.error(traceback.format_exc())
+        error_detail = {"message": str(e), "traceback": traceback.format_exc()}
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
-
-# Driver CRUD Endpoints
 @app.post("/drivers/")
 def create_driver(driver: Driver, session: SessionDep) -> Driver:
     session.add(driver)
