@@ -36,16 +36,6 @@ def get_session():
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-def create_db_and_tables():
-    SQLModel.metadata.create_all(engine)
-
-#if __name__ == "__main__":
-#    create_db_and_tables()
-
-#@app.on_event("startup")
-#def on_startup():
-#    create_db_and_tables()
-
 app = FastAPI()
 
 @app.exception_handler(Exception)
@@ -105,11 +95,22 @@ def get_upcoming_meetings(session: SessionDep):
         raise HTTPException(status_code=500, detail=error_detail)
 
 
-@app.get("/sessions/{meetingId}")
-def get_sessions_by_meeting_id(meetingId: int, session: SessionDep):
+@app.get("/sessions", 
+         summary="Get race sessions",
+         description="Retrieve all race sessions, or filter by meeting ID",
+         response_model=list[RaceSession])
+def get_sessions_by_meeting_id(
+    session: SessionDep, 
+    meeting_id: int = Query(None, 
+        description="Filter sessions by meeting ID",
+    )
+):
     try:
-        sessions = session.exec(select(RaceSession).where(RaceSession.meeting_id == meetingId)).all()
-        return sessions
+        if meeting_id is not None:
+            race_sessions = session.exec(select(RaceSession).where(RaceSession.meeting_id == meeting_id)).all()
+        else:
+            race_sessions = session.exec(select(RaceSession)).all()
+        return race_sessions
     except Exception as e:
         logger.error(f"Error retrieving sessions: {str(e)}")
         logger.error(traceback.format_exc())
