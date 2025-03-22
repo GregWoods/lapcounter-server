@@ -47,8 +47,8 @@ services:
       context: ./react
       dockerfile: Dockerfile.dev
     volumes:
-      - ./react:/app
-      - /app/node_modules
+      - ./react/src:/app/src
+      - react_node_modules:/app/node_modules # this anonymous volume prevents the local directory from overwriting the container's node_modules directory.
     ports:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
@@ -140,3 +140,4 @@ services:
 
 volumes:
   postgres_data:
+  react_node_modules:
