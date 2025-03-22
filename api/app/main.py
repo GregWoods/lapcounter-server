@@ -1,6 +1,7 @@
 import os
 import logging
 import traceback
+import random
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
@@ -117,7 +118,18 @@ def get_sessions_by_meeting_id(
         error_detail = { "message": str(e), "traceback": traceback.format_exc(), "model": str(RaceSession.__dict__) }
         raise HTTPException(status_code=500, detail=error_detail)
 
-  
+
+def assign_unique_lanes(drivers, available_lanes):
+    # Randomize the initial order of lanes
+    random.shuffle(available_lanes)
+    
+    # Process each driver in order
+    for driver in drivers:
+        # Find the driver's least used lane among available lanes
+        driver.lane = min(available_lanes, key=lambda x: getattr(driver, f"lane{x}_count"))
+        
+        # Remove the assigned lane from available lanes
+        available_lanes.remove(driver.lane)
 
 @app.get("/drivers/nextrace/")
 def get_drivers_for_next_race(session: SessionDep):
@@ -135,7 +147,8 @@ def get_drivers_for_next_race(session: SessionDep):
                 COUNT(CASE WHEN dr.lane = 3 THEN 1 END) as lane3_count,
                 COUNT(CASE WHEN dr.lane = 4 THEN 1 END) as lane4_count,
                 COUNT(CASE WHEN dr.lane = 5 THEN 1 END) as lane5_count,
-                COUNT(CASE WHEN dr.lane = 6 THEN 1 END) as lane6_count
+                COUNT(CASE WHEN dr.lane = 6 THEN 1 END) as lane6_count,
+                RANDOM() as random_value
             FROM 
                 drivers d
             LEFT JOIN 
@@ -145,10 +158,18 @@ def get_drivers_for_next_race(session: SessionDep):
             GROUP BY 
                 d.id, d.first_name, d.last_name, d.sit_out_next_race
             ORDER BY 
-                completed_races ASC
+                sit_out_next_race ASC, 
+                completed_races ASC,
+                random_value ASC
         """)
         results = session.exec(query)
-        drivers = []
+        #Does SQLModel provide a way to map the results to a model?
+
+        racing = []
+        not_racing = []
+        #TODO: this will depend on the lane_X_available database settings
+        available_lanes = [1, 2, 3, 4, 5, 6]
+
         for row in results:
             driver = DriverForNextRace(
                 id=row.id,
@@ -162,15 +183,32 @@ def get_drivers_for_next_race(session: SessionDep):
                 lane4_count = row.lane4_count,
                 lane5_count = row.lane5_count,
                 lane6_count = row.lane6_count,
+                random_value = row.random_value
             )
-            drivers.append(driver)
-        print(drivers)
-        return drivers
+            # Fill the maximum available lanes with drivers who are not sitting the next race out 
+            #   the ordering of "results" gives priority to those who have raced the least.
+            if driver.sit_out_next_race or len(racing) >= len(available_lanes):
+                not_racing.append(driver)
+            else:
+                racing.append(driver)
+
+        # mutates "racing"
+        assign_unique_lanes(racing, available_lanes)
+
+        racing.sort(key=lambda driver: driver.lane)
+
+
+        return {
+            "racing": racing,
+            "not_racing": not_racing
+        }
     except Exception as e:
         logger.error(f"Error retrieving drivers for next race: {str(e)}")
         logger.error(traceback.format_exc())
         error_detail = {"message": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(status_code=500, detail=error_detail)
+
+
 
 
 @app.post("/drivers/")

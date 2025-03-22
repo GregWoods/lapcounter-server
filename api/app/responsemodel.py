@@ -7,7 +7,8 @@ class DriverForNextRace(SQLModel):
     def __init__(self, id=None, first_name="", last_name=None, 
                  completed_races=0, sit_out_next_race=False,
                  lane1_count=0, lane2_count=0, lane3_count=0,
-                 lane4_count=0, lane5_count=0, lane6_count=0):
+                 lane4_count=0, lane5_count=0, lane6_count=0, 
+                 random_value=0.0):
         self.id = id
         self.first_name = first_name
         self.last_name = last_name
@@ -19,6 +20,7 @@ class DriverForNextRace(SQLModel):
         self.lane4_count = lane4_count
         self.lane5_count = lane5_count
         self.lane6_count = lane6_count
+        self.random_value = random_value
 
     id: int
     first_name: str
@@ -31,3 +33,4 @@ class DriverForNextRace(SQLModel):
     lane4_count: int
     lane5_count: int
     lane6_count: int
+    random_value: float
