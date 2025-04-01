@@ -186,45 +186,54 @@ def assign_drivers_to_lanes(driver_list, lanes):
     # Create a copy of driver_list that we can modify
     available_drivers = list(driver_list)
 
-    # Randomise the order of lanes to reduce the chances of a driver being assigned to the same lane too often
-    random.shuffle(lanes)
+    # we may have less than 6 available lanes
+    # we may have less than 6 available, and not sitting out drivers
+    # we need the lower of these two numbers, then pop that number off the top of the available_drivers list
+    # and put then in a temporary available_racing_drivers list
+    # loop through lanes
+    # for each lane, sort available_racing_drivers by laneX_count ASC
+    # and pop that driver off the top of the available_racing_drivers list and assign them to the lane in lanes_with_drivers
 
+    # Get enabled lanes
+    enabled_lanes = [lane for lane in lanes if lane.enabled]
+    enabled_lane_count = len(enabled_lanes)
+
+    # Get up to 'enabled_lane_count' drivers who aren't sitting out
+    available_racing_drivers = [d for d in available_drivers if not d.sit_out_next_race][:enabled_lane_count]
     
+    # Add all unassigned drivers to drivers_not_racing
+    racing_driver_ids = {driver.id for driver in available_racing_drivers}
+    drivers_not_racing = [d for d in available_drivers if d.id not in racing_driver_ids]
 
-    for lane in lanes:
-        if lane.enabled and available_drivers:
-            # Get first available driver who is not sitting out
-            # (Drivers are sorted, with available drivers first)
-            # Check if the driver is sitting out
-            if available_drivers[0].sit_out_next_race:
-                # Assign a blank driver to this lane
-                lanes_with_drivers.append(DriverWithLane.create_blank(lane))
-                # and move the driver into the not_racing list
-                drivers_not_racing.append(DriverWithLane.create_from_driver(available_drivers.pop(0), lane))
-            else:
-                # A driver is available. Assign him to the lane
-                lanes_with_drivers.append(DriverWithLane.create_from_driver(available_drivers.pop(0), lane))
-        else:
-            # Either lane is disabled, or no drivers are left... add a blank driver to this lane
-            lanes_with_drivers.append(DriverWithLane.create_blank(lane))
+    # we now have exactly the correct number of drivers in available_racing_drivers
+    #   taking into account the number of enabled lanes and the number of available drivers who are not sitting out
+    # drivers_not_racing is finalised
+    # we just need to assign lanes to available_racing_drivers
 
-    # Sort lanes_with_drivers by lane number
+    random.shuffle(enabled_lanes)
+    # trim the number of enabled_lanes to match the number of available_racing_drivers
+    enabled_lanes = enabled_lanes[:len(available_racing_drivers)]
+
+    for lane in enabled_lanes:
+        # get a driver who has used this lane the least number of times
+        available_racing_drivers.sort(key=lambda driver: getattr(driver, f"lane{lane.lane_number}_count"))
+        lanes_with_drivers.append(DriverWithLane.create_from_driver(available_racing_drivers.pop(0), lane))
+
+    # Finally, sort lanes_with_drivers by lane number
     lanes_with_drivers.sort(key=lambda driver: driver.lane_number)
-
-    # Assign all drivers left in available_drivers to the not_racing list
-    for driver in available_drivers:
-        # Create a new DriverWithLane object for each driver
-        not_racing_driver = DriverWithLane.create_from_driver(driver, None) 
-        drivers_not_racing.append(not_racing_driver)
 
     # Order other_drivers by completed_races only... once we've filled all the lanes
     #   we don't care if they are sitting out or not.
     drivers_not_racing.sort(key=lambda driver: driver.completed_races)
 
+    #may need to convert drivers_not_racing into a list of DriverWithLane objects
+    # drivers_not_racing = [DriverWithLane.create_from_driver(d) for d in drivers_not_racing]
+
     return NextRaceSetup(
         next_race_drivers=lanes_with_drivers,
         other_drivers=drivers_not_racing
     )
+
 
 def get_lanes(session: SessionDep):
     try:

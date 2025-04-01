@@ -55,6 +55,13 @@ class DriverWithLane(SQLModel):
     def create_blank(cls):
         """Factory method to create a blank driver"""
         return cls()
+    
+    def add_lane(self, lane):
+        """Add lane to driver"""
+        if lane is not None:
+            self.lane_number = lane.lane_number
+            self.lane_color = lane.color
+            self.lane_enabled = lane.enabled
 
 
 
