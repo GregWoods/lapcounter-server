@@ -37,7 +37,6 @@ class ChipHardware(SQLModel, table=True):
     name: str
 
 
-
 class ChipFirmware(SQLModel, table=True):
     __tablename__ = "chip_firmwares"
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -139,6 +138,12 @@ class DriverLap(SQLModel, table=True):
     lap_time: Decimal = Field(default=0)
     #lap_number can be derived
 
+
+class Lane(SQLModel, table=True):
+    __tablename__ = "lanes"
+    lane_number: Optional[int] = Field(default=None, primary_key=True)
+    color: str
+    enabled: bool = Field(default=True)
 
 
 # not using relationships yet

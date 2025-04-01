@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
-from responsemodel import DriverForNextRace
+from responsemodel import NextRaceSetup, DriverWithLane
 
 settings = Settings()
 
@@ -119,18 +119,18 @@ def get_sessions_by_meeting_id(
         raise HTTPException(status_code=500, detail=error_detail)
 
 
-def assign_unique_lanes(drivers, available_lanes):
-    # Randomize the initial order of lanes
-    #random.seed(42)  # use a seed when unit testing
-    random.shuffle(available_lanes)
-    
-    # Process each driver in order
-    for driver in drivers:
-        # Find the driver's least used lane among available lanes
-        driver.lane = min(available_lanes, key=lambda x: getattr(driver, f"lane{x}_count"))
-        
-        # Remove the assigned lane from available lanes
-        available_lanes.remove(driver.lane)
+#def assign_unique_lanes(drivers, available_lanes):
+#    # Randomize the initial order of lanes
+#    #random.seed(42)  # use a seed when unit testing
+#    random.shuffle(available_lanes)
+#    
+#    # Process each driver in order
+#    for driver in drivers:
+#        # Find the driver's least used lane among available lanes
+#        driver.lane_number = min(available_lanes, key=lambda x: getattr(driver, f"lane{x}_count"))
+#        
+#        # Remove the assigned lane from available lanes
+#        available_lanes.remove(driver.lane_number)
 
 
 def get_drivers_for_next_race_sql(session: SessionDep):
@@ -174,55 +174,74 @@ def get_drivers_for_next_race_sql(session: SessionDep):
         error_detail = {"message": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(status_code=500, detail=error_detail)
 
+
+
 #The unit-testable logic for sorting drivers into racing and non-racing groups
-#  No dependenciesoin the database or the api routing magic
-def sort_racing_from_non_racing_drivers(driver_list, available_lanes):
-    racing = []
-    not_racing = []
-    for row in driver_list:
-        driver = DriverForNextRace(
-            id=row.id,
-            first_name=row.first_name,
-            last_name=row.last_name,
-            sit_out_next_race=row.sit_out_next_race,
-            completed_races = row.completed_races,
-            lane1_count = row.lane1_count,
-            lane2_count = row.lane2_count,
-            lane3_count = row.lane3_count,
-            lane4_count = row.lane4_count,
-            lane5_count = row.lane5_count,
-            lane6_count = row.lane6_count,
-            random_value = row.random_value
-        )
-        # Fill the maximum available lanes with drivers who are not sitting the next race out 
-        #   the ordering of "results" gives priority to those who have raced the least.
-        if driver.sit_out_next_race or len(racing) >= len(available_lanes):
-            not_racing.append(driver)
+#  No dependencies on the database or the api routing magic
+def assign_drivers_to_lanes(driver_list, lanes):
+    # Initialize lists for racing and non-racing drivers
+    lanes_with_drivers = []
+    drivers_not_racing = []
+
+    # Create a copy of driver_list that we can modify
+    available_drivers = list(driver_list)
+
+    # Randomise the order of lanes to reduce the chances of a driver being assigned to the same lane too often
+    random.shuffle(lanes)
+
+    
+
+    for lane in lanes:
+        if lane.enabled and available_drivers:
+            # Get first available driver who is not sitting out
+            # (Drivers are sorted, with available drivers first)
+            # Check if the driver is sitting out
+            if available_drivers[0].sit_out_next_race:
+                # Assign a blank driver to this lane
+                lanes_with_drivers.append(DriverWithLane.create_blank(lane))
+                # and move the driver into the not_racing list
+                drivers_not_racing.append(DriverWithLane.create_from_driver(available_drivers.pop(0), lane))
+            else:
+                # A driver is available. Assign him to the lane
+                lanes_with_drivers.append(DriverWithLane.create_from_driver(available_drivers.pop(0), lane))
         else:
-            racing.append(driver)
+            # Either lane is disabled, or no drivers are left... add a blank driver to this lane
+            lanes_with_drivers.append(DriverWithLane.create_blank(lane))
 
-    # mutates "racing"
-    assign_unique_lanes(racing, available_lanes)
+    # Sort lanes_with_drivers by lane number
+    lanes_with_drivers.sort(key=lambda driver: driver.lane_number)
 
-    # For drivers who are racing, we just need to sort by lane
-    racing.sort(key=lambda driver: driver.lane)
+    # Assign all drivers left in available_drivers to the not_racing list
+    for driver in available_drivers:
+        # Create a new DriverWithLane object for each driver
+        not_racing_driver = DriverWithLane.create_from_driver(driver, None) 
+        drivers_not_racing.append(not_racing_driver)
 
-    # ignore the sit_out_next_race for the non-racing drivers... completed_races
-    #   is more important so that the drivers who have raced the least will know they are due.
-    not_racing.sort(key=lambda driver: driver.completed_races)
+    # Order other_drivers by completed_races only... once we've filled all the lanes
+    #   we don't care if they are sitting out or not.
+    drivers_not_racing.sort(key=lambda driver: driver.completed_races)
 
-    return {
-        "racing": racing,
-        "not_racing": not_racing
-    }
+    return NextRaceSetup(
+        next_race_drivers=lanes_with_drivers,
+        other_drivers=drivers_not_racing
+    )
 
+def get_lanes(session: SessionDep):
+    try:
+        lanes = session.exec(select(Lane).order_by(Lane.lane_number)).all()
+        return lanes
+    except Exception as e:
+        logger.error(f"Error retrieving lanes: {str(e)}")
+        logger.error(traceback.format_exc())
+        error_detail = {"message": str(e), "traceback": traceback.format_exc()}
+        raise HTTPException(status_code=500, detail=error_detail)
+    
 
 @app.get("/drivers/nextrace/")
 def get_drivers_for_next_race(session: SessionDep):
-    #TODO: this list will depend on the lane_1_available to lane_6_available database settings
-    available_lanes = [1, 2, 3, 4, 5, 6]
-    results = get_drivers_for_next_race_sql(session)
-    return sort_racing_from_non_racing_drivers(results, available_lanes)
+    lanes = get_lanes(session)
+    drivers = get_drivers_for_next_race_sql(session)
+    return assign_drivers_to_lanes(drivers, lanes)
 
 
 

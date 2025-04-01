@@ -1,3 +1,7 @@
+# Running this script will drop all tables and create them again, then add sample data.
+# Before running this script, make sure you set the environment variables, or Pydantic validation will fail
+# There is a setenv.ps1 file to do this, or running inside the "dev" Docker compose based container will set them for you.
+
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Optional
@@ -6,7 +10,8 @@ from model import (
     CarManufacturer, CarCategory, CarModel, Car,
     CarTyre, ChipHardware, ChipFirmware,
     Driver, Meeting, MeetingDriver, MeetingCar,
-    RaceSession, Race, DriverRace, DriverLap
+    RaceSession, Race, DriverRace, DriverLap,
+    Lane
 )
 from settings import Settings
 
@@ -251,6 +256,17 @@ def add_driver_laps(session: Session):
     session.add_all([
         DriverLap(id=25, driver_race_id=6, lap_time=Decimal('12.345'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
         DriverLap(id=26, driver_race_id=6, lap_time=Decimal('11.567'), created_at=datetime(2024, 6, 1, 14, 30, 10))
+    ])
+    session.commit()
+    
+    # Add the 6 lanes
+    session.add_all([
+        Lane(lane_number=1, color='red', enabled=True),
+        Lane(lane_number=2, color='green', enabled=True),
+        Lane(lane_number=3, color='blue', enabled=True),
+        Lane(lane_number=4, color='yellow', enabled=True),
+        Lane(lane_number=5, color='orange', enabled=True),
+        Lane(lane_number=6, color="white", enabled=True)
     ])
     session.commit()
 
