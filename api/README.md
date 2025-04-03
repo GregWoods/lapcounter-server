@@ -40,3 +40,7 @@ http://localhost:8000/docs
 Auto generated API documentation.
 
 ```http://127.0.0.1:8000/docs```
+
+## Running Unit Tests
+
+```python -m pytest .\api\app\test_next_race.py```

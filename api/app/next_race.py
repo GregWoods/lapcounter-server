@@ -1,9 +1,11 @@
 import logging
 import traceback
 import random
+from typing import List
 from fastapi import HTTPException
 from model import *
 from responsemodel import NextRaceSetup, DriverWithLane
+from pprint import pprint
 
 
 logger = logging.getLogger('uvicorn.error')
@@ -44,7 +46,26 @@ def get_drivers_for_next_race_sql(session):
                 completed_races ASC,
                 random_value ASC
         """)
-        return session.exec(query)
+        rows = session.exec(query).all()
+        # Convert SQL rows to DriverWithLane objects
+        drivers = []
+        for row in rows:
+            driver = DriverWithLane(
+                id=row.id,
+                first_name=row.first_name,
+                last_name=row.last_name,
+                sit_out_next_race=row.sit_out_next_race,
+                completed_races=row.completed_races,
+                lane1_count=row.lane1_count,
+                lane2_count=row.lane2_count,
+                lane3_count=row.lane3_count,
+                lane4_count=row.lane4_count,
+                lane5_count=row.lane5_count,
+                lane6_count=row.lane6_count,
+                random_value=row.random_value
+            )
+            drivers.append(driver)
+        return drivers
     except Exception as e:
         logger.error(f"Error retrieving drivers for next race: {str(e)}")
         logger.error(traceback.format_exc())
@@ -52,59 +73,59 @@ def get_drivers_for_next_race_sql(session):
         raise HTTPException(status_code=500, detail=error_detail)
 
 
-
 #The unit-testable logic for sorting drivers into racing and non-racing groups
 #  No dependencies on the database or the api routing magic
-def assign_drivers_to_lanes(driver_list, lanes):
-    # Initialize lists for racing and non-racing drivers
-    lanes_with_drivers = []
-    drivers_not_racing = []
-
+def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]):
+    """
+    Assign drivers to lanes for the next race, optimizing lane assignments.
+    
+    Args:
+        driver_list: List of DriverWithLane objects from the database
+        lanes: List of Lane objects representing physical lanes
+        
+    Returns:
+        NextRaceSetup with racing drivers assigned to lanes and remaining drivers
+    """
     # Create a copy of driver_list that we can modify
     available_drivers = list(driver_list)
 
-    # we may have less than 6 available lanes
-    # we may have less than 6 available, and not sitting out drivers
-    # we need the lower of these two numbers, then pop that number off the top of the available_drivers list
-    # and put then in a temporary available_racing_drivers list
-    # loop through lanes
-    # for each lane, sort available_racing_drivers by laneX_count ASC
-    # and pop that driver off the top of the available_racing_drivers list and assign them to the lane in lanes_with_drivers
-
-    # Get enabled lanes
+    # Get enabled lanes and determine how many drivers we need
     enabled_lanes = [lane for lane in lanes if lane.enabled]
-    enabled_lane_count = len(enabled_lanes)
 
-    # Get up to 'enabled_lane_count' drivers who aren't sitting out
-    available_racing_drivers = [d for d in available_drivers if not d.sit_out_next_race][:enabled_lane_count]
+    # Get all drivers who aren't sitting out
+    available_racing_drivers = [d for d in available_drivers if not d.sit_out_next_race]
     
-    # Add all unassigned drivers to drivers_not_racing
-    racing_driver_ids = {driver.id for driver in available_racing_drivers}
+    # Determine how many drivers we need (min of enabled lanes and available available_racing_drivers)
+    num_racing_drivers = min(len(enabled_lanes), len(available_racing_drivers))
+
+    # Take the top N drivers who aren't sitting out, sorted by completed_races
+    # (they're already sorted by completed_races from the SQL query)
+    racing_drivers = available_racing_drivers[:num_racing_drivers]
+
+    # All other drivers go into drivers_not_racing
+    racing_driver_ids = {d.id for d in racing_drivers}
     drivers_not_racing = [d for d in available_drivers if d.id not in racing_driver_ids]
 
-    # we now have exactly the correct number of drivers in available_racing_drivers
-    #   taking into account the number of enabled lanes and the number of available drivers who are not sitting out
-    # drivers_not_racing is finalised
-    # we just need to assign lanes to available_racing_drivers
+    # Create a list of blank drivers with lanes
+    lanes_with_drivers = []
+    for lane in lanes:
+        lanes_with_drivers.append(DriverWithLane.create(lane=lane))
+    random.shuffle(lanes_with_drivers)
 
-    random.shuffle(enabled_lanes)
-    # trim the number of enabled_lanes to match the number of available_racing_drivers
-    enabled_lanes = enabled_lanes[:len(available_racing_drivers)]
-
-    for lane in enabled_lanes:
+    # assign drivers to lane
+    for lane in lanes_with_drivers:
         # get a driver who has used this lane the least number of times
-        available_racing_drivers.sort(key=lambda driver: getattr(driver, f"lane{lane.lane_number}_count"))
-        lanes_with_drivers.append(DriverWithLane.create_from_driver(available_racing_drivers.pop(0), lane))
+        racing_drivers.sort(key=lambda driver: getattr(driver, f"lane{lane.lane_number}_count"))
+        #lanes_with_drivers.append(DriverWithLane.create(driver=racing_drivers.pop(0), lane))
+        if len(racing_drivers) > 0:
+            lane.add_driver_to_lane(racing_drivers.pop(0))
 
-    # Finally, sort lanes_with_drivers by lane number
+    # Sort lanes_with_drivers by lane number
     lanes_with_drivers.sort(key=lambda driver: driver.lane_number)
 
     # Order other_drivers by completed_races only... once we've filled all the lanes
     #   we don't care if they are sitting out or not.
     drivers_not_racing.sort(key=lambda driver: driver.completed_races)
-
-    #may need to convert drivers_not_racing into a list of DriverWithLane objects
-    # drivers_not_racing = [DriverWithLane.create_from_driver(d) for d in drivers_not_racing]
 
     return NextRaceSetup(
         next_race_drivers=lanes_with_drivers,
