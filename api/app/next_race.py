@@ -107,13 +107,13 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
     drivers_not_racing = [d for d in available_drivers if d.id not in racing_driver_ids]
 
     # Create a list of blank drivers with lanes
-    lanes_with_drivers = []
+    lane_assignments = []
     for lane in lanes:
-        lanes_with_drivers.append(DriverWithLane.create(lane=lane))
-    random.shuffle(lanes_with_drivers)
+        lane_assignments.append(DriverWithLane.create(lane=lane))
+    random.shuffle(lane_assignments)
 
     # assign drivers to lane
-    for lane in lanes_with_drivers:
+    for lane in lane_assignments:
         # get a driver who has used this lane the least number of times
         racing_drivers.sort(key=lambda driver: getattr(driver, f"lane{lane.lane_number}_count"))
         #lanes_with_drivers.append(DriverWithLane.create(driver=racing_drivers.pop(0), lane))
@@ -121,13 +121,13 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
             lane.add_driver_to_lane(racing_drivers.pop(0))
 
     # Sort lanes_with_drivers by lane number
-    lanes_with_drivers.sort(key=lambda driver: driver.lane_number)
+    lane_assignments.sort(key=lambda driver: driver.lane_number)
 
     # Order other_drivers by completed_races only... once we've filled all the lanes
     #   we don't care if they are sitting out or not.
     drivers_not_racing.sort(key=lambda driver: driver.completed_races)
 
     return NextRaceSetup(
-        next_race_drivers=lanes_with_drivers,
+        lane_assignments=lane_assignments,
         other_drivers=drivers_not_racing
     )

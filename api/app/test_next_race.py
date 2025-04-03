@@ -17,7 +17,7 @@ def test_only_one_driver_is_racing():
     
     result = assign_drivers_to_lanes(drivers, lanes)
 
-    assert len(result.next_race_drivers) == 3, "Should have 3 lane positions (2 enabled + 1 disabled)"
-    assert len([d for d in result.next_race_drivers if d.id > 0]) == 1, "Only one real driver should be racing"
-    assert result.next_race_drivers[0].id == 0, "Driver A should be racing"
+    assert len(result.lane_assignments) == 3, "Should have 3 lane positions (2 enabled + 1 disabled)"
+    assert len([d for d in result.lane_assignments if d.id > 0]) == 1, "Only one real driver should be racing"
+    assert result.lane_assignments[0].id == 0, "Driver A should be racing"
     assert len(result.other_drivers) == 0, "No drivers should be sitting out"
