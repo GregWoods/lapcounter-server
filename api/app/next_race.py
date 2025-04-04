@@ -89,6 +89,14 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
     # Create a copy of driver_list that we can modify
     available_drivers = list(driver_list)
 
+    # Sort available_drivers using the same logic as the SQL query
+    #   We need to do it here for the unit tests to work correctly.
+    available_drivers.sort(key=lambda d: (
+        d.sit_out_next_race,  # Sort by sit_out_next_race (False comes before True)
+        d.completed_races,    # Then by completed_races (ascending)
+        d.random_value        # Then by random value (ascending)
+    ))
+
     # Get enabled lanes and determine how many drivers we need
     enabled_lanes = [lane for lane in lanes if lane.enabled]
 
@@ -114,6 +122,8 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
 
     # assign drivers to lane
     for lane in lane_assignments:
+        if lane.lane_enabled is False:
+            continue
         # get a driver who has used this lane the least number of times
         racing_drivers.sort(key=lambda driver: getattr(driver, f"lane{lane.lane_number}_count"))
         #lanes_with_drivers.append(DriverWithLane.create(driver=racing_drivers.pop(0), lane))
