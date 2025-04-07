@@ -1,0 +1,23 @@
+Python version: 3.13.1 (tags/v3.13.1:0671451, Dec  3 2024, 19:06:28) [MSC v.1942 64 bit (AMD64)]
+SQLModel version: unknown
+
+Models imported:
+- Car: <class 'model.Car'>
+- CarCategory: <class 'model.CarCategory'>
+- CarManufacturer: <class 'model.CarManufacturer'>
+- CarModel: <class 'model.CarModel'>
+- CarTyre: <class 'model.CarTyre'>
+- ChipFirmware: <class 'model.ChipFirmware'>
+- ChipHardware: <class 'model.ChipHardware'>
+- Driver: <class 'model.Driver'>
+- DriverLap: <class 'model.DriverLap'>
+- DriverRace: <class 'model.DriverRace'>
+- Meeting: <class 'model.Meeting'>
+- MeetingCar: <class 'model.MeetingCar'>
+- MeetingDriver: <class 'model.MeetingDriver'>
+- Race: <class 'model.Race'>
+- Session: <class 'model.Session'>
+
+Meeting inspection:
+Meeting tablename: meetings
+Meeting fields: {'id': FieldInfo(annotation=Union[int, NoneType], required=False, default=None), 'name': FieldInfo(annotation=str, required=True), 'date': FieldInfo(annotation=date, required=True), 'venue': FieldInfo(annotation=Union[str, NoneType], required=True)}

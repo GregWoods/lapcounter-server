@@ -39,23 +39,6 @@ services:
     depends_on:
       - mocked-gpio
     restart: unless-stopped
-
-
-  api:
-    container_name: api
-    environment:
-      - API_URL=http://localhost:8000   # as seen by external users including the react app
-      - REACT_URL=http://localhost:8088
-      - MEDIA_FOLDER=media
-      - CARS_MEDIA_FOLDER=media/cars
-    build:
-      context: ./api
-      dockerfile: Dockerfile.dev
-    volumes:
-      - ./api/app:/usr/src/app
-    ports:
-      - "8000:8000"
-
     
 
   react:
@@ -64,8 +47,8 @@ services:
       context: ./react
       dockerfile: Dockerfile.dev
     volumes:
-      - ./react:/app
-      - /app/node_modules
+      - ./react/src:/app/src
+      - react_node_modules:/app/node_modules # this anonymous volume prevents the local directory from overwriting the container's node_modules directory.
     ports:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
@@ -76,7 +59,47 @@ services:
       - VITE_CAR_MEDIA_FOLDER=media/cars
 
 
+  api:
+    container_name: api
+    environment:
+      - API_URL=http://localhost:8000   # as seen by external users including the react app
+      - REACT_URL=http://localhost:8088
+      - MEDIA_FOLDER=media
+      - CARS_MEDIA_FOLDER=media/cars
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_HOST=database
+      - DB_PORT=5432
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./api/app:/usr/src/app
+    ports:
+      - "8000:8000"
 
+
+  database:
+    image: postgres:latest
+    container_name: database
+    environment:
+      POSTGRES_DB: lapcounter_server
+      POSTGRES_USER: lap
+      POSTGRES_PASSWORD: lap
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: youremail@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin1234
+    ports:
+      - "5050:80"
 
   #nginx-proxy-manager:
   #  image: 'jc21/nginx-proxy-manager:latest'
@@ -113,3 +136,8 @@ services:
     volumes:
       - ./portainer_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+ 
+
+volumes:
+  postgres_data:
+  react_node_modules:

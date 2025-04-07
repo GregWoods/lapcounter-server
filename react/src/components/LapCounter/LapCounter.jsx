@@ -7,45 +7,15 @@ import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
 import { useState, useRef } from 'react';
 import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
-
+import { defaultConfig, defaultRace, lapDataDefault, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
 
 const DEBUG = true;
 
-
 const LapCounter = () => {
-    console.log("LAPCOUNTER")
-    //TODO: move all default and initial configs to a separate file
+    console.log('VITE_CIRCUIT_NAME', import.meta.env.VITE_CIRCUIT_NAME);
     //TODO: split true environment settings from advanced user  focused settings
-    let defaultConfig = {
-        // These defaults are based on the production docker setup
-        // They are stored in localstorage
-        circuitname: import.meta.env.VITE_CIRCUIT_NAME,
-        mqtturl: import.meta.env.VITE_MQTT_URL,
-        apiurl: import.meta.env.VITE_API_URL,
-        carmediafolder: import.meta.env.VITE_CAR_MEDIA_FOLDER,
-        racepresets: [
-            { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
-            { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},
-            { id: 2, type: 'laps', description: 'Standard (50 laps)', details: { laps: 50 }},
-            { id: 3, type: 'laps', description: 'Professional (160 laps)', details: { laps: 160 }},
-            /*{ id: 4, type: 'time', description: 'Endurance (60 minutes)', details: { time: '01:00:00' }},
-            { id: 5, type: 'time', description: 'Le-Mans (4 hours)', details: { time: '04:00:00' }},
-            { id: 6, type: 'lms', description: 'Last Man Standing\n(max 2 laps behind leader)', details: { maxLapsBehind: 2 }},*/
-        ]
-    }
 
     //console.log('defaultConfig', defaultConfig);
-    
-    let defaultRace = {
-        type: defaultConfig.racepresets[0],
-        hasStarted: false,
-        underStartersOrders: false,
-        firstCarCrossedStart: false,    //AKA: has race timing started
-        startTime: null,
-        paused: false,
-        fastestLap: 99.999,
-        numberOfDriversRacing: 6
-    };
 
     // Using refs...
     //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
@@ -54,7 +24,7 @@ const LapCounter = () => {
     //    variables would always return the initial value rather than the current value.
 
     const [config, setConfig] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
-    //console.log('config', config);
+    console.log('config', config);
 
     const [race, setRace] = useLocalStorageState('race', {defaultValue: defaultRace});
     const raceRef = useRef();
@@ -67,47 +37,15 @@ const LapCounter = () => {
     const statsRef = useRef();
     statsRef.current = stats;
 
-    //used internally by processLaps
-    const lapDataDefault = [
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 },
-        {totalLaps: -1, lastLapTime: 999.999, lastMessageTime: 0.000, bestLapTime: 999.999 }
-    ];
     const [lapData, setLapData] = useLocalStorageState('lap', {defaultValue: [...lapDataDefault]});
     const lapDataRef = useRef();
     lapDataRef.current = lapData;
 
-
-    //The drivers viewmodel
-    //  Not all properties are set in the default, since we do not want to overwrite things like "name", "carImgUrl", even for a new race
     const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
-    const driverDataDefault = {
-        lastLap: '', 
-        fastestLap: '', 
-        isRaceFastestLap: false, 
-        lapsRemaining: lapsPerRace, 
-        p1LapsRemaining: lapsPerRace, 
-        lapsCompleted: -1, 
-        totalRaceTime: null, 
-        position: null, 
-        finished: false, 
-        suspended: false,
-        hasStartedRacing: false,
-        spotlightMe: false
-    };
-    const defaultCarImg = defaultConfig.apiurl.replace(/\/$/, '') + "/" + defaultConfig.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
+
+    const defaultCarImg = config.apiurl.replace(/\/$/, '') + "/" + config.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
     console.log('defaultCarImg', defaultCarImg);
-    const initialDrivers = [
-        {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 1},
-        {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 2},
-        {...driverDataDefault, number: 3, name: 'Driver C', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 3},
-        {...driverDataDefault, number: 4, name: 'Driver D', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 4},
-        {...driverDataDefault, number: 5, name: 'Driver E', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 5},
-        {...driverDataDefault, number: 6, name: 'Driver F', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 6}
-    ];
+    const initialDrivers = getInitialDrivers(lapsPerRace, defaultCarImg);
     const [drivers, setDrivers] = useLocalStorageState('drivers', {defaultValue: [...initialDrivers]});
     const driversRef = useRef();
     driversRef.current = drivers;
@@ -118,8 +56,6 @@ const LapCounter = () => {
 
     const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
-
-
 
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtturl: newMqttHost});
@@ -197,7 +133,7 @@ const LapCounter = () => {
         for (const driver of drivers) {
             newDrivers.push({
                 ...driver, 
-                ...driverDataDefault, 
+                ...getDriverDataDefault(lapsPerRace), 
                 lapsRemaining: raceTypeObj.details.laps, 
                 p1LapsRemaining: raceTypeObj.details.laps
             });
@@ -278,7 +214,6 @@ const LapCounter = () => {
     }
 
     const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`; 
-    
     return (
         <div id="top">
 
@@ -336,6 +271,5 @@ const LapCounter = () => {
         </div>
     );
 }
-
 
 export default LapCounter;

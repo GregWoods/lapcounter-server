@@ -10,4 +10,7 @@ export default defineConfig({
       usePolling: true, // Useful for Docker
     },
   },
+  optimizeDeps: {
+    include: ['react-router-dom', 'react-router']
+  }
 });

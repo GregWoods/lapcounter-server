@@ -16,6 +16,11 @@ Note that we build for 3 architectures:
 
 ## Run it locally in Docker
 
-Correctly set up environment variables are needed for any of these containers to run. So instead of using `docker run` directly, we run can run the container using docker compose.
+Correctly set up environment variables are needed for any of these containers to run. So instead of using `docker run` directly, we run can run the container using docker compose,
+which includes suitable environment variables.
 
 ```docker compose -f ../compose.dev.yaml up --build react```
+
+Compose maps port 5173 to 8088, so to test use
+
+```http://localhost:8088```
