@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "antd": "^5.20.0",
+    "bootstrap": "^5.3.5",
     "mqtt": "^5.7.0",
     "react": "^18.3.1",
+    "react-bootstrap": "^2.10.9",
     "react-dom": "^18.3.1",
     "react-modal": "^3.16.1",
     "react-router": "^7.4.0",

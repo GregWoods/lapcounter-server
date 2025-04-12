@@ -1,7 +1,8 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, createBrowserRouter } from 'react-router-dom';
 import App from './App.jsx'
-import NextRace from './NextRace.jsx'
+import NextRace from './components/NextRace/NextRace.jsx'
 
+// https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
     {
         path: "/",
@@ -14,7 +15,9 @@ const router = createBrowserRouter([
         path: "nextrace",
         element: <NextRace />,
         loader: async () => {
-            const response = await fetch(`${import.meta.env.VITE_API_URL}/drivers/nextrace/`);
+            const url = `${import.meta.env.VITE_API_URL}/drivers/nextrace/`;
+            console.log('fetch driver data: ', url);
+            const response = await fetch(url);
             if (!response.ok) {
                 throw new Error('Failed to load drivers data');
             }
@@ -24,3 +27,4 @@ const router = createBrowserRouter([
 ]);
 
 export default router;
+
