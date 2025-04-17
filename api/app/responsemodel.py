@@ -5,8 +5,7 @@ from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
 
 class DriverWithLane(SQLModel):
     id: int = 0
-    first_name: str = ""
-    last_name: str = ""
+    driver_name: str = ""
     completed_races: int = 0
     sit_out_next_race: bool = False
     lane1_count: int = 0
@@ -33,7 +32,7 @@ class DriverWithLane(SQLModel):
 
         if driver is not None:
             driver_attrs = [
-                'id', 'first_name', 'last_name', 'completed_races', 
+                'id', 'driver_name', 'completed_races', 
                 'sit_out_next_race', 'lane1_count', 'lane2_count', 
                 'lane3_count', 'lane4_count', 'lane5_count', 'lane6_count',
                 'random_value'
@@ -65,7 +64,7 @@ class DriverWithLane(SQLModel):
 
     def add_driver_to_lane(self, driver):
         driver_attrs = [
-            'id', 'first_name', 'last_name', 'completed_races', 
+            'id', 'driver_name', 'completed_races', 
             'sit_out_next_race', 'lane1_count', 'lane2_count', 
             'lane3_count', 'lane4_count', 'lane5_count', 'lane6_count',
             'random_value'

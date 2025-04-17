@@ -20,15 +20,15 @@ def test_lanes():
 @pytest.fixture
 def test_drivers():
      return[
-        DriverWithLane(id=1, first_name='Driver A', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=2, first_name='Driver B', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=3, first_name='Driver C', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=4, first_name='Driver D', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=5, first_name='Driver E', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=6, first_name='Driver F', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=7, first_name='Driver G', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=8, first_name='Driver H', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=9, first_name='Driver J', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3)
+        DriverWithLane(id=1, driver_name='Driver AA', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=2, driver_name='Driver BB', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=3, driver_name='Driver CC', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=4, driver_name='Driver DD', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=5, driver_name='Driver EE', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=6, driver_name='Driver FF', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=7, driver_name='Driver GG', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=8, driver_name='Driver HH', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=9, driver_name='Driver JJ', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3)
      ]
 
 
@@ -170,4 +170,13 @@ def test_lane_preference(test_lanes, test_drivers):
     assert result.lane_assignments[3].id == 7, "Driver G should be in lane 4"
     assert result.lane_assignments[4].id == 8, "Driver H should be in lane 5"
     assert result.lane_assignments[5].id == 9, "Driver J should be in lane 6"
+
+    #Check the driver names - to make sure names are taken from meeting_driver not driver
+    assert result.lane_assignments[0].driver_name == "Driver BB"
+    assert result.lane_assignments[1].driver_name == "Driver CC"
+    assert result.lane_assignments[2].driver_name == "Driver FF"
+    assert result.lane_assignments[3].driver_name == "Driver GG"
+    assert result.lane_assignments[4].driver_name == "Driver HH"
+    assert result.lane_assignments[5].driver_name == "Driver JJ"
+
 

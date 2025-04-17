@@ -138,15 +138,15 @@ def add_meetings(session: Session):
 
 def add_meeting_drivers(session: Session):
     session.add_all([
-        MeetingDriver(meeting_id=3, driver_id=1),
-        MeetingDriver(meeting_id=3, driver_id=2),
-        MeetingDriver(meeting_id=3, driver_id=3),
-        MeetingDriver(meeting_id=3, driver_id=4),
-        MeetingDriver(meeting_id=3, driver_id=5),
-        MeetingDriver(meeting_id=3, driver_id=6),
-        MeetingDriver(meeting_id=3, driver_id=7),
-        MeetingDriver(meeting_id=3, driver_id=8),
-        MeetingDriver(meeting_id=3, driver_id=9)
+        MeetingDriver(meeting_id=3, driver_id=1, driver_name='Driver xA'),
+        MeetingDriver(meeting_id=3, driver_id=2, driver_name='Driver xB'),
+        MeetingDriver(meeting_id=3, driver_id=3, driver_name='Driver xC'),
+        MeetingDriver(meeting_id=3, driver_id=4, driver_name='Driver xD'),
+        MeetingDriver(meeting_id=3, driver_id=5, driver_name='Driver xE'),
+        MeetingDriver(meeting_id=3, driver_id=6, driver_name='Driver xF'),
+        MeetingDriver(meeting_id=3, driver_id=7, driver_name='Driver xG'),
+        MeetingDriver(meeting_id=3, driver_id=8, driver_name='Driver xH'),
+        MeetingDriver(meeting_id=3, driver_id=9, driver_name='Driver xJ')
     ])
     session.commit()
 

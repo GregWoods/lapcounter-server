@@ -81,8 +81,8 @@ class MeetingDriver(SQLModel, table=True):
     __tablename__ = "meeting_drivers"
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id", primary_key=True)
     driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
-    #driver_name: str    #Removed. Generate on the fly in cas enew drivers are added mid-meeting. #Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
-
+    driver_name: str    #Usually just first_name, but may include last_name initial if 2 drivers have the same first name
+    #Note: when a driver is added to a meeting, driver_names for that meeting need to be recalculated
 
 class MeetingCar(SQLModel, table=True):
     __tablename__ = "meeting_cars"

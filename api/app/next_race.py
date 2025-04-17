@@ -22,8 +22,9 @@ def get_drivers_for_next_race_sql(session):
         query = text("""
             SELECT 
                 d.id,
-                d.first_name, 
-                d.last_name,
+                --d.first_name, 
+                --d.last_name,
+                md.driver_name,
                 d.sit_out_next_race,
                 COUNT(r.id) as completed_races,
                 COUNT(CASE WHEN dr.lane = 1 THEN 1 END) as lane1_count,
@@ -36,11 +37,15 @@ def get_drivers_for_next_race_sql(session):
             FROM 
                 drivers d
             LEFT JOIN 
+                meeting_drivers md ON d.id = md.driver_id
+            --LEFT_JOIN sessions s on md.meeting_id = s.meeting_id
+            --LEFT JOIN meetings m ON s.meeting_id = m.id
+            LEFT JOIN 
                 driver_races dr ON d.id = dr.driver_id
             LEFT JOIN 
                 races r ON dr.race_id = r.id AND r.state = 'Finished'
             GROUP BY 
-                d.id, d.first_name, d.last_name, d.sit_out_next_race
+                d.id, d.driver_name, d.sit_out_next_race
             ORDER BY 
                 sit_out_next_race ASC, 
                 completed_races ASC,
@@ -52,8 +57,7 @@ def get_drivers_for_next_race_sql(session):
         for row in rows:
             driver = DriverWithLane(
                 id=row.id,
-                first_name=row.first_name,
-                last_name=row.last_name,
+                driver_name=row.driver_name,
                 sit_out_next_race=row.sit_out_next_race,
                 completed_races=row.completed_races,
                 lane1_count=row.lane1_count,
