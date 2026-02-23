@@ -11,3 +11,4 @@ react/.env.development
 
 #This file is a copy of ./.env.production. Not to be edited
 react/.env.production
+.claude/settings.local.json

@@ -171,7 +171,7 @@ def test_lane_preference(test_lanes, test_drivers):
     assert result.lane_assignments[4].id == 8, "Driver H should be in lane 5"
     assert result.lane_assignments[5].id == 9, "Driver J should be in lane 6"
 
-    #Check the driver names - to make sure names are taken from meeting_driver not driver
+    #Check the driver names - to make sure we are not just using first_name, but the name which we will calculate
     assert result.lane_assignments[0].driver_name == "Driver BB"
     assert result.lane_assignments[1].driver_name == "Driver CC"
     assert result.lane_assignments[2].driver_name == "Driver FF"
