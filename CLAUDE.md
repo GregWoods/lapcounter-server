@@ -93,3 +93,25 @@ React env vars use `VITE_` prefix and are compiled into the app at build time.
 ## Browser Target
 
 The UI is optimized for 1920x1080 resolution with significant hardcoded CSS for that size.
+
+## Branch: `race_meet_manager` (WIP) vs `main`
+
+The `main` branch is a working lap counter with no database. The `race_meet_manager` branch adds race meet management — the ability to persist drivers, cars, meetings, and race history across sessions.
+
+### What `main` has
+- Minimal API: 2 endpoints (`/api/settings`, `/api/cars`), no database, `main.py` lived in `api/app/main/main.py` (package structure)
+- React renders `<App />` directly (no router)
+- All config/defaults inline in `LapCounter.jsx`
+- `requirements.txt` was just `fastapi[standard]` + `pydantic-settings`
+- Docker compose: mosquitto, mocked-gpio, lapdata, api, react (5 services)
+
+### What `race_meet_manager` adds
+- **PostgreSQL + SQLModel ORM**: 15 table models in `api/app/model.py`, schema in `database/schema.sql`, sample data in `database/sampledata.sql` and `api/app/sampledata.py`
+- **Flattened API structure**: `api/app/main/main.py` → `api/app/main.py`, with DB engine, session DI, global exception handler
+- **New API endpoints**: `/meetings`, `/meetings/upcoming`, `/sessions`, `/drivers/` (CRUD), `/drivers/nextrace/`, plus diagnostic endpoints (`/verify-db`, `/minimal-debug`, `/meetings-schema`)
+- **Lane assignment logic**: `next_race.py` + `responsemodel.py` — fair driver-to-lane algorithm with 8 pytest unit tests
+- **React Router**: `router.jsx` using `createBrowserRouter` (Data mode), two routes: `/` (LapCounter) and `/nextrace` (new)
+- **NextRace UI**: `NextRace.jsx` — React Bootstrap table showing lane assignments (color-coded) and other drivers, data loaded from API via router loader
+- **Extracted `defaultConfig.js`**: config, race defaults, and driver factory functions pulled out of `LapCounter.jsx` into a shared module
+- **Docker compose**: added `database` (postgres) and `pgadmin` containers (7 services), fixed React volume mount to use named volume for `node_modules`
+- **Pinned dependencies**: `requirements.txt` expanded to 39 packages (adds `sqlmodel`, `psycopg2`, `SQLAlchemy`, etc.); React adds `react-router` 7.4.0, `react-bootstrap` 2.10.9
