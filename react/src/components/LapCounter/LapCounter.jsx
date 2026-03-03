@@ -5,13 +5,15 @@ import EditDriverNamesModal from './EditDriverNamesModal.jsx';
 import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useLoaderData } from 'react-router-dom';
 import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
 import { defaultConfig, defaultRace, lapDataDefault, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
 
 const DEBUG = true;
 
 const LapCounter = () => {
+    const pendingRace = useLoaderData();
     console.log('VITE_CIRCUIT_NAME', import.meta.env.VITE_CIRCUIT_NAME);
     //TODO: split true environment settings from advanced user  focused settings
 
@@ -49,6 +51,21 @@ const LapCounter = () => {
     const [drivers, setDrivers] = useLocalStorageState('drivers', {defaultValue: [...initialDrivers]});
     const driversRef = useRef();
     driversRef.current = drivers;
+
+    // When the pending race loads, overlay driver names and IDs from the DB lineup.
+    // carImgUrl is left as-is (localStorage / default).
+    useEffect(() => {
+        if (!pendingRace?.lane_assignments) return;
+        setDrivers(currentDrivers =>
+            currentDrivers.map(driver => {
+                const assignment = pendingRace.lane_assignments.find(
+                    a => a.lane_number === driver.number && a.id !== 0
+                );
+                if (!assignment) return driver;
+                return { ...driver, name: assignment.driver_name, driverId: assignment.id };
+            })
+        );
+    }, [pendingRace, setDrivers]);
 
     //Normal state variables for simple, non persistent state, such as dialog open state
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
