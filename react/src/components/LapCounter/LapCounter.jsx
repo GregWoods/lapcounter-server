@@ -132,9 +132,14 @@ const LapCounter = () => {
         setStartRaceModalShown(true);
     };
 
-    // Start button in popup: close popup, show start lights
+    // Start button in popup: close popup, reset hasStartedRacing, show start lights
     const handleRaceStart = () => {
         setStartRaceModalShown(false);
+        // Reset hasStartedRacing so cars fly in individually after lights out,
+        // not all at once. underStartersOrders:true hides them during the countdown.
+        setDrivers(currentDrivers =>
+            currentDrivers.map(driver => ({ ...driver, hasStartedRacing: false }))
+        );
         setStartLightsShown(true);
         setRace({ ...defaultRace, underStartersOrders: true, type: raceRef.current.type });
     };
