@@ -4,9 +4,9 @@ import './DriverColors.css';
 import DriverCardTime from './DriverCardTime';
 
 
-const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
+const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
     let className = 'drivercard driver' + driver.number;
-    if (!underStartersOrders && driver.hasStartedRacing) {
+    if (!underStartersOrders && (driver.hasStartedRacing || previewDriverCards)) {
         //if (driver.suspended) {
         //    className += ' suspended';
         //} else {

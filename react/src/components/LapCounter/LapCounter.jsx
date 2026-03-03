@@ -61,6 +61,7 @@ const LapCounter = () => {
 
     const [startRaceModalShown, setStartRaceModalShown] = useState(false);
     const [startLightsShown, setStartLightsShown] = useState(false);
+    const [previewDriverCards, setPreviewDriverCards] = useState(false);
 
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtturl: newMqttHost});
@@ -122,24 +123,20 @@ const LapCounter = () => {
                     ...getDriverDataDefault(laps),
                     lapsRemaining: laps,
                     p1LapsRemaining: laps,
-                    hasStartedRacing: true,  // keep cards on-screen until start lights
-                    position: driver.number, // lane order until race positions take over
+                    position: driver.number, // lane order for preview
                     ...(a && { name: a.driver_name, driverId: a.id }),
                 };
             })
         );
 
+        setPreviewDriverCards(true);
         setStartRaceModalShown(true);
     };
 
-    // Start button in popup: close popup, reset hasStartedRacing, show start lights
+    // Start button in popup: close popup and preview, show start lights
     const handleRaceStart = () => {
         setStartRaceModalShown(false);
-        // Reset hasStartedRacing so cars fly in individually after lights out,
-        // not all at once. underStartersOrders:true hides them during the countdown.
-        setDrivers(currentDrivers =>
-            currentDrivers.map(driver => ({ ...driver, hasStartedRacing: false }))
-        );
+        setPreviewDriverCards(false);
         setStartLightsShown(true);
         setRace({ ...defaultRace, underStartersOrders: true, type: raceRef.current.type });
     };
@@ -270,12 +267,12 @@ const LapCounter = () => {
                 />
                 <div id="driverCardOuter">
                     <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
-                        <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
-                        <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
-                        <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
-                        <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
-                        <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
-                        <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
+                        <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
+                        <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
+                        <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
+                        <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
+                        <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
+                        <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
 
                         <CarSelectorModal 
                             showMe={carSelectorModalShown}
