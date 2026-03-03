@@ -122,6 +122,8 @@ const LapCounter = () => {
                     ...getDriverDataDefault(laps),
                     lapsRemaining: laps,
                     p1LapsRemaining: laps,
+                    hasStartedRacing: true,  // keep cards on-screen until start lights
+                    position: driver.number, // lane order until race positions take over
                     ...(a && { name: a.driver_name, driverId: a.id }),
                 };
             })
