@@ -9,7 +9,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting_id
+from responsemodel import RaceSessionWithState
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting_id, get_active_meeting, get_active_session, session_with_state
 
 settings = Settings()
 
@@ -83,6 +84,11 @@ def get_all_meetings(session: SessionDep):
         error_detail = { "message": str(e), "traceback": traceback.format_exc(), "model": str(Meeting.__dict__) }
         raise HTTPException(status_code=500, detail=error_detail)
 
+@app.get("/meetings/active", response_model=Meeting)
+def get_active_meeting_endpoint(session: SessionDep):
+    return get_active_meeting(session)
+
+
 @app.get("/meetings/upcoming")
 def get_upcoming_meetings(session: SessionDep):
     try:
@@ -128,6 +134,32 @@ def get_lanes(session: SessionDep):
         error_detail = {"message": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(status_code=500, detail=error_detail)
     
+
+@app.get("/sessions/active", response_model=RaceSessionWithState)
+def get_active_session_endpoint(session: SessionDep):
+    return session_with_state(get_active_session(session), session)
+
+
+@app.get("/sessions/{session_id}", response_model=RaceSessionWithState)
+def get_session(session_id: int, session: SessionDep):
+    race_session = session.get(RaceSession, session_id)
+    if not race_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session_with_state(race_session, session)
+
+
+@app.patch("/sessions/{session_id}", response_model=RaceSession)
+def update_session(session_id: int, session_update: RaceSessionUpdate, session: SessionDep):
+    db_session = session.get(RaceSession, session_id)
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    update_data = session_update.model_dump(exclude_unset=True)
+    db_session.sqlmodel_update(update_data)
+    session.add(db_session)
+    session.commit()
+    session.refresh(db_session)
+    return db_session
+
 
 @app.get("/races/pending/")
 def get_pending_race(session: SessionDep):

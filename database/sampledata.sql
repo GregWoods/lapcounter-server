@@ -98,10 +98,10 @@ INSERT INTO meetings (id, name, date, venue)
     VALUES (1, 'Junior Championship', '2024-06-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
 INSERT INTO meetings (id, name, date, venue) 
     VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage') ON CONFLICT (id) DO NOTHING;
-INSERT INTO meetings (id, name, date, venue) 
-    VALUES (3, 'Village Hall Grand Prix', '2025-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
-INSERT INTO meetings (id, name, date, venue) 
-    VALUES (4, '2027 Village Hall Grand Prix', '2027-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;    
+INSERT INTO meetings (id, name, date, venue)
+    VALUES (3, 'Village Hall Grand Prix', '2026-06-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue)
+    VALUES (4, '2027 Village Hall Grand Prix', '2027-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 1, 'Alice')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;
@@ -121,7 +121,7 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 3, 3) ON CONFLICT
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, 4) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 5, 5) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 7, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 7, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
 INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 

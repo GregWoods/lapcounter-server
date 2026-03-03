@@ -73,6 +73,19 @@ class DriverWithLane(SQLModel):
             setattr(self, attr, getattr(driver, attr))
 
 
+class RaceSessionWithState(SQLModel):
+    id: Optional[int]
+    meeting_id: Optional[int]
+    session_type: str
+    end_condition: str
+    end_condition_info: Optional[int]
+    scoring_method: str
+    scoring_points: Optional[str]
+    start_time: Optional[time]
+    end_time: Optional[time]
+    state: str  # 'NotStarted', 'InProgress', 'Finished'
+
+
 class NextRaceSetup(SQLModel):
     race_id: int = 0
     lane_assignments: list[DriverWithLane] = []

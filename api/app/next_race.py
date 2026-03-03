@@ -6,7 +6,7 @@ from typing import List
 from fastapi import HTTPException
 from sqlmodel import select
 from model import *
-from responsemodel import NextRaceSetup, DriverWithLane
+from responsemodel import NextRaceSetup, DriverWithLane, RaceSessionWithState
 from pprint import pprint
 
 
@@ -149,19 +149,66 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
     )
 
 
-def get_active_meeting_id(session):
-    """Return the most recent meeting with date <= today, or nearest upcoming."""
+def get_active_meeting(session):
+    """Return the earliest meeting with date >= today. Raises 404 if none found."""
     today = date_type.today()
     meeting = session.exec(
-        select(Meeting).where(Meeting.date <= today).order_by(Meeting.date.desc())
+        select(Meeting).where(Meeting.date >= today).order_by(Meeting.date.asc())
     ).first()
     if not meeting:
-        meeting = session.exec(
-            select(Meeting).where(Meeting.date > today).order_by(Meeting.date.asc())
-        ).first()
-    if not meeting:
-        raise HTTPException(status_code=404, detail="No meetings found")
-    return meeting.id
+        raise HTTPException(status_code=404, detail="No active or upcoming meetings found")
+    return meeting
+
+
+def get_active_meeting_id(session):
+    return get_active_meeting(session).id
+
+
+def get_active_session(session):
+    """Return the active session for the active meeting.
+
+    'Active' = earliest session in the active meeting that has no races yet,
+    or has at least one non-Finished race. Falls back to the last session if
+    all sessions are fully finished.
+    """
+    from sqlalchemy import text
+    meeting_id = get_active_meeting_id(session)
+
+    sessions = session.exec(
+        select(RaceSession)
+        .where(RaceSession.meeting_id == meeting_id)
+        .order_by(RaceSession.id.asc())
+    ).all()
+
+    if not sessions:
+        raise HTTPException(status_code=404, detail="No sessions found for active meeting")
+
+    for s in sessions:
+        races = session.exec(select(Race).where(Race.session_id == s.id)).all()
+        if not races:
+            return s  # pre-configured session with no races yet
+        if any(r.state != 'Finished' for r in races):
+            return s  # session still in progress
+
+    return sessions[-1]  # all sessions finished — return last
+
+
+def compute_session_state(races) -> str:
+    if not races:
+        return 'NotStarted'
+    if all(r.state == 'Finished' for r in races):
+        return 'Finished'
+    if all(r.state == 'NotStarted' for r in races):
+        return 'NotStarted'
+    return 'InProgress'
+
+
+def session_with_state(race_session, db_session) -> RaceSessionWithState:
+    races = db_session.exec(select(Race).where(Race.session_id == race_session.id)).all()
+    return RaceSessionWithState(
+        **race_session.model_dump(),
+        state=compute_session_state(races)
+    )
 
 
 def load_pending_race(session):

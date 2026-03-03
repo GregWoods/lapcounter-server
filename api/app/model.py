@@ -147,6 +147,16 @@ class Lane(SQLModel, table=True):
     enabled: bool = Field(default=True)
 
 
+class RaceSessionUpdate(SQLModel):
+    session_type: Optional[str] = None
+    end_condition: Optional[str] = None
+    end_condition_info: Optional[int] = None
+    scoring_method: Optional[str] = None
+    scoring_points: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+
+
 # not using relationships yet
 #  https://sqlmodel.tiangolo.com/tutorial/relationship-attributes/define-relationships-attributes/#declare-relationship-attributes
 
