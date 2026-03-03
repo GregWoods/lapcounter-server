@@ -52,10 +52,15 @@ def message_received(_client, _userdata, msg):
 
 
 
+def on_connect(_client, _userdata, _connect_flags, _reason_code, _properties):
+    _client.subscribe("car_timestamp")
+    print(f"Subscribed to car_timestamp")
+
+
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect = on_connect
 client.on_message = message_received
 client.connect(mqtt_hostname)
 
-# create a new thread to handle the network loop. Also handles reconnecting, and keeping the main thread alive
-client.subscribe("car_timestamp")
+# loop_forever handles reconnecting; on_connect resubscribes after each (re)connect
 client.loop_forever()

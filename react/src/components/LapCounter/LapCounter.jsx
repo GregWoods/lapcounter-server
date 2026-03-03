@@ -59,6 +59,10 @@ const LapCounter = () => {
     const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
+    const [raceId, setRaceId] = useState(null);
+    const raceIdRef = useRef();
+    raceIdRef.current = raceId;
+
     const [startRaceModalShown, setStartRaceModalShown] = useState(false);
     const [startLightsShown, setStartLightsShown] = useState(false);
     const [previewDriverCards, setPreviewDriverCards] = useState(false);
@@ -106,6 +110,7 @@ const LapCounter = () => {
             const res = await fetch(`${config.apiurl}/races/pending/`);
             if (res.ok) {
                 const pendingRace = await res.json();
+                if (pendingRace.race_id) setRaceId(pendingRace.race_id);
                 for (const a of pendingRace.lane_assignments ?? []) {
                     if (a.id !== 0) assignmentByLane[a.lane_number] = a;
                 }
@@ -139,6 +144,10 @@ const LapCounter = () => {
         setPreviewDriverCards(false);
         setStartLightsShown(true);
         setRace({ ...defaultRace, underStartersOrders: true, type: raceRef.current.type });
+        if (raceId) {
+            fetch(`${config.apiurl}/races/${raceId}/start`, { method: 'POST' })
+                .catch(e => console.error('Failed to mark race as started:', e));
+        }
     };
 
     const handleGoGoGo = () => {
@@ -160,11 +169,15 @@ const LapCounter = () => {
     const handleRaceEnd = () => {
         //must use raceRef.current here, as this is being called from the mqtt callback
         //  "race" will always be the initial values in this and similar callbacks
-        setRace({...raceRef.current, 
-            underStartersOrders:false, 
-            hasStarted:false, 
+        setRace({...raceRef.current,
+            underStartersOrders:false,
+            hasStarted:false,
             paused:false
         });
+        if (raceIdRef.current) {
+            fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
+                .catch(e => console.error('Failed to mark race as finished:', e));
+        }
     }
 
     const openCarSelectorModal = (driverIdx) => {

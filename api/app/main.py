@@ -184,6 +184,28 @@ def delete_driver(driver_id: int, session: SessionDep):
 
 
 
+@app.post("/races/{race_id}/start")
+def start_race(race_id: int, session: SessionDep):
+    race = session.get(Race, race_id)
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+    race.state = 'Running'
+    session.add(race)
+    session.commit()
+    return {"ok": True}
+
+
+@app.post("/races/{race_id}/finish")
+def finish_race(race_id: int, session: SessionDep):
+    race = session.get(Race, race_id)
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+    race.state = 'Finished'
+    session.add(race)
+    session.commit()
+    return {"ok": True}
+
+
 # === Diagnostic Endpoints ===
 
 @app.get("/verify-db")

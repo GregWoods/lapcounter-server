@@ -74,24 +74,24 @@ INSERT INTO cars (id, name, car_model_id, tyre_id, magnet, modifications_notes, 
     ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (1, 'Driver A', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (2, 'Driver B', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (3, 'Driver C', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (4, 'Driver D', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (5, 'Driver E', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (6, 'Driver F', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (7, 'Driver G', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (8, 'Driver H', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid) 
-    VALUES (9, 'Driver J', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (1, 'Alice', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (2, 'Bob', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (3, 'Charlie', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (4, 'Dave', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (5, 'Eve', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (6, 'Frank', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (7, 'Greg', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (8, 'Hannah', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (9, 'Jake', '', '', '', '') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO meetings (id, name, date, venue) 
@@ -104,15 +104,15 @@ INSERT INTO meetings (id, name, date, venue)
     VALUES (4, '2027 Village Hall Grand Prix', '2027-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;    
 
 
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 1, 'Driver A') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 2, 'Driver B') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 3, 'Driver C') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 4, 'Driver D') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 5, 'Driver E') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 6, 'Driver F') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 7, 'Driver G') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 8, 'Driver H') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
-INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 9, 'Driver J') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 1, 'Alice')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 2, 'Bob')     ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 3, 'Charlie') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 4, 'Dave')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 5, 'Eve')     ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 6, 'Frank')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 7, 'Greg')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 8, 'Hannah')  ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 9, 'Jake')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
 
 
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 1, 1) ON CONFLICT (meeting_id, car_id) DO NOTHING;
