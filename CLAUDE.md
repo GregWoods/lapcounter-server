@@ -82,8 +82,20 @@ This function is deliberately DB-free for testability. The SQL query in `get_dri
 
 PostgreSQL with SQLModel ORM (no relationships defined yet, uses raw SQL for complex queries).
 - Dev credentials: user=`lap`, password=`lap`, db=`lapcounter_server`, port=5432
-- Schema lives in `database/schema.sql`
+- Schema lives in `database/schema.sql` — kept in sync with `api/app/model.py`
+- Sample data in `database/sampledata.sql`
 - Key tables: `drivers`, `meetings`, `meeting_drivers`, `sessions`, `races`, `driver_races`, `driver_laps`, `lanes`, `cars`
+
+### Rebuild the database
+```
+docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
+docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
+```
+
+### Key schema notes
+- `meeting_cars` has a `lane` column — records which lane each car runs in for a given meeting. Nullable (spare cars have no lane). Unique constraint on `(meeting_id, lane)`. This is the source of truth for car-to-lane assignment when building a race lineup.
+- `driver_races` stores both `car_id` and `lane` independently — `lane` drives the fairness algorithm, `car_id` is the historical record of which car was actually driven (they can diverge if a car is swapped mid-meeting).
+- `lanes` is a static lookup table (lane_number 1–6, color, enabled flag). Not a physical constraint — lanes are logical in a digital Scalextric setup.
 
 ## Environment Variables
 
@@ -108,7 +120,7 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 ### What `race_meet_manager` adds
 - **PostgreSQL + SQLModel ORM**: 15 table models in `api/app/model.py`, schema in `database/schema.sql`, sample data in `database/sampledata.sql` and `api/app/sampledata.py`
 - **Flattened API structure**: `api/app/main/main.py` → `api/app/main.py`, with DB engine, session DI, global exception handler
-- **New API endpoints**: `/meetings`, `/meetings/upcoming`, `/sessions`, `/drivers/` (CRUD), `/drivers/nextrace/`, plus diagnostic endpoints (`/verify-db`, `/minimal-debug`, `/meetings-schema`)
+- **New API endpoints**: `/meetings`, `/meetings/upcoming`, `/sessions`, `/drivers/` (CRUD), `/drivers/nextrace/` (to be replaced by `/races/pending/` — see `INTEGRATION_PLAN.md`), plus diagnostic endpoints (`/verify-db`, `/minimal-debug`, `/meetings-schema`)
 - **Lane assignment logic**: `next_race.py` + `responsemodel.py` — fair driver-to-lane algorithm with 8 pytest unit tests
 - **React Router**: `router.jsx` using `createBrowserRouter` (Data mode), two routes: `/` (LapCounter) and `/nextrace` (new)
 - **NextRace UI**: `NextRace.jsx` — React Bootstrap table showing lane assignments (color-coded) and other drivers, data loaded from API via router loader

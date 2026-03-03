@@ -45,7 +45,7 @@ def get_drivers_for_next_race_sql(session):
             LEFT JOIN 
                 races r ON dr.race_id = r.id AND r.state = 'Finished'
             GROUP BY 
-                d.id, d.driver_name, d.sit_out_next_race
+                d.id, md.driver_name, d.sit_out_next_race
             ORDER BY 
                 sit_out_next_race ASC, 
                 completed_races ASC,

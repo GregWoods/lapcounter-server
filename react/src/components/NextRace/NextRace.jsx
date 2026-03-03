@@ -39,7 +39,7 @@ function NextRace() {
                                 className="lane-toggle"
                             />
                         </td>
-                        <td className="driver-name-col">{driver.first_name}</td>
+                        <td className="driver-name-col">{driver.driver_name}</td>
                         <td className="completed-races-col">{driver.completed_races}</td>
                         <td className="sit-out-col">
                             <Button 
@@ -77,7 +77,7 @@ function NextRace() {
                 {other_drivers.map(driver => (
                     <tr key={driver.id}>
                         <td></td>
-                        <td className="driver-name-col">{driver.first_name}</td>
+                        <td className="driver-name-col">{driver.driver_name}</td>
                         <td className="completed-races-col">{driver.completed_races}</td>
                         <td className="add-driver-col">
                             <Button 

@@ -131,10 +131,6 @@ def get_lanes(session: SessionDep):
 
 @app.get("/drivers/nextrace/")
 def get_drivers_for_next_race(session: SessionDep):
-    #Check if there are any upcoming races in the database already.
-    #  If so, get the soonest one
-    next_race = session.exec(select(NextRace)).first()
-
     # Else calculate a new Next Race
     lanes = get_lanes(session)
     drivers = get_drivers_for_next_race_sql(session)

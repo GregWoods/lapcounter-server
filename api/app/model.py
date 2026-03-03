@@ -88,6 +88,7 @@ class MeetingCar(SQLModel, table=True):
     __tablename__ = "meeting_cars"
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id", primary_key=True)
     car_id: Optional[int] = Field(default=None, foreign_key="cars.id", primary_key=True)
+    lane: Optional[int] = Field(default=None)   # default lane assignment for this car at this meeting (1-6, nullable for spare cars)
 
 
 class RaceSession(SQLModel, table=True): 
