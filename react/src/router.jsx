@@ -15,7 +15,7 @@ const router = createBrowserRouter([
         path: "nextrace",
         element: <NextRace />,
         loader: async () => {
-            const url = `${import.meta.env.VITE_API_URL}/drivers/nextrace/`;
+            const url = `${import.meta.env.VITE_API_URL}/races/pending/`;
             console.log('fetch driver data: ', url);
             const response = await fetch(url);
             if (!response.ok) {

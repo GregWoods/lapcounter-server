@@ -74,6 +74,7 @@ class DriverWithLane(SQLModel):
 
 
 class NextRaceSetup(SQLModel):
+    race_id: int = 0
     lane_assignments: list[DriverWithLane] = []
     other_drivers: list[DriverWithLane] = []
 

@@ -121,6 +121,7 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 3, 3) ON CONFLICT
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, 4) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 5, 5) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 7, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
 INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
@@ -144,7 +145,7 @@ INSERT INTO races (id, session_id, state) VALUES (4, 2, 'NotStarted') ON CONFLIC
 
 
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (1, 1, 2, 1, 1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (2, 2, 2, 1, 2) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (2, 2, 2, 7, 2) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (3, 3, 2, 2, 3) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (4, 4, 2, 3, 4) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (5, 5, 2, 4, 5) ON CONFLICT (id) DO NOTHING;
@@ -193,3 +194,18 @@ INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (26, 6
 
 -- leave driver laps empty for the current race... they will be generated in code
 -- INSERT INTO driver_lap (driver_race_id, lap_time, created_at) VALUES (1, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+
+-- Reset sequences so that auto-generated IDs don't collide with explicitly inserted sample data
+SELECT setval(pg_get_serial_sequence('car_manufacturers', 'id'), MAX(id)) FROM car_manufacturers;
+SELECT setval(pg_get_serial_sequence('car_categories', 'id'), MAX(id)) FROM car_categories;
+SELECT setval(pg_get_serial_sequence('car_models', 'id'), MAX(id)) FROM car_models;
+SELECT setval(pg_get_serial_sequence('car_tyres', 'id'), MAX(id)) FROM car_tyres;
+SELECT setval(pg_get_serial_sequence('chip_hardwares', 'id'), MAX(id)) FROM chip_hardwares;
+SELECT setval(pg_get_serial_sequence('chip_firmwares', 'id'), MAX(id)) FROM chip_firmwares;
+SELECT setval(pg_get_serial_sequence('cars', 'id'), MAX(id)) FROM cars;
+SELECT setval(pg_get_serial_sequence('drivers', 'id'), MAX(id)) FROM drivers;
+SELECT setval(pg_get_serial_sequence('meetings', 'id'), MAX(id)) FROM meetings;
+SELECT setval(pg_get_serial_sequence('sessions', 'id'), MAX(id)) FROM sessions;
+SELECT setval(pg_get_serial_sequence('races', 'id'), MAX(id)) FROM races;
+SELECT setval(pg_get_serial_sequence('driver_races', 'id'), MAX(id)) FROM driver_races;
+SELECT setval(pg_get_serial_sequence('driver_laps', 'id'), MAX(id)) FROM driver_laps;

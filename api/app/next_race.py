@@ -1,8 +1,10 @@
 import logging
 import traceback
 import random
+from datetime import date as date_type
 from typing import List
 from fastapi import HTTPException
+from sqlmodel import select
 from model import *
 from responsemodel import NextRaceSetup, DriverWithLane
 from pprint import pprint
@@ -145,3 +147,121 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
         lane_assignments=lane_assignments,
         other_drivers=drivers_not_racing
     )
+
+
+def get_active_meeting_id(session):
+    """Return the most recent meeting with date <= today, or nearest upcoming."""
+    today = date_type.today()
+    meeting = session.exec(
+        select(Meeting).where(Meeting.date <= today).order_by(Meeting.date.desc())
+    ).first()
+    if not meeting:
+        meeting = session.exec(
+            select(Meeting).where(Meeting.date > today).order_by(Meeting.date.asc())
+        ).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="No meetings found")
+    return meeting.id
+
+
+def load_pending_race(session):
+    """Load the existing NotStarted race from DB. Returns NextRaceSetup or None."""
+    pending_race = session.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    if not pending_race:
+        return None
+
+    driver_races = session.exec(
+        select(DriverRace).where(DriverRace.race_id == pending_race.id)
+    ).all()
+
+    # Stale race with no lineup (e.g. from sample data) — delete and recalculate
+    if not driver_races:
+        session.delete(pending_race)
+        session.commit()
+        return None
+
+    lanes_list = session.exec(select(Lane).order_by(Lane.lane_number)).all()
+
+    assigned_driver_ids = {dr.driver_id for dr in driver_races}
+    driver_race_by_lane = {dr.lane: dr for dr in driver_races}
+
+    # Reuse existing SQL for driver stats (lane counts, completed_races, etc.)
+    all_drivers = get_drivers_for_next_race_sql(session)
+    all_drivers_map = {d.id: d for d in all_drivers}
+
+    # Get meeting-specific display names
+    race_session = session.get(RaceSession, pending_race.session_id)
+    md_rows = session.exec(
+        select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)
+    ).all()
+    meeting_driver_names = {md.driver_id: md.driver_name for md in md_rows}
+
+    # Build lane_assignments — one slot per lane
+    lane_assignments = []
+    for lane in lanes_list:
+        if lane.lane_number in driver_race_by_lane:
+            dr = driver_race_by_lane[lane.lane_number]
+            driver_stats = all_drivers_map.get(dr.driver_id)
+            if driver_stats:
+                dwl = DriverWithLane.create(driver=driver_stats, lane=lane)
+                dwl.driver_name = meeting_driver_names.get(dr.driver_id, driver_stats.driver_name)
+            else:
+                dwl = DriverWithLane.create(lane=lane)
+                dwl.id = dr.driver_id
+                dwl.driver_name = meeting_driver_names.get(dr.driver_id, "")
+        else:
+            dwl = DriverWithLane.create(lane=lane)
+        lane_assignments.append(dwl)
+
+    other_drivers = [d for d in all_drivers if d.id not in assigned_driver_ids]
+    other_drivers.sort(key=lambda d: d.completed_races)
+
+    return NextRaceSetup(
+        race_id=pending_race.id,
+        lane_assignments=lane_assignments,
+        other_drivers=other_drivers,
+    )
+
+
+def save_pending_race(session, setup, meeting_id):
+    """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
+    # Find or create a session for this meeting
+    race_session = session.exec(
+        select(RaceSession).where(RaceSession.meeting_id == meeting_id)
+    ).first()
+    if not race_session:
+        race_session = RaceSession(
+            meeting_id=meeting_id,
+            session_type='Points',
+            end_condition='Laps',
+            scoring_method='PositionPoints',
+        )
+        session.add(race_session)
+        session.commit()
+        session.refresh(race_session)
+
+    race = Race(state='NotStarted', session_id=race_session.id)
+    session.add(race)
+    session.commit()
+    session.refresh(race)
+
+    # Map lane → car_id from meeting_cars
+    meeting_cars = session.exec(
+        select(MeetingCar).where(MeetingCar.meeting_id == meeting_id)
+    ).all()
+    lane_to_car = {mc.lane: mc.car_id for mc in meeting_cars if mc.lane is not None}
+
+    for lane_assignment in setup.lane_assignments:
+        if lane_assignment.id == 0:
+            continue
+        driver_race = DriverRace(
+            driver_id=lane_assignment.id,
+            race_id=race.id,
+            car_id=lane_to_car.get(lane_assignment.lane_number),
+            lane=lane_assignment.lane_number,
+        )
+        session.add(driver_race)
+
+    session.commit()
+    setup.race_id = race.id
+    return setup

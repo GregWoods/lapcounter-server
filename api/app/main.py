@@ -9,7 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting_id
 
 settings = Settings()
 
@@ -129,18 +129,23 @@ def get_lanes(session: SessionDep):
         raise HTTPException(status_code=500, detail=error_detail)
     
 
-@app.get("/drivers/nextrace/")
-def get_drivers_for_next_race(session: SessionDep):
-    # Else calculate a new Next Race
+@app.get("/races/pending/")
+def get_pending_race(session: SessionDep):
+    existing = load_pending_race(session)
+    if existing:
+        return existing
+    meeting_id = get_active_meeting_id(session)
     lanes = get_lanes(session)
     drivers = get_drivers_for_next_race_sql(session)
-    next_race = assign_drivers_to_lanes(drivers, lanes)
+    setup = assign_drivers_to_lanes(drivers, lanes)
+    return save_pending_race(session, setup, meeting_id)
 
-    # Save it to the database
 
-    # Return the next race
-
-    return next_race
+@app.get("/drivers/nextrace/")
+def get_drivers_for_next_race(session: SessionDep):
+    lanes = get_lanes(session)
+    drivers = get_drivers_for_next_race_sql(session)
+    return assign_drivers_to_lanes(drivers, lanes)
 
 
 
