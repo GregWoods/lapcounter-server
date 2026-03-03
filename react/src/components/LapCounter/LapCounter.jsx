@@ -5,6 +5,8 @@ import EditDriverNamesModal from './EditDriverNamesModal.jsx';
 import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
+import StartRaceModal from './StartRaceModal.jsx';
+import StartLights from './StartLights.jsx';
 import { useState, useRef } from 'react';
 import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
 import { defaultConfig, defaultRace, lapDataDefault, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
@@ -57,6 +59,9 @@ const LapCounter = () => {
     const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
     const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
 
+    const [startRaceModalShown, setStartRaceModalShown] = useState(false);
+    const [startLightsShown, setStartLightsShown] = useState(false);
+
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtturl: newMqttHost});
     }
@@ -91,41 +96,52 @@ const LapCounter = () => {
         setDriverNamesModalShown(true);
     }
 
-    const handleStartCountdown = async (raceTypeObj) => {
-        //reset all appropriate values ready for race start
-        resetDrivers(raceTypeObj);
+    // Green flag clicked: fetch lineup, reset driver stats, show Start popup
+    const handleGreenFlag = async () => {
+        const laps = raceRef.current.type?.details.laps ?? defaultRace.type.details.laps;
 
-        // Overlay driver names + IDs from the pending race lineup
+        let assignmentByLane = {};
         try {
             const res = await fetch(`${config.apiurl}/races/pending/`);
             if (res.ok) {
                 const pendingRace = await res.json();
-                if (pendingRace?.lane_assignments) {
-                    setDrivers(currentDrivers =>
-                        currentDrivers.map(driver => {
-                            const assignment = pendingRace.lane_assignments.find(
-                                a => a.lane_number === driver.number && a.id !== 0
-                            );
-                            if (!assignment) return driver;
-                            return { ...driver, name: assignment.driver_name, driverId: assignment.id };
-                        })
-                    );
+                for (const a of pendingRace.lane_assignments ?? []) {
+                    if (a.id !== 0) assignmentByLane[a.lane_number] = a;
                 }
             }
         } catch (e) {
-            console.error('Failed to load pending race lineup:', e);
+            console.error('Failed to load pending race:', e);
         }
 
-        setRace({...defaultRace,
-            underStartersOrders: true,
-            type: raceTypeObj
-        });
-    }
+        setLapData([...lapDataDefault]);
+        setDrivers(currentDrivers =>
+            currentDrivers.map(driver => {
+                const a = assignmentByLane[driver.number];
+                return {
+                    ...driver,
+                    ...getDriverDataDefault(laps),
+                    lapsRemaining: laps,
+                    p1LapsRemaining: laps,
+                    ...(a && { name: a.driver_name, driverId: a.id }),
+                };
+            })
+        );
+
+        setStartRaceModalShown(true);
+    };
+
+    // Start button in popup: close popup, show start lights
+    const handleRaceStart = () => {
+        setStartRaceModalShown(false);
+        setStartLightsShown(true);
+        setRace({ ...defaultRace, underStartersOrders: true, type: raceRef.current.type });
+    };
 
     const handleGoGoGo = () => {
-        setRace({...raceRef.current, 
-            underStartersOrders:false, 
-            hasStarted:true, 
+        setStartLightsShown(false);
+        setRace({...raceRef.current,
+            underStartersOrders:false,
+            hasStarted:true,
             paused:false
         });
 
@@ -145,21 +161,6 @@ const LapCounter = () => {
             hasStarted:false, 
             paused:false
         });
-    }
-
-    const resetDrivers = (raceTypeObj) => {
-        setLapData([...lapDataDefault]);
-
-        const newDrivers = [];
-        for (const driver of drivers) {
-            newDrivers.push({
-                ...driver, 
-                ...getDriverDataDefault(lapsPerRace), 
-                lapsRemaining: raceTypeObj.details.laps, 
-                p1LapsRemaining: raceTypeObj.details.laps
-            });
-        }
-        setDrivers(newDrivers);
     }
 
     const openCarSelectorModal = (driverIdx) => {
@@ -229,11 +230,6 @@ const LapCounter = () => {
     }
 
 
-    const handleRaceTypeChange = (raceTypeObj) => {
-        console.log("++++++++++++++ LapCounter:handleRaceTypeChange", raceTypeObj);
-        setRace({...raceRef.current, type: raceTypeObj});
-    }
-
     const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`; 
     return (
         <div id="top">
@@ -244,18 +240,26 @@ const LapCounter = () => {
                     circuitName={config.circuitname}
                     mqttHost={config.mqtturl}
                     setMqtthost={storeMqttHost}
-                    onRaceTypeChange={handleRaceTypeChange}
-                    onStartCountdown={handleStartCountdown}
-                    onGoGoGo={handleGoGoGo}
-
+                    onGreenFlag={handleGreenFlag}
                     fastestLapToday={statsRef.current.fastestLapToday}
                     hasStarted={race.hasStarted}
+                    underStartersOrders={race.underStartersOrders || startRaceModalShown}
                     onRaceEnd={handleRaceEnd}
-                    yellowFlagAdvantageDuration = {3.8}
+                    yellowFlagAdvantageDuration={3.8}
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
                     onYellowFlag={() => setRace({...race, paused: true})}
                     onEndYellowFlag={() => setRace({...race, paused: false})}
-                    resetFastestLapToday = {resetFastestLapToday}
+                    resetFastestLapToday={resetFastestLapToday}
+                />
+                <StartRaceModal
+                    showMe={startRaceModalShown}
+                    onStart={handleRaceStart}
+                    onClose={() => setStartRaceModalShown(false)}
+                />
+                <StartLights
+                    showMe={startLightsShown}
+                    onClose={() => setStartLightsShown(false)}
+                    onLightsOut={handleGoGoGo}
                 />
                 <div id="driverCardOuter">
                     <div id="driverCardContainer" className={numberOfDriversRacingClassName}>

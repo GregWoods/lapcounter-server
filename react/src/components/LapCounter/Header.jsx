@@ -1,8 +1,6 @@
 import './Header.css';
 import RaceFlagStart from './RaceFlagStart'
 import RaceFlagEnd from './RaceFlagEnd'
-import StartLights from './StartLights';
-import RaceTypeModal from './RaceTypeModal';
 import EditSettingsModal from './EditSettingsModal';
 import React, { useState, useEffect, createRef } from 'react';
 import RaceFlagYellow from './RaceFlagYellow';
@@ -13,22 +11,18 @@ import ResetFastestLapTodayModal from './ResetFastestLapTodayModal';
 
 function Header({
     circuitName,
-    mqttHost, setMqttHost, 
-    onGoGoGo, 
-    onStartCountdown,
-    fastestLapToday, 
-    hasStarted, 
+    mqttHost, setMqttHost,
+    onGreenFlag,
+    fastestLapToday,
+    hasStarted,
+    underStartersOrders,
     onRaceEnd,
     yellowFlagAdvantageDuration,
     onYellowFlagCountdown,
-    onYellowFlag, 
+    onYellowFlag,
     onEndYellowFlag,
     resetFastestLapToday }) {
 
-    const [showStartLights, setShowStartLights] = useState(false);
-
-    // eslint-disable-next-line no-unused-vars
-    const [raceTypeModalShown, setRaceTypeModalShown] = useState(false);
     const [settingsModalShown, setSettingsModalShown] = useState(false);
     const [yellowCountdownShown, setYellowCountdownShown] = useState(false);
     const [yellowFlashingShown, setYellowFlashingShown] = useState(false);
@@ -43,23 +37,6 @@ function Header({
         }
     }, [headerRef]);
 
-    const handleStartCountdown = (raceTypeObj) => {
-        console.log("Header:handleStartCountdown", raceTypeObj);
-        onStartCountdown(raceTypeObj);
-        setRaceTypeModalShown(false);
-        setShowStartLights(true);
-    }
-
-    const handleGoGoGo = () => {
-        console.log("Go! Go! Go!");
-        onGoGoGo();
-    }
-
-    const closeStartLights = () => {
-        setShowStartLights(false);
-    }
-
-    // eslint-disable-next-line no-unused-vars
     const handleRaceEnd = () => {
         console.log("Header:handleRaceEnd");
         onRaceEnd();
@@ -116,9 +93,9 @@ function Header({
                 */}
 
                 {
-                    !hasStarted &&
-                    <RaceFlagStart 
-                        onSelect={() => setRaceTypeModalShown(true)}
+                    !hasStarted && !underStartersOrders &&
+                    <RaceFlagStart
+                        onSelect={onGreenFlag}
                         handleColor='#FFF'
                     />
                 }
@@ -150,20 +127,6 @@ function Header({
                 mqttHost={mqttHost}
                 setMqttHost={setMqttHost}
             />
-
-            <RaceTypeModal
-                showMe={raceTypeModalShown}
-                onClose={() => setRaceTypeModalShown(false)}
-                onStartCountdown={handleStartCountdown}
-            />
-
-
-            <StartLights
-                showMe={showStartLights}
-                onClose={closeStartLights}
-                onLightsOut={handleGoGoGo}
-            />
-
 
             <YellowFlagCountdown
                 showMe={yellowCountdownShown} 
