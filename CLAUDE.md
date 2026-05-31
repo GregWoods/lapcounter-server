@@ -18,7 +18,7 @@ React (Layer 4) → Vite + React SPA, receives lap data via MQTT WebSocket
 - **mosquitto/** - Eclipse Mosquitto MQTT broker config (bridging all layers)
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
 - **lapdata/** - MQTT subscriber that transforms raw car_timestamp into lap data
-- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL)
+- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL); see `api/CLAUDE.md` for detailed API docs
 - **react/src/** - React 18 frontend (Vite, React Bootstrap, Ant Design, mqtt.js)
 
 ## Development Commands
@@ -31,6 +31,14 @@ docker compose -f compose.dev.yaml up --build
 - API: http://localhost:8000 (auto-reload via uvicorn)
 - API docs (Swagger): http://localhost:8000/docs
 - PgAdmin: http://localhost:5050
+
+### Run API without Docker
+```powershell
+. ./api/setenv.ps1
+cd api && ./.venv/Scripts/activate
+cd app && fastapi dev main.py
+```
+Requires PostgreSQL running on localhost:5432 (the Docker `database` container works).
 
 ### Run Python tests
 ```
@@ -56,17 +64,19 @@ Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gr
 ## Key Backend Files
 
 - `api/app/main.py` - FastAPI app, all route definitions, DB engine setup
-- `api/app/model.py` - SQLModel table definitions (drivers, cars, meetings, races, lanes, laps)
+- `api/app/model.py` - SQLModel table definitions (15 models)
 - `api/app/responsemodel.py` - Pydantic response models (`DriverWithLane`, `NextRaceSetup`)
-- `api/app/next_race.py` - Lane assignment algorithm (core business logic, unit-tested independently)
+- `api/app/next_race.py` - Lane assignment algorithm + helpers for pending race persistence
 - `api/app/settings.py` - Pydantic Settings (env vars from docker-compose)
+- `api/app/sampledata.py` - Script to drop/recreate all tables and seed sample data (run directly inside the container)
 
 ## Key Frontend Files
 
 - `react/src/components/LapCounter/LapCounter.jsx` - Main race UI (leaderboard, race controls)
 - `react/src/components/NextRace/NextRace.jsx` - Driver-to-lane assignment UI
 - `react/src/components/MqttSubscriber.jsx` - MQTT WebSocket connection
-- `react/src/components/LapCounter/lapUtils.js` - Race logic helpers
+- `react/src/components/LapCounter/lapUtils.js` - Race logic helpers (modifyDriversViewModel, calculateLapTime, checkEndOfRace)
+- `react/src/defaultConfig.js` - Shared config, race defaults, and driver factory functions
 
 ## Lane Assignment Algorithm
 
@@ -91,16 +101,20 @@ PostgreSQL with SQLModel ORM (no relationships defined yet, uses raw SQL for com
 docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
 docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
 ```
+Alternatively, run `python sampledata.py` inside the `api` container (drops all tables, recreates, seeds).
 
 ### Key schema notes
-- `meeting_cars` has a `lane` column — records which lane each car runs in for a given meeting. Nullable (spare cars have no lane). Unique constraint on `(meeting_id, lane)`. This is the source of truth for car-to-lane assignment when building a race lineup.
-- `driver_races` stores both `car_id` and `lane` independently — `lane` drives the fairness algorithm, `car_id` is the historical record of which car was actually driven (they can diverge if a car is swapped mid-meeting).
-- `lanes` is a static lookup table (lane_number 1–6, color, enabled flag). Not a physical constraint — lanes are logical in a digital Scalextric setup.
+- `meeting_cars.lane` — nullable INT, unique per `(meeting_id, lane)`. Source of truth for car-to-lane assignment when building a race lineup.
+- `driver_races` stores both `car_id` and `lane` independently — they can diverge if a car is swapped mid-meeting. `lane` drives the fairness algorithm; `car_id` is the historical record.
+- `lanes` is a static lookup table (lane_number 1–6, color, enabled flag). Not a physical constraint.
+- `RaceSession` model maps to the `sessions` table (should eventually be renamed `race_sessions`).
+- At most one `Race` with `state='NotStarted'` at a time — this is the "pending race".
 
 ## Environment Variables
 
 Backend env vars are set in `compose.dev.yaml` and read via Pydantic Settings (`api/app/settings.py`).
 React env vars use `VITE_` prefix and are compiled into the app at build time.
+For local (non-Docker) API development, `api/setenv.ps1` sets all required vars.
 
 ## Browser Target
 
@@ -110,20 +124,21 @@ The UI is optimized for 1920x1080 resolution with significant hardcoded CSS for 
 
 The `main` branch is a working lap counter with no database. The `race_meet_manager` branch adds race meet management — the ability to persist drivers, cars, meetings, and race history across sessions.
 
-### What `main` has
-- Minimal API: 2 endpoints (`/api/settings`, `/api/cars`), no database, `main.py` lived in `api/app/main/main.py` (package structure)
-- React renders `<App />` directly (no router)
-- All config/defaults inline in `LapCounter.jsx`
-- `requirements.txt` was just `fastapi[standard]` + `pydantic-settings`
-- Docker compose: mosquitto, mocked-gpio, lapdata, api, react (5 services)
+The active implementation plan is in `INTEGRATION_PLAN.md` — read this before making changes to the API/React integration. It describes 5 phases for connecting the NextRace UI to the LapCounter via a "pending race" concept.
 
-### What `race_meet_manager` adds
-- **PostgreSQL + SQLModel ORM**: 15 table models in `api/app/model.py`, schema in `database/schema.sql`, sample data in `database/sampledata.sql` and `api/app/sampledata.py`
-- **Flattened API structure**: `api/app/main/main.py` → `api/app/main.py`, with DB engine, session DI, global exception handler
-- **New API endpoints**: `/meetings`, `/meetings/upcoming`, `/sessions`, `/drivers/` (CRUD), `/drivers/nextrace/` (to be replaced by `/races/pending/` — see `INTEGRATION_PLAN.md`), plus diagnostic endpoints (`/verify-db`, `/minimal-debug`, `/meetings-schema`)
-- **Lane assignment logic**: `next_race.py` + `responsemodel.py` — fair driver-to-lane algorithm with 8 pytest unit tests
-- **React Router**: `router.jsx` using `createBrowserRouter` (Data mode), two routes: `/` (LapCounter) and `/nextrace` (new)
-- **NextRace UI**: `NextRace.jsx` — React Bootstrap table showing lane assignments (color-coded) and other drivers, data loaded from API via router loader
-- **Extracted `defaultConfig.js`**: config, race defaults, and driver factory functions pulled out of `LapCounter.jsx` into a shared module
-- **Docker compose**: added `database` (postgres) and `pgadmin` containers (7 services), fixed React volume mount to use named volume for `node_modules`
-- **Pinned dependencies**: `requirements.txt` expanded to 39 packages (adds `sqlmodel`, `psycopg2`, `SQLAlchemy`, etc.); React adds `react-router` 7.4.0, `react-bootstrap` 2.10.9
+### Current implementation status (race_meet_manager)
+
+**Completed:**
+- PostgreSQL + SQLModel ORM: 15 table models in `api/app/model.py`
+- Full driver CRUD, meetings, sessions endpoints
+- `GET /races/pending/` — loads or creates a pending race (used by both `/nextrace` and `/` routes)
+- `POST /races/{id}/start` and `POST /races/{id}/finish` — race state transitions
+- Lane assignment algorithm (`next_race.py`) with 8 pytest unit tests
+- React Router with `/` (LapCounter) and `/nextrace` (NextRace) routes; `/nextrace` loads from `/races/pending/`
+- NextRace UI showing lane assignments (color-coded) and other drivers
+
+**Remaining (see INTEGRATION_PLAN.md for details):**
+- Phase 2: Wire up the × and + edit buttons in NextRace.jsx (`PUT /races/pending/lineup`)
+- Phase 3: LapCounter loads driver names from pending race (add loader to `"/"` route in `router.jsx`)
+- Phase 4 (partial): `POST /races/{id}/laps` for writing lap events to DB
+- Phase 5: "Load Next Race" button after a race finishes
