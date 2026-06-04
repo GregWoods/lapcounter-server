@@ -9,24 +9,57 @@ Scalextric digital lap counter and race management system. A 4-layer Docker-base
 ## Architecture
 
 ```
-GPIO (Layer 1) → publishes "car_timestamp" to MQTT
-LapData (Layer 2) → subscribes car_timestamp, calculates lap times, publishes "lap" to MQTT
-API (Layer 3) → FastAPI + PostgreSQL REST backend
-React (Layer 4) → Vite + React SPA, receives lap data via MQTT WebSocket
+GPIO / BLE / future hardware (Layer 1)
+        ↓ car_timestamp
+LapData — hardware abstraction + race manager (Layer 2)
+        ↓ lap          ↓ race_state       ↑ race_control
+DB Writer service    React apps        Any client
+        ↓               (display only)  (browser, button box, app)
+   PostgreSQL ← API (REST, queries + lineup management)
 ```
 
-- **mosquitto/** - Eclipse Mosquitto MQTT broker config (bridging all layers)
+- **mosquitto/** - Eclipse Mosquitto MQTT broker config
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
-- **lapdata/** - MQTT subscriber that transforms raw car_timestamp into lap data
-- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL); see `api/CLAUDE.md` for detailed endpoint/model docs
-- **react/src/** - React 18 frontend (Vite, React Bootstrap, Ant Design, mqtt.js)
+- **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`
+- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
+- **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
+- **dbwriter/** *(planned)* - Small service: subscribes to `lap`, persists to DB via API
 
-### MQTT Message Formats
+### Core design principles
 
-- **`car_timestamp` topic** (GPIO → LapData): `{"car": <1-6>}`
-- **`lap` topic** (LapData → React): `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>}`
+- **Queries are HTTP, events are MQTT.** The API answers "what is the pending race?" React POSTs race control signals to the API for DB side-effects, but the live signal goes via MQTT.
+- **`car_timestamp` is internal to LapData.** Nothing else subscribes to it. It is the hardware-specific interface; everything above depends on `lap` only.
+- **`lap` is the stable contract** — the seam between hardware and software. Changing hardware (GPIO → BLE) only requires a new Layer 1 that publishes the same `car_timestamp` format.
+- **Race state is browser-independent.** LapData holds race state in memory; React is a viewer that can reconnect at any time and immediately receive current state.
+- **Any client can publish `race_control`** — browser, physical button box, mobile app. LapData doesn't care who sent it.
 
-`car` is a 1-based lane number. `lapTime` is filtered by `MINIMUM_LAP_TIME` env var in lapdata to reject phantom triggers.
+### MQTT Topics
+
+| Topic | Publisher | Subscribers | Description |
+|---|---|---|---|
+| `car_timestamp` | GPIO/Layer 1 | LapData only | Raw hardware event — internal, do not subscribe elsewhere |
+| `lap` | LapData | DB Writer, React (optional) | Normalised lap crossing — the stable public interface |
+| `race_state` | LapData | React apps | Full computed state after every crossing (positions, lap counts, fastest laps) |
+| `race_control` | Any client | LapData | Commands: `start`, `pause`, `resume`, `end` |
+
+**`race_control`:** `{"command": "start", "race_id": 5}`
+
+**`race_state`:**
+```json
+{
+  "race_id": 5, "state": "Running", "target_laps": 20,
+  "race_fastest_lap": 4.523, "race_start_time": 1749123456.789,
+  "drivers": [
+    { "lane": 1, "driver_id": 9, "driver_name": "Jake",
+      "laps_completed": 3, "laps_remaining": 17,
+      "last_lap": 5.123, "best_lap": 4.987, "total_race_time": 15.234,
+      "position": 1, "finished": false, "suspended": false, "has_started": true }
+  ]
+}
+```
+
+**`lap`:** `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>}`  
+`car` is 1-based lane number. `lapTime` filtered by `MINIMUM_LAP_TIME` env var.
 
 ## Development Commands
 
@@ -82,13 +115,21 @@ Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gr
 - `react/src/components/LapCounter/LapCounter.jsx` - Main race UI (leaderboard, race controls)
 - `react/src/components/NextRace/NextRace.jsx` - Driver-to-lane assignment UI
 - `react/src/components/MqttSubscriber.jsx` - MQTT WebSocket connection
-- `react/src/components/LapCounter/lapUtils.js` - Race logic helpers (modifyDriversViewModel, calculateLapTime, checkEndOfRace)
+- `react/src/components/LapCounter/lapUtils.js` - Race logic helpers — **being phased out** as race logic moves to LapData
 - `react/src/defaultConfig.js` - Shared config, race defaults, and driver factory functions
 - `react/src/router.jsx` - React Router Data Mode (`createBrowserRouter` with `loader` functions — data is fetched before render)
 
-### React State Architecture (LapCounter)
+### React is display-only (target state)
 
-`drivers[]` and `lapData[]` are parallel arrays, both indexed **0–5 by lane number** (not by position). `drivers[0]` is always lane 1. Visual position sorting is done via CSS `order` property — the array itself is always re-sorted by `driver.number` at the end of `modifyDriversViewModel`. Never sort the array for display purposes.
+React subscribes to `race_state` via MQTT and renders it. It contains no race logic. `lapUtils.js` (`calculateLapTime`, `modifyDriversViewModel`, `checkEndOfRace`) is being deleted as part of the LapData race manager refactor.
+
+React publishes `race_control` directly to MQTT (not via API) for speed and so non-browser clients work the same way. It also fires `POST /races/{id}/start` to the API as fire-and-forget for DB state.
+
+Planned routes: `/` (leaderboard), `/nextrace` (lineup), `/tv` (full-screen display), `/driver/N` (per-driver view).
+
+### Current React State Architecture (transitional)
+
+`drivers[]` and `lapData[]` are parallel arrays, both indexed **0–5 by lane number** (not by position). `drivers[0]` is always lane 1. Visual position sorting is done via CSS `order` — the array is always re-sorted by `driver.number` at the end of `modifyDriversViewModel`. This will be replaced by rendering `race_state.drivers` directly from MQTT.
 
 ## Lane Assignment Algorithm
 
@@ -135,25 +176,29 @@ The UI is optimized for 1920x1080 resolution with significant hardcoded CSS for 
 
 ## Branch: `race_meet_manager` (WIP) vs `main`
 
-The `main` branch is a working lap counter with no database. The `race_meet_manager` branch adds race meet management — the ability to persist drivers, cars, meetings, and race history across sessions.
+The `main` branch is a working lap counter with no database. The `race_meet_manager` branch adds race meet management and is being refactored toward the MQTT-centric architecture above.
 
-The active implementation plan is in `INTEGRATION_PLAN.md` — read this before making changes to the API/React integration. It describes 5 phases for connecting the NextRace UI to the LapCounter via a "pending race" concept.
-
-### Current implementation status (race_meet_manager)
+### Current implementation status
 
 **Completed:**
 - PostgreSQL + SQLModel ORM: 15 table models in `api/app/model.py`
 - Full driver CRUD, meetings, sessions endpoints
-- `GET /races/pending/` — loads or creates a pending race (used by both `/nextrace` and `/` routes)
+- `GET /races/pending/` — loads or creates a pending race
 - `POST /races/{id}/start` and `POST /races/{id}/finish` — race state transitions
+- `PATCH /lanes/{lane_number}` — enable/disable a lane, updates pending race lineup
 - Lane assignment algorithm (`next_race.py`) with 8 pytest unit tests
-- React Router with `/` (LapCounter) and `/nextrace` (NextRace) routes; `/nextrace` loads from `/races/pending/`
-- NextRace UI showing lane assignments (color-coded) and other drivers
+- React Router with `/` (LapCounter) and `/nextrace` (NextRace) routes
+- NextRace UI: lane toggle (enable/disable) is live; `/` route loads driver names from pending race on page load
 
-**Remaining (see INTEGRATION_PLAN.md for details):**
-- Phase 2: Wire up the × and + edit buttons in NextRace.jsx (`PUT /races/pending/lineup` — endpoint not yet implemented)
-- Phase 3: LapCounter loads driver names from pending race (add loader to `"/"` route in `router.jsx` — the `"/"` route currently has no loader)
-- Phase 4 (partial): `POST /races/{id}/laps` for writing lap events to DB
-- Phase 5: "Load Next Race" button after a race finishes
+**In progress — LapData race manager refactor:**
+- LapData to own all race state (positions, lap counts, fastest laps, race end)
+- LapData to publish `race_state` MQTT topic after every lap crossing
+- React to subscribe to `race_state` and delete all race logic (`lapUtils.js`)
+- New DB Writer service to subscribe to `lap` and persist to DB
+- `race_control` MQTT topic for race start/pause/end from any client
 
-Note: `GET /drivers/nextrace/` (old, stateless endpoint) still exists alongside `GET /races/pending/` (new, persistent endpoint). Both are in `main.py`. The old one is superseded but not yet removed.
+**Still needed (NextRace UI):**
+- × and + edit buttons to swap specific drivers in/out of lanes (`PUT /races/pending/lineup`)
+- "Load Next Race" button in LapCounter after a race finishes
+
+Note: `GET /drivers/nextrace/` (old stateless endpoint) still exists alongside `GET /races/pending/`. The old one is superseded but not yet removed.
