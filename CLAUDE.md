@@ -18,8 +18,15 @@ React (Layer 4) → Vite + React SPA, receives lap data via MQTT WebSocket
 - **mosquitto/** - Eclipse Mosquitto MQTT broker config (bridging all layers)
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
 - **lapdata/** - MQTT subscriber that transforms raw car_timestamp into lap data
-- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL); see `api/CLAUDE.md` for detailed API docs
+- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL); see `api/CLAUDE.md` for detailed endpoint/model docs
 - **react/src/** - React 18 frontend (Vite, React Bootstrap, Ant Design, mqtt.js)
+
+### MQTT Message Formats
+
+- **`car_timestamp` topic** (GPIO → LapData): `{"car": <1-6>}`
+- **`lap` topic** (LapData → React): `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>}`
+
+`car` is a 1-based lane number. `lapTime` is filtered by `MINIMUM_LAP_TIME` env var in lapdata to reject phantom triggers.
 
 ## Development Commands
 
@@ -77,6 +84,11 @@ Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gr
 - `react/src/components/MqttSubscriber.jsx` - MQTT WebSocket connection
 - `react/src/components/LapCounter/lapUtils.js` - Race logic helpers (modifyDriversViewModel, calculateLapTime, checkEndOfRace)
 - `react/src/defaultConfig.js` - Shared config, race defaults, and driver factory functions
+- `react/src/router.jsx` - React Router Data Mode (`createBrowserRouter` with `loader` functions — data is fetched before render)
+
+### React State Architecture (LapCounter)
+
+`drivers[]` and `lapData[]` are parallel arrays, both indexed **0–5 by lane number** (not by position). `drivers[0]` is always lane 1. Visual position sorting is done via CSS `order` property — the array itself is always re-sorted by `driver.number` at the end of `modifyDriversViewModel`. Never sort the array for display purposes.
 
 ## Lane Assignment Algorithm
 
@@ -109,6 +121,7 @@ Alternatively, run `python sampledata.py` inside the `api` container (drops all 
 - `lanes` is a static lookup table (lane_number 1–6, color, enabled flag). Not a physical constraint.
 - `RaceSession` model maps to the `sessions` table (should eventually be renamed `race_sessions`).
 - At most one `Race` with `state='NotStarted'` at a time — this is the "pending race".
+- `MeetingDriver.driver_name` is the computed display name (usually `first_name`, but includes last initial when two drivers share a first name). Always use `driver_name` in the UI, not `Driver.first_name`.
 
 ## Environment Variables
 
@@ -138,7 +151,9 @@ The active implementation plan is in `INTEGRATION_PLAN.md` — read this before 
 - NextRace UI showing lane assignments (color-coded) and other drivers
 
 **Remaining (see INTEGRATION_PLAN.md for details):**
-- Phase 2: Wire up the × and + edit buttons in NextRace.jsx (`PUT /races/pending/lineup`)
-- Phase 3: LapCounter loads driver names from pending race (add loader to `"/"` route in `router.jsx`)
+- Phase 2: Wire up the × and + edit buttons in NextRace.jsx (`PUT /races/pending/lineup` — endpoint not yet implemented)
+- Phase 3: LapCounter loads driver names from pending race (add loader to `"/"` route in `router.jsx` — the `"/"` route currently has no loader)
 - Phase 4 (partial): `POST /races/{id}/laps` for writing lap events to DB
 - Phase 5: "Load Next Race" button after a race finishes
+
+Note: `GET /drivers/nextrace/` (old, stateless endpoint) still exists alongside `GET /races/pending/` (new, persistent endpoint). Both are in `main.py`. The old one is superseded but not yet removed.
