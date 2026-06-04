@@ -270,6 +270,61 @@ def load_pending_race(session):
     )
 
 
+def set_lane_enabled(session, lane_number: int, enabled: bool):
+    """Enable or disable a lane and update the pending race lineup accordingly."""
+    lane = session.get(Lane, lane_number)
+    if not lane:
+        raise HTTPException(status_code=404, detail="Lane not found")
+
+    lane.enabled = enabled
+    session.add(lane)
+    session.commit()
+
+    pending_race = session.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    if not pending_race:
+        return load_pending_race(session)
+
+    if not enabled:
+        driver_race = session.exec(
+            select(DriverRace).where(
+                DriverRace.race_id == pending_race.id,
+                DriverRace.lane == lane_number
+            )
+        ).first()
+        if driver_race:
+            session.delete(driver_race)
+            session.commit()
+    else:
+        existing = session.exec(
+            select(DriverRace).where(DriverRace.race_id == pending_race.id)
+        ).all()
+        assigned_ids = {dr.driver_id for dr in existing}
+
+        all_drivers = get_drivers_for_next_race_sql(session)
+        next_driver = next(
+            (d for d in all_drivers if not d.sit_out_next_race and d.id not in assigned_ids),
+            None
+        )
+
+        if next_driver:
+            race_session = session.get(RaceSession, pending_race.session_id)
+            meeting_car = session.exec(
+                select(MeetingCar).where(
+                    MeetingCar.meeting_id == race_session.meeting_id,
+                    MeetingCar.lane == lane_number
+                )
+            ).first()
+            session.add(DriverRace(
+                driver_id=next_driver.id,
+                race_id=pending_race.id,
+                car_id=meeting_car.car_id if meeting_car else None,
+                lane=lane_number,
+            ))
+            session.commit()
+
+    return load_pending_race(session)
+
+
 def save_pending_race(session, setup, meeting_id):
     """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
     # Find or create a session for this meeting

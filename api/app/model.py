@@ -147,6 +147,10 @@ class Lane(SQLModel, table=True):
     enabled: bool = Field(default=True)
 
 
+class LaneUpdate(SQLModel):
+    enabled: bool
+
+
 class RaceSessionUpdate(SQLModel):
     session_type: Optional[str] = None
     end_condition: Optional[str] = None

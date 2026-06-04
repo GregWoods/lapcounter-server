@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting_id, get_active_meeting, get_active_session, session_with_state
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting_id, get_active_meeting, get_active_session, session_with_state, set_lane_enabled
 
 settings = Settings()
 
@@ -214,6 +214,11 @@ def delete_driver(driver_id: int, session: SessionDep):
     return {"ok": True}
 
 
+
+
+@app.patch("/lanes/{lane_number}")
+def patch_lane(lane_number: int, update: LaneUpdate, session: SessionDep):
+    return set_lane_enabled(session, lane_number, update.enabled)
 
 
 @app.post("/races/{race_id}/start")

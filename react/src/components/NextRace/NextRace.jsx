@@ -1,13 +1,26 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import './NextRace.css';
+import { useState } from 'react';
 import { useLoaderData } from 'react-router-dom';
 import { Table, Container, Form, Button} from 'react-bootstrap';
 
 
 function NextRace() {
     const next_race_setup = useLoaderData();
-    const lane_assignments = next_race_setup.lane_assignments;
-    const other_drivers = next_race_setup.other_drivers;
+    const [laneAssignments, setLaneAssignments] = useState(next_race_setup.lane_assignments);
+    const [otherDrivers, setOtherDrivers] = useState(next_race_setup.other_drivers);
+
+    const handleLaneToggle = async (laneNumber, enabled) => {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/lanes/${laneNumber}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setLaneAssignments(data.lane_assignments);
+        setOtherDrivers(data.other_drivers);
+    };
 
     return (
         <Container>
@@ -19,7 +32,7 @@ function NextRace() {
                     <col style={{width: "70%"}} />
                     <col style={{width: "10%"}} />
                     <col style={{width: "10%"}} />
-                </colgroup>                
+                </colgroup>
                 <thead>
                     <tr>
                         <th>Lane</th>
@@ -29,22 +42,23 @@ function NextRace() {
                     </tr>
                 </thead>
                 <tbody>
-                {lane_assignments.map(driver => (
-                    <tr key={driver.id} className={`lane-color-${driver.lane_color}`}>
+                {laneAssignments.map(driver => (
+                    <tr key={driver.lane_number} className={`lane-color-${driver.lane_color}`}>
                         <td className="lane-enabled-col">
-                            <Form.Check 
+                            <Form.Check
                                 type="switch"
-                                id={`lane-enabled-switch-${driver.id}`}
-                                defaultChecked={true}
+                                id={`lane-enabled-switch-${driver.lane_number}`}
+                                checked={driver.lane_enabled}
+                                onChange={(e) => handleLaneToggle(driver.lane_number, e.target.checked)}
                                 className="lane-toggle"
                             />
                         </td>
                         <td className="driver-name-col">{driver.driver_name}</td>
                         <td className="completed-races-col">{driver.completed_races}</td>
                         <td className="sit-out-col">
-                            <Button 
-                                variant="outline-danger" 
-                                size="sm" 
+                            <Button
+                                variant="outline-danger"
+                                size="sm"
                                 className="remove-button"
                                 aria-label="Remove driver"
                             >
@@ -57,7 +71,7 @@ function NextRace() {
             </Table>
 
             <h1>Other Drivers</h1>
-            
+
             <Table responsive className="other-drivers-table">
                 <colgroup>
                     <col style={{width: "00%"}} />
@@ -74,15 +88,15 @@ function NextRace() {
                     </tr>
                 </thead>
                 <tbody>
-                {other_drivers.map(driver => (
+                {otherDrivers.map(driver => (
                     <tr key={driver.id}>
                         <td></td>
                         <td className="driver-name-col">{driver.driver_name}</td>
                         <td className="completed-races-col">{driver.completed_races}</td>
                         <td className="add-driver-col">
-                            <Button 
-                                variant="outline-success" 
-                                size="sm" 
+                            <Button
+                                variant="outline-success"
+                                size="sm"
                                 className="add-button"
                                 aria-label="Add driver"
                             >
