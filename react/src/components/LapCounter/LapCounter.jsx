@@ -7,7 +7,8 @@ import DriverCard from './DriverCard.jsx';
 import Header from './Header.jsx';
 import StartRaceModal from './StartRaceModal.jsx';
 import StartLights from './StartLights.jsx';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useLoaderData } from 'react-router-dom';
 import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
 import { defaultConfig, defaultRace, lapDataDefault, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
 
@@ -15,6 +16,7 @@ const DEBUG = true;
 
 const LapCounter = () => {
     console.log('VITE_CIRCUIT_NAME', import.meta.env.VITE_CIRCUIT_NAME);
+    const pendingRace = useLoaderData();
     //TODO: split true environment settings from advanced user  focused settings
 
     //console.log('defaultConfig', defaultConfig);
@@ -62,6 +64,20 @@ const LapCounter = () => {
     const [raceId, setRaceId] = useState(null);
     const raceIdRef = useRef();
     raceIdRef.current = raceId;
+
+    // Seed driver names and raceId from pending race on page load
+    useEffect(() => {
+        if (!pendingRace?.lane_assignments) return;
+        if (pendingRace.race_id) setRaceId(pendingRace.race_id);
+        setDrivers(current =>
+            current.map(driver => {
+                const a = pendingRace.lane_assignments.find(
+                    a => a.lane_number === driver.number && a.id !== 0
+                );
+                return a ? { ...driver, name: a.driver_name, driverId: a.id } : driver;
+            })
+        );
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const [startRaceModalShown, setStartRaceModalShown] = useState(false);
     const [startLightsShown, setStartLightsShown] = useState(false);

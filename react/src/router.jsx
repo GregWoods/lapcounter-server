@@ -7,7 +7,16 @@ const router = createBrowserRouter([
     {
         path: "/",
         element: <App />,
-    } ,{
+        loader: async () => {
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/`);
+                if (!res.ok) return null;
+                return res.json();
+            } catch {
+                return null;
+            }
+        },
+    }, {
         path: "nextrace",
         element: <NextRace />,
         loader: async () => {
