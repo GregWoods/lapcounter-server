@@ -20,9 +20,7 @@ const LapCounter = () => {
     const [config, setConfig] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
     console.log('config', config);
 
-    const [race, setRace] = useLocalStorageState('race', {defaultValue: defaultRace});
-    const raceRef = useRef();
-    raceRef.current = race;
+    const [race, setRace] = useState(defaultRace);
 
     const [stats, setStats] = useLocalStorageState('stats', {defaultValue: {
         fastestLapToday: '99.999',
@@ -31,14 +29,12 @@ const LapCounter = () => {
     const statsRef = useRef();
     statsRef.current = stats;
 
-    const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
+    const lapsPerRace = race.RaceType?.details.laps ?? 0;
 
     const defaultCarImg = config.apiurl.replace(/\/$/, '') + "/" + config.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
     console.log('defaultCarImg', defaultCarImg);
     const initialDrivers = getInitialDrivers(lapsPerRace, defaultCarImg);
-    const [drivers, setDrivers] = useLocalStorageState('drivers', {defaultValue: [...initialDrivers]});
-    const driversRef = useRef();
-    driversRef.current = drivers;
+    const [drivers, setDrivers] = useState([...initialDrivers]);
 
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
@@ -105,7 +101,7 @@ const LapCounter = () => {
 
     // Green flag clicked: fetch lineup, reset driver stats, show Start popup
     const handleGreenFlag = async () => {
-        const laps = raceRef.current.type?.details.laps ?? defaultRace.type.details.laps;
+        const laps = race.type?.details.laps ?? defaultRace.type.details.laps;
 
         let assignmentByLane = {};
         try {
@@ -144,7 +140,7 @@ const LapCounter = () => {
         setStartRaceModalShown(false);
         setPreviewDriverCards(false);
         setStartLightsShown(true);
-        setRace({ ...defaultRace, underStartersOrders: true, type: raceRef.current.type });
+        setRace({ ...defaultRace, underStartersOrders: true, type: race.type });
         if (raceId) {
             fetch(`${config.apiurl}/races/${raceId}/start`, { method: 'POST' })
                 .catch(e => console.error('Failed to mark race as started:', e));
@@ -154,13 +150,13 @@ const LapCounter = () => {
     // Lights out: publish race_control start — LapData owns the race from here
     const handleGoGoGo = () => {
         setStartLightsShown(false);
-        setRace({...raceRef.current,
+        setRace({...race,
             underStartersOrders: false,
             hasStarted: true,
             paused: false
         });
 
-        const targetLaps = raceRef.current.type?.details.laps ?? 20;
+        const targetLaps = race.type?.details.laps ?? 20;
         if (mqttClientRef.current && raceIdRef.current) {
             mqttClientRef.current.publish('race_control', JSON.stringify({
                 command: 'start',
@@ -178,7 +174,7 @@ const LapCounter = () => {
             fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
                 .catch(e => console.error('Failed to mark race as finished:', e));
         }
-        setRace({...raceRef.current, underStartersOrders: false, hasStarted: false, paused: false});
+        setRace({...race, underStartersOrders: false, hasStarted: false, paused: false});
     }
 
     const openCarSelectorModal = (driverIdx) => {
