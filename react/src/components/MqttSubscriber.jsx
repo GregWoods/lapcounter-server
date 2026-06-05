@@ -2,68 +2,42 @@ import { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 
 
-const MqttSubscriber = ({ mqttHost, onIncomingLapMessage, debug }) => {
+const MqttSubscriber = ({ mqttHost, onRaceStateMessage, clientRef, debug }) => {
 
     const [client, setClient] = useState(null);
-    //might want to useRef instead of useState... see websockets code
 
     useEffect(() => {
-        if (debug) { console.log("Attempting mqtt connection"); }
-        /*
-        const mqttOptions = {
-            clientId,
-            username,
-            password,
-            clean: true,
-            reconnectPeriod: 1000, // ms
-            connectTimeout: 30 * 1000, // ms
-        }
-        */
-        //const mqtthost = `${protocol}://${host}:${port}/mqtt`
-
-        // do we need to check if client is already connected?
-        setClient(mqtt.connect(mqttHost));  //mqttOptions can be optional second argument
-
-        //return () => {
-        //    client.close();
-        //};    // no idea of something like this is needed
-    }, []);
+        if (debug) console.log("Attempting mqtt connection");
+        const newClient = mqtt.connect(mqttHost);
+        if (clientRef) clientRef.current = newClient;
+        setClient(newClient);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
     useEffect(() => {
-        if (client) {
+        if (!client) return;
 
-            const topic = "lap";
-            const qos = 0;
-    
-            client.subscribe(topic, { qos }, (error) => {
-                if (error) {
-                  console.log('Subscribe to topics error', error)
-                  return
-                }
-                console.log(`Subscribe to topics: ${topic}`)
-                //setIsSub(true)
-            })
+        client.subscribe('race_state', { qos: 0 }, (error) => {
+            if (error) console.log('Subscribe error', error);
+            else if (debug) console.log('Subscribed to race_state');
+        });
 
-            client.on('connect', () => {
-                if (debug) console.log('Mqtt Connected');
-            });
-            client.on('error', (err) => {
-                console.error('Mqtt Connection error: ', err);
-                client.end();
-            });
-            client.on('reconnect', () => {
-                if (debug) console.log('Mqtt Reconnecting');
-            });
-            client.on('message', (topic, message) => {
-                const payload = { topic, message: message.toString() };
-                console.log(`message: ${payload.message}`);
-                if (topic == 'lap') {
-                    onIncomingLapMessage(JSON.parse(payload.message));
-                }
-            });
-        }
-    }, [client]);
+        client.on('connect', () => {
+            if (debug) console.log('Mqtt Connected');
+        });
+        client.on('error', (err) => {
+            console.error('Mqtt Connection error: ', err);
+            client.end();
+        });
+        client.on('reconnect', () => {
+            if (debug) console.log('Mqtt Reconnecting');
+        });
+        client.on('message', (topic, message) => {
+            if (topic === 'race_state' && onRaceStateMessage) {
+                onRaceStateMessage(JSON.parse(message.toString()));
+            }
+        });
+    }, [client]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return null;
 }

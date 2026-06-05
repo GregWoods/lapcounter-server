@@ -9,23 +9,13 @@ import StartRaceModal from './StartRaceModal.jsx';
 import StartLights from './StartLights.jsx';
 import { useState, useRef, useEffect } from 'react';
 import { useLoaderData } from 'react-router-dom';
-import {modifyDriversViewModel, calculateLapTime, checkEndOfRace} from './lapUtils.js';
-import { defaultConfig, defaultRace, lapDataDefault, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
+import { defaultConfig, defaultRace, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
 
 const DEBUG = true;
 
 const LapCounter = () => {
     console.log('VITE_CIRCUIT_NAME', import.meta.env.VITE_CIRCUIT_NAME);
     const pendingRace = useLoaderData();
-    //TODO: split true environment settings from advanced user  focused settings
-
-    //console.log('defaultConfig', defaultConfig);
-
-    // Using refs...
-    //  see: https://stackoverflow.com/questions/57847594/react-hooks-accessing-up-to-date-state-from-within-a-callback
-    //  Each of the following values which are "ref'd up" are used inside the processLaps callback.
-    //    If we didn't use Refs (or some similar technique), then referring to the state
-    //    variables would always return the initial value rather than the current value.
 
     const [config, setConfig] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
     console.log('config', config);
@@ -35,15 +25,11 @@ const LapCounter = () => {
     raceRef.current = race;
 
     const [stats, setStats] = useLocalStorageState('stats', {defaultValue: {
-        fastestLapToday: '99.999', 
+        fastestLapToday: '99.999',
         fastestLapTodayUpdatedOn: Date()
     }});
     const statsRef = useRef();
     statsRef.current = stats;
-
-    const [lapData, setLapData] = useLocalStorageState('lap', {defaultValue: [...lapDataDefault]});
-    const lapDataRef = useRef();
-    lapDataRef.current = lapData;
 
     const lapsPerRace = raceRef.current.RaceType?.details.laps ?? 0;
 
@@ -54,7 +40,6 @@ const LapCounter = () => {
     const driversRef = useRef();
     driversRef.current = drivers;
 
-    //Normal state variables for simple, non persistent state, such as dialog open state
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
 
@@ -64,6 +49,8 @@ const LapCounter = () => {
     const [raceId, setRaceId] = useState(null);
     const raceIdRef = useRef();
     raceIdRef.current = raceId;
+
+    const mqttClientRef = useRef(null);
 
     // Seed driver names and raceId from pending race on page load
     useEffect(() => {
@@ -88,19 +75,18 @@ const LapCounter = () => {
     }
 
     const storeFastestLapToday = (lapTime) => {
-        setStats({...statsRef.current, 
-            fastestLapToday: lapTime, 
+        setStats({...statsRef.current,
+            fastestLapToday: lapTime,
             fastestLapTodayUpdatedOn: Date()
         });
     }
 
     const resetExpiredFastestLapToday = () => {
-        //  reset lap record if it is more than 24h old
         const fastestLapTodayUpdatedOnDate = new Date(statsRef.current.fastestLapTodayUpdatedOn).getTime();
         const now = new Date();
         const twentyFourhoursAgo = now.setDate(now.getDate() - 1);
         const fastestLapToday = statsRef.current.fastestLapToday;
-        
+
         if (fastestLapToday === '' || fastestLapToday === null || fastestLapTodayUpdatedOnDate < twentyFourhoursAgo) {
             resetFastestLapToday();
         }
@@ -135,7 +121,6 @@ const LapCounter = () => {
             console.error('Failed to load pending race:', e);
         }
 
-        setLapData([...lapDataDefault]);
         setDrivers(currentDrivers =>
             currentDrivers.map(driver => {
                 const a = assignmentByLane[driver.number];
@@ -144,7 +129,7 @@ const LapCounter = () => {
                     ...getDriverDataDefault(laps),
                     lapsRemaining: laps,
                     p1LapsRemaining: laps,
-                    position: driver.number, // lane order for preview
+                    position: driver.number,
                     ...(a && { name: a.driver_name, driverId: a.id }),
                 };
             })
@@ -166,34 +151,34 @@ const LapCounter = () => {
         }
     };
 
+    // Lights out: publish race_control start — LapData owns the race from here
     const handleGoGoGo = () => {
         setStartLightsShown(false);
         setRace({...raceRef.current,
-            underStartersOrders:false,
-            hasStarted:true,
-            paused:false
+            underStartersOrders: false,
+            hasStarted: true,
+            paused: false
         });
 
-        //ideally we'd set raceStartTime.current = wsMsg.time when the lights go out,
-        //  but we don't have that time info which is obtained from the server side python.
-        //  I don't want any more complexity in the server side code (at the moment)
-        //  and I don't want to have to sync server and client times, so we stick
-        //  with zoomroom's implementation, which is that the race timing doesn't start
-        //  until the first car crosses the line.
+        const targetLaps = raceRef.current.type?.details.laps ?? 20;
+        if (mqttClientRef.current && raceIdRef.current) {
+            mqttClientRef.current.publish('race_control', JSON.stringify({
+                command: 'start',
+                race_id: raceIdRef.current,
+                target_laps: targetLaps,
+            }));
+        }
     }
 
     const handleRaceEnd = () => {
-        //must use raceRef.current here, as this is being called from the mqtt callback
-        //  "race" will always be the initial values in this and similar callbacks
-        setRace({...raceRef.current,
-            underStartersOrders:false,
-            hasStarted:false,
-            paused:false
-        });
+        if (mqttClientRef.current) {
+            mqttClientRef.current.publish('race_control', JSON.stringify({ command: 'end' }));
+        }
         if (raceIdRef.current) {
             fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
                 .catch(e => console.error('Failed to mark race as finished:', e));
         }
+        setRace({...raceRef.current, underStartersOrders: false, hasStarted: false, paused: false});
     }
 
     const openCarSelectorModal = (driverIdx) => {
@@ -203,72 +188,66 @@ const LapCounter = () => {
 
     const closeCarSelectorModal = () => {
         setCarSelectorModalShown(false);
-        //TODO: unspotlight all drivers
     }
 
-    //This is the callback from Mqtt, so like a setInterval, it lives outside of the React lifecycle
-    //  Hence we need to use useRef to access the current state values
-    const processLapMsg = (lapMsg) => {
-        console.log("INCOMING LAP DATA: ", lapMsg)
-        if (!raceRef.current.hasStarted || raceRef.current.paused) { return }
-        
-        const carIdx = lapMsg.car - 1;
-        const laps = lapDataRef.current
-        const oldLap = laps[carIdx];
-        
-        //convert websocket message into useful lap data
-        //console.log("==ProcessMessage, car:" + lapMsg.car);
+    // Primary display update: map race_state from LapData onto the drivers viewmodel
+    const processRaceStateMsg = (raceState) => {
+        const { state, drivers: raceDrivers, race_fastest_lap } = raceState;
 
-        let [newLap, newRace] = calculateLapTime(
-            lapMsg, 
-            oldLap, 
-            raceRef.current);
-
-        laps[carIdx] = newLap;
-        setLapData(laps);
-
-        //Fastest lap of this race
-        console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(newRace.fastestLap): ${Number(newRace.fastestLap)}`);
-        if (newLap.bestLapTime < Number(newRace.fastestLap)) {
-            newRace.fastestLap = newLap.bestLapTime.toFixed(3);
+        if (race_fastest_lap && race_fastest_lap < Number(statsRef.current.fastestLapToday)) {
+            storeFastestLapToday(race_fastest_lap.toFixed(3));
         }
 
-        //Fastest lap of the day
-        console.log(`newLap.bestLapTime: ${newLap.bestLapTime} :::: Number(fastestLapToday): ${Number(statsRef.current.fastestLapToday)}`);
-        if (newLap.bestLapTime < Number(statsRef.current.fastestLapToday)) {
-            storeFastestLapToday(newLap.bestLapTime.toFixed(3));
-        }
+        const p1Driver = raceDrivers.find(d => d.position === 1);
+        const p1LapsRemaining = p1Driver?.laps_remaining ?? 0;
 
-        console.log(`newRace.startTime: ${newRace.startTime}`)
-        //create "drivers" view-model from lap data
-        const modifiedDrivers = modifyDriversViewModel(
-                driversRef.current, 
-                carIdx, 
-                newLap, 
-                raceRef.current.type.details.laps, 
-                newRace.fastestLap,
-                newRace.startTime
+        setDrivers(currentDrivers =>
+            currentDrivers.map(driver => {
+                const rd = raceDrivers.find(d => d.lane === driver.number);
+                if (!rd) return driver;
+                return {
+                    ...driver,
+                    name: rd.driver_name,
+                    lastLap: rd.has_started ? rd.last_lap.toFixed(3) : '',
+                    fastestLap: rd.best_lap != null ? rd.best_lap.toFixed(3) : '',
+                    isRaceFastestLap: rd.is_race_fastest_lap,
+                    lapsRemaining: rd.laps_remaining,
+                    lapsCompleted: rd.laps_completed,
+                    totalRaceTime: rd.total_race_time > 0 ? rd.total_race_time.toFixed(3) : null,
+                    position: rd.position,
+                    finished: rd.finished,
+                    suspended: rd.suspended,
+                    hasStartedRacing: rd.has_started,
+                    p1LapsRemaining,
+                };
+            })
         );
-        setDrivers(modifiedDrivers);
 
-        const numberOfDriversRacing = modifiedDrivers.reduce((acc, driver) => {
-            return acc + Number(driver.hasStartedRacing);
-        }, 0);
-        console.log(`Number of Drivers Racing: ${numberOfDriversRacing}`);
-        newRace.numberOfDriversRacing = numberOfDriversRacing;
-
-        setRace(newRace);
-
-        checkEndOfRace(modifiedDrivers, handleRaceEnd);
+        const numberOfDriversRacing = raceDrivers.length;
+        if (state === 'Running') {
+            setRace(r => ({ ...r, hasStarted: true, paused: false, numberOfDriversRacing }));
+        } else if (state === 'Paused') {
+            setRace(r => ({ ...r, paused: true, numberOfDriversRacing }));
+        } else if (state === 'Finished') {
+            setRace(r => ({ ...r, hasStarted: false, paused: false, numberOfDriversRacing }));
+            if (raceIdRef.current) {
+                fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
+                    .catch(e => console.error('Failed to mark race as finished:', e));
+            }
+        }
     }
 
-
-    const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`; 
+    const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`;
     return (
         <div id="top">
 
             <div id={'lapcounter'}>
-                <MqttSubscriber mqttHost={config.mqtturl} onIncomingLapMessage={processLapMsg} debug={DEBUG} />
+                <MqttSubscriber
+                    mqttHost={config.mqtturl}
+                    onRaceStateMessage={processRaceStateMsg}
+                    clientRef={mqttClientRef}
+                    debug={DEBUG}
+                />
                 <Header
                     circuitName={config.circuitname}
                     mqttHost={config.mqtturl}
@@ -280,8 +259,14 @@ const LapCounter = () => {
                     onRaceEnd={handleRaceEnd}
                     yellowFlagAdvantageDuration={3.8}
                     onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
-                    onYellowFlag={() => setRace({...race, paused: true})}
-                    onEndYellowFlag={() => setRace({...race, paused: false})}
+                    onYellowFlag={() => {
+                        setRace({...race, paused: true});
+                        mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'pause' }));
+                    }}
+                    onEndYellowFlag={() => {
+                        setRace({...race, paused: false});
+                        mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'resume' }));
+                    }}
                     resetFastestLapToday={resetFastestLapToday}
                 />
                 <StartRaceModal
@@ -303,29 +288,26 @@ const LapCounter = () => {
                         <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
                         <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
 
-                        <CarSelectorModal 
+                        <CarSelectorModal
                             showMe={carSelectorModalShown}
                             onClose={closeCarSelectorModal}
                             carImgListUrl={config.apiurl + '/api/cars'}
                             drivers={drivers}
                             setDrivers={setDrivers}
-                            driverIdx={carSelectorModalDriverIdx} 
+                            driverIdx={carSelectorModalDriverIdx}
                             setDriverIdx={setCarSelectorModalDriverIdx}
                         />
                     </div>
                 </div>
             </div>
-           
-           <EditDriverNamesModal 
+
+           <EditDriverNamesModal
                 showMe={driverNamesModalShown}
                 onClose={() => setDriverNamesModalShown(false)}
                 drivers={drivers}
-                setDrivers={setDrivers} 
-                driverIdxToFocus={driverNamesModalDriverIdx} 
+                setDrivers={setDrivers}
+                driverIdxToFocus={driverNamesModalDriverIdx}
             />
-
-
-       
         </div>
     );
 }

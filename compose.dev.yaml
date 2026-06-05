@@ -35,9 +35,13 @@ services:
     environment:
       - MQTT_HOSTNAME=mosquitto
       - MINIMUM_LAP_TIME=2
+      - API_URL=http://api:8000
     build: ./lapdata
+    volumes:
+      - ./lapdata:/app
     depends_on:
       - mocked-gpio
+      - api
     restart: unless-stopped
     
 
