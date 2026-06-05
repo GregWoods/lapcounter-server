@@ -99,9 +99,9 @@ INSERT INTO meetings (id, name, date, venue)
 INSERT INTO meetings (id, name, date, venue) 
     VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage') ON CONFLICT (id) DO NOTHING;
 INSERT INTO meetings (id, name, date, venue)
-    VALUES (3, 'Village Hall Grand Prix', '2026-06-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
+    VALUES (3, 'Village Hall Grand Prix', '2030-01-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
 INSERT INTO meetings (id, name, date, venue)
-    VALUES (4, '2027 Village Hall Grand Prix', '2027-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
+    VALUES (4, '2031 Village Hall Grand Prix', '2031-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 1, 'Alice')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;

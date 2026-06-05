@@ -130,8 +130,8 @@ def add_meetings(session: Session):
     session.add_all([
         Meeting(id=1, name='Junior Championship', date=date(2024, 6, 1), venue='Village Hall'),
         Meeting(id=2, name='Garage Raceway', date=date(2024, 8, 1), venue='My Garage'),
-        Meeting(id=3, name='Village Hall Grand Prix', date=date(2025, 2, 1), venue='Village Hall'),
-        Meeting(id=4, name='2027 Village Hall Grand Prix', date=date(2027, 2, 1), venue='Village Hall')
+        Meeting(id=3, name='Village Hall Grand Prix', date=date(2030, 1, 1), venue='Village Hall'),
+        Meeting(id=4, name='2031 Village Hall Grand Prix', date=date(2031, 2, 1), venue='Village Hall')
     ])
     session.commit()
 
