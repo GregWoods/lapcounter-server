@@ -72,6 +72,23 @@ docker compose -f compose.dev.yaml up --build
 - API docs (Swagger): http://localhost:8000/docs
 - PgAdmin: http://localhost:5050
 
+> **⚠️ `lapdata` does NOT hot-reload.** React (Vite HMR) and the API (`uvicorn --reload`)
+> pick up source edits live, but `lapdata` runs a plain `python … loop_forever()`. Even
+> though `./lapdata` is volume-mounted, the running process keeps the *old* code until you
+> restart it. After editing anything under `lapdata/` (e.g. `race_manager.py`):
+> ```
+> docker compose -f compose.dev.yaml restart lapdata
+> ```
+> When debugging race logic, **verify against the running system, not just the source** —
+> a stale `lapdata` process will make correct fixes look like they "made no difference".
+> Drive it directly with the MQTT clients inside the `mosquitto` container:
+> ```
+> docker exec mosquitto mosquitto_pub -t race_control -m '{"command":"start","race_id":24,"target_laps":20}'
+> docker exec mosquitto mosquitto_sub -t race_state -C 5 -W 15   # capture 5 messages, 15s timeout
+> ```
+> (`docker logs lapdata --tail 20` shows the lap/race-state activity. Use single quotes for
+> the JSON payload and separate `docker exec` calls — nested-quote escaping breaks otherwise.)
+
 ### Run API without Docker
 ```powershell
 . ./api/setenv.ps1
