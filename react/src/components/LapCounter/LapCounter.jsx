@@ -219,7 +219,7 @@ const LapCounter = () => {
             })
         );
 
-        const numberOfDriversRacing = raceDrivers.length;
+        const numberOfDriversRacing = raceDrivers.filter(d => d.has_started).length;
         if (state === 'Running') {
             setRace(r => ({ ...r, hasStarted: true, paused: false, numberOfDriversRacing }));
         } else if (state === 'Paused') {
