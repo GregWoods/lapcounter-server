@@ -200,7 +200,10 @@ const LapCounter = () => {
         setDrivers(currentDrivers =>
             currentDrivers.map(driver => {
                 const rd = raceDrivers.find(d => d.lane === driver.number);
-                if (!rd) return driver;
+                // Lane not in this race — make sure it is hidden and not counted,
+                // otherwise a stale hasStartedRacing (from init or a previous race)
+                // inflates the on-screen count and breaks the group centring.
+                if (!rd) return { ...driver, hasStartedRacing: false };
                 return {
                     ...driver,
                     name: rd.driver_name,
@@ -219,13 +222,12 @@ const LapCounter = () => {
             })
         );
 
-        const numberOfDriversRacing = raceDrivers.filter(d => d.has_started).length;
         if (state === 'Running') {
-            setRace(r => ({ ...r, hasStarted: true, paused: false, numberOfDriversRacing }));
+            setRace(r => ({ ...r, hasStarted: true, paused: false }));
         } else if (state === 'Paused') {
-            setRace(r => ({ ...r, paused: true, numberOfDriversRacing }));
+            setRace(r => ({ ...r, paused: true }));
         } else if (state === 'Finished') {
-            setRace(r => ({ ...r, hasStarted: false, paused: false, numberOfDriversRacing }));
+            setRace(r => ({ ...r, hasStarted: false, paused: false }));
             if (raceIdRef.current) {
                 fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
                     .catch(e => console.error('Failed to mark race as finished:', e));
@@ -233,7 +235,17 @@ const LapCounter = () => {
         }
     }
 
-    const numberOfDriversRacingClassName = `numberOfDriversRacing${race.numberOfDriversRacing}`;
+    // Driver cards fly in from the right and the group of *visible* cards stays
+    // centred by shifting the container left by (6 - N) * 160px, where N is the
+    // number of cards on screen. race_state gives started drivers contiguous slots
+    // 1..N, so N is simply the count of cards currently shown. The show-condition is
+    //   !underStartersOrders && (hasStartedRacing || previewDriverCards)
+    // so N must be counted the same way. Falls back to 6 so the layout never
+    // collapses to 0.
+    const shownDriverCount = race.underStartersOrders
+        ? 0
+        : (previewDriverCards ? drivers.length : drivers.filter(d => d.hasStartedRacing).length);
+    const numberOfDriversRacingClassName = `numberOfDriversRacing${shownDriverCount || 6}`;
     return (
         <div id="top">
 

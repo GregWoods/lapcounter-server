@@ -149,7 +149,7 @@ class RaceManager:
 
         sorted_drivers = sorted(
             self.drivers.values(),
-            key=lambda d: (-d.laps_completed, d.race_time(self.race_start_time)),
+            key=lambda d: (-d.laps_completed, not d.has_started, d.race_time(self.race_start_time)),
         )
 
         driver_list = []

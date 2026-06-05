@@ -41,6 +41,9 @@ const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestO
     }
 
 
+    // data-order drives the horizontal fly-in slot (CSS .drivercard[data-order=N]).
+    // race_state assigns started drivers contiguous positions 1..N, so position
+    // is the slot directly.
     const driverPosition = driver.position;
 
     return (
