@@ -15,7 +15,7 @@ function Results() {
 
     return (
         <div className="results-page">
-            <h1>Race Results</h1>
+            <h1>Session Results</h1>
             {races.length === 0 ? (
                 <p className="no-results">No races completed yet.</p>
             ) : (

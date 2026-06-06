@@ -330,10 +330,6 @@ def get_active_session_results(dbsession: SessionDep):
     ).all()
     meeting_driver_names = {md.driver_id: md.driver_name for md in md_rows}
 
-    driver_ids = {dr.driver_id for dr in all_driver_races}
-    drivers_list = dbsession.exec(select(Driver).where(Driver.id.in_(driver_ids))).all()
-    driver_name_fallback = {d.id: d.first_name for d in drivers_list}
-
     race_groups = defaultdict(list)
     for dr in all_driver_races:
         race_groups[dr.race_id].append(dr)
@@ -346,17 +342,17 @@ def get_active_session_results(dbsession: SessionDep):
         )
         positions[race_id] = {dr.driver_id: i + 1 for i, dr in enumerate(sorted_drs)}
 
-    max_pos = len(driver_ids) + 1
+    dns_score = len(meeting_driver_names) + 1
     driver_rows = [
         {
             "driver_id": did,
-            "driver_name": meeting_driver_names.get(did) or driver_name_fallback.get(did, "?"),
+            "driver_name": name,
             "positions": {str(race_id): positions.get(race_id, {}).get(did) for race_id in race_ids},
         }
-        for did in driver_ids
+        for did, name in meeting_driver_names.items()
     ]
     driver_rows.sort(key=lambda d: sum(
-        p if p is not None else max_pos for p in d["positions"].values()
+        p if p is not None else dns_score for p in d["positions"].values()
     ))
 
     return {
