@@ -232,6 +232,13 @@ def load_pending_race(session):
     assigned_driver_ids = {dr.driver_id for dr in driver_races}
     driver_race_by_lane = {dr.lane: dr for dr in driver_races}
 
+    # Map car_id → picture for the cars assigned to this race's lanes
+    car_ids = {dr.car_id for dr in driver_races if dr.car_id is not None}
+    car_pictures = {}
+    if car_ids:
+        car_rows = session.exec(select(Car).where(Car.id.in_(car_ids))).all()
+        car_pictures = {c.id: c.picture for c in car_rows}
+
     # Reuse existing SQL for driver stats (lane counts, completed_races, etc.)
     all_drivers = get_drivers_for_next_race_sql(session)
     all_drivers_map = {d.id: d for d in all_drivers}
@@ -256,6 +263,7 @@ def load_pending_race(session):
                 dwl = DriverWithLane.create(lane=lane)
                 dwl.id = dr.driver_id
                 dwl.driver_name = meeting_driver_names.get(dr.driver_id, "")
+            dwl.car_picture = car_pictures.get(dr.car_id, "")
         else:
             dwl = DriverWithLane.create(lane=lane)
         lane_assignments.append(dwl)
@@ -365,5 +373,6 @@ def save_pending_race(session, setup, meeting_id):
         session.add(driver_race)
 
     session.commit()
-    setup.race_id = race.id
-    return setup
+    # Reload from DB so the response includes everything load_pending_race adds
+    # (car pictures, meeting display names), not just the in-memory lineup.
+    return load_pending_race(session)

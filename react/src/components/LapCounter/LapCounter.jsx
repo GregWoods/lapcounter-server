@@ -31,8 +31,11 @@ const LapCounter = () => {
 
     const lapsPerRace = race.RaceType?.details.laps ?? 0;
 
-    const defaultCarImg = config.apiurl.replace(/\/$/, '') + "/" + config.carmediafolder.replace(/\/$/, '') + '/GT_AA_Generic.jpg';
-    console.log('defaultCarImg', defaultCarImg);
+    const carMediaBase = config.apiurl.replace(/\/$/, '') + "/" + config.carmediafolder.replace(/\/$/, '');
+    const defaultCarImg = carMediaBase + '/GT_AA_Generic.jpg';
+    // Build a car image URL from a picture filename (from the pending race lineup),
+    // falling back to the generic image when no car is assigned.
+    const carImageUrl = (picture) => picture ? `${carMediaBase}/${picture}` : defaultCarImg;
     const initialDrivers = getInitialDrivers(lapsPerRace, defaultCarImg);
     const [drivers, setDrivers] = useState([...initialDrivers]);
 
@@ -57,7 +60,7 @@ const LapCounter = () => {
                 const a = pendingRace.lane_assignments.find(
                     a => a.lane_number === driver.number && a.id !== 0
                 );
-                return a ? { ...driver, name: a.driver_name, driverId: a.id } : driver;
+                return a ? { ...driver, name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture) } : driver;
             })
         );
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -126,7 +129,7 @@ const LapCounter = () => {
                     lapsRemaining: laps,
                     p1LapsRemaining: laps,
                     position: driver.number,
-                    ...(a && { name: a.driver_name, driverId: a.id }),
+                    ...(a && { name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture) }),
                 };
             })
         );
