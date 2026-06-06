@@ -5,9 +5,10 @@
     display: flex;
     flex-direction: column;
     position: absolute;
-    left: 104.17vw;       /* starts off screen right */
+    left: 104.17vw;
     top: 0;
     height: 100%;
+    overflow: hidden;
     transition: 0.5s;
 }
 
@@ -19,7 +20,6 @@
     opacity: 0.1;
 }
 
-
 .drivercard[data-order="1"].show { left: 0; }
 .drivercard[data-order="2"].show { left: 16.77vw; }
 .drivercard[data-order="3"].show { left: 33.54vw; }
@@ -28,6 +28,7 @@
 .drivercard[data-order="6"].show { left: 83.85vw; }
 
 .drivername {
+    flex-shrink: 0;
     padding: 0.3rem 0.25rem 0.65rem 0.25rem;
     text-align: center;
     border-radius: 1.04vw 1.04vw 0 0;
@@ -37,17 +38,30 @@
 }
 
 .drivername div {
-    font-size: 3.3rem;
+    font-size: 3.81rem;
     font-family: 'Selawik-SemiBold';
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
 }
 
-.drivercontent {
-    padding: 0.3em;
+.carimg {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    cursor: pointer;
 }
 
+.carimg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.drivercontent {
+    flex-shrink: 0;
+    padding: 0.3em;
+}
 
 .drivercard .time {
     font-size: 6rem;
@@ -70,16 +84,6 @@
 
 .spotlightme {
     z-index: 1;
-}
-
-.carimg {
-    cursor: pointer;
-}
-
-.carimg img {
-    object-fit: cover;
-    width: 100%;
-    height: 18.52vh;
 }
 
 .fastestlaptime {

@@ -74,7 +74,7 @@ const StartLights = ({showMe, onClose, onLightsOut}) => {
             style={{content: { backgroundColor: 'rgba(0,0,0,0.0)' }}}
             ariaHideApp={false}
         >        
-            <svg className="trafficlights" width="1000" height="200" viewBox="0, 0, 500, 100">
+            <svg className="trafficlights" width="100%" viewBox="0 0 500 100">
                 <rect width="500" height="100" rx="20" ry="20" style={{fill:'#111', strokeWidth:3, stroke:'#000'}} />
                 <circle cx="53"  cy="50" r="30" stroke="black" strokeWidth="2" fill={startLightValues[0]} id="tl_red1"/>
                 <circle cx="151" cy="50" r="30" stroke="black" strokeWidth="2" fill={startLightValues[1]} id="tl_red2"/>

@@ -14,7 +14,7 @@ html {
 html, body {
     height: 100%;
     overflow: hidden;
-    background: rgb(128, 128, 128);
+    background: black;
 }
 
 body {
@@ -29,6 +29,7 @@ body {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    background: black;
 }
 
 #driverCardOuter {
@@ -37,6 +38,7 @@ body {
     flex-direction: row;
     justify-content: center;
     overflow: hidden;
+    padding-top: 0.625vw;
 }
 
 #driverCardContainer {

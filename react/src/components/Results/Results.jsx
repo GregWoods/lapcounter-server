@@ -25,7 +25,8 @@ function Results() {
                             <tr>
                                 <th className="driver-col">Driver</th>
                                 <th className="total-col">Total</th>
-                                {races.map(r => (
+                                <th className="raced-col">Raced</th>
+                                {[...races].reverse().map(r => (
                                     <th key={r.race_id} className="race-col">R{r.race_number}</th>
                                 ))}
                             </tr>
@@ -35,7 +36,8 @@ function Results() {
                                 <tr key={d.driver_id}>
                                     <td className="driver-name-cell">{d.driver_name}</td>
                                     <td className="total-cell">{d.total_points}</td>
-                                    {races.map(r => {
+                                    <td className="raced-cell">{d.races_entered}</td>
+                                    {[...races].reverse().map(r => {
                                         const pos = d.positions[String(r.race_id)];
                                         const pts = d.points?.[String(r.race_id)];
                                         return (

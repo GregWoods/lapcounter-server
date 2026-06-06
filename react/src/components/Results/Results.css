@@ -37,14 +37,17 @@
     white-space: nowrap;
 }
 
+.results-table thead th.total-col,
+.results-table thead th.raced-col,
+.results-table thead th.race-col { text-align: right; }
+
+.results-table tbody td.total-cell,
+.results-table tbody td.raced-cell,
+.results-table tbody td.position-cell { text-align: right; }
+
 .driver-col {
     min-width: 160px;
     padding-right: 20px !important;
-}
-
-.race-col {
-    min-width: 0;
-    width: 1px;
 }
 
 .results-table tbody tr {
@@ -69,9 +72,56 @@
     padding-right: 20px !important;
 }
 
+.total-col {
+    min-width: 0;
+    width: 1px;
+    padding-left: 1rem !important;
+    padding-right: 0.5rem !important;
+    color: #fff;
+    text-align: right !important;
+}
+
+.total-cell {
+    font-size: 2.4rem;
+    font-weight: bold;
+    color: #fff;
+    padding-left: 1rem !important;
+    padding-right: 0.5rem !important;
+    text-align: right !important;
+    white-space: nowrap;
+}
+
+.raced-col {
+    min-width: 0;
+    width: 1px;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    text-align: right !important;
+    color: #888;
+    border-right: 1px solid #444;
+}
+
+.raced-cell {
+    font-size: 2.24rem;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    text-align: right !important;
+    color: #666;
+    border-right: 1px solid #444;
+}
+
+.race-col {
+    min-width: 0;
+    width: 1px;
+    padding-left: 1.5rem !important;
+    text-align: right !important;
+}
+
 .position-cell {
     font-size: 2.24rem;
     font-weight: bold;
+    padding-left: 1.5rem !important;
+    text-align: right !important;
 }
 
 .pos-first  { color: #ffd700; }
@@ -79,20 +129,3 @@
 .pos-third  { color: #cd7f32; }
 .pos-other  { color: #ddd; }
 .pos-dns    { color: #555; }
-
-.total-col {
-    min-width: 0;
-    width: 1px;
-    padding-left: 2rem !important;
-    color: #fff;
-    border-left: 1px solid #444;
-}
-
-.total-cell {
-    font-size: 2.4rem;
-    font-weight: bold;
-    color: #fff;
-    padding-left: 2rem !important;
-    border-left: 1px solid #444;
-    white-space: nowrap;
-}

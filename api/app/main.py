@@ -368,18 +368,19 @@ def get_active_session_results(dbsession: SessionDep):
             )
             for race_id in race_ids
         }
+        races_entered = sum(1 for p in pos_map.values() if p is not None)
         driver_rows.append({
             "driver_id": did,
             "driver_name": name,
             "positions": pos_map,
             "points": pts_map,
             "total_points": sum(pts_map.values()),
+            "races_entered": races_entered,
         })
 
-    driver_rows.sort(key=lambda d: (
-        -d["total_points"],
-        sum(p if p is not None else dns_score for p in d["positions"].values()),
-    ))
+    # Sort: most points first; among equal points, fewer races entered ranks higher
+    # (fewer races = more remaining opportunity, so currently ranked better)
+    driver_rows.sort(key=lambda d: (-d["total_points"], d["races_entered"]))
 
     return {
         "session_id": race_session.id,
