@@ -1,12 +1,13 @@
 .drivercard {
-    width: 16.15vw;       /* 310/1920 */
+    width: 16.15vw;
     margin: 0;
     border-radius: 1.56vw;
-    display: block;
+    display: flex;
+    flex-direction: column;
     position: absolute;
-    left: 104.17vw;       /* 2000/1920 — starts off screen right */
-    top: 0.28vh;          /* 3/1080 */
-    height: 70.37vh;      /* 760/1080 */
+    left: 104.17vw;       /* starts off screen right */
+    top: 0;
+    height: 100%;
     transition: 0.5s;
 }
 
@@ -20,23 +21,23 @@
 
 
 .drivercard[data-order="1"].show { left: 0; }
-.drivercard[data-order="2"].show { left: 16.77vw; }   /* 322/1920 */
-.drivercard[data-order="3"].show { left: 33.54vw; }   /* 644/1920 */
-.drivercard[data-order="4"].show { left: 50.31vw; }   /* 966/1920 */
-.drivercard[data-order="5"].show { left: 67.08vw; }   /* 1288/1920 */
-.drivercard[data-order="6"].show { left: 83.85vw; }   /* 1610/1920 */
+.drivercard[data-order="2"].show { left: 16.77vw; }
+.drivercard[data-order="3"].show { left: 33.54vw; }
+.drivercard[data-order="4"].show { left: 50.31vw; }
+.drivercard[data-order="5"].show { left: 67.08vw; }
+.drivercard[data-order="6"].show { left: 83.85vw; }
 
 .drivername {
     padding: 0.3rem 0.25rem 0.65rem 0.25rem;
     text-align: center;
-    border-radius: 1.04vw 1.04vw 0 0;   /* 20/1920 */
+    border-radius: 1.04vw 1.04vw 0 0;
     white-space: nowrap;
     overflow: hidden;
     cursor: pointer;
 }
 
 .drivername div {
-    font-size: 2rem;
+    font-size: 3rem;
     font-family: 'Selawik-SemiBold';
     text-align: center;
     white-space: nowrap;
@@ -48,12 +49,8 @@
 }
 
 
-.time {
-    /*font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;*/
-}
-
 .drivercard .time {
-    font-size: 2.6rem;
+    font-size: 4rem;
     text-align: center;
     font-family: 'Selawik-SemiBold';
     color: #333;
@@ -68,7 +65,7 @@
 }
 
 .drivercard .timelbl {
-    font-size: 1.3rem;
+    font-size: 2rem;
 }
 
 .spotlightme {
@@ -82,14 +79,13 @@
 .carimg img {
     object-fit: cover;
     width: 100%;
-    height: 18.52vh;      /* 200/1080 */
+    height: 18.52vh;
 }
 
 .fastestlaptime {
     padding: 0.1em 0 0.3em 0;
     border-radius: 0.3em;
 }
-
 
 .drivercard .raceFastestLap .time {
     color: rgb(180, 0, 180);
