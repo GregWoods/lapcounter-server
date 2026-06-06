@@ -177,12 +177,18 @@ def get_active_session(dbsession):
 
     for s in sessions:
         races = dbsession.exec(select(Race).where(Race.session_id == s.id)).all()
-        if not races:
-            return s  # pre-configured race session with no races yet
-        if any(r.state != 'Finished' for r in races):
-            return s  # race session still in progress
+        has_unfinished = any(r.state != 'Finished' for r in races)
 
-    return sessions[-1]  # all sessions finished — return last
+        if has_unfinished:
+            return s  # always return if work is in progress
+
+        # Session with end_time set and all races finished = deliberately closed, skip it
+        if s.end_time is not None:
+            continue
+
+        return s  # open-ended session (no end_time), no unfinished races — this is next up
+
+    return sessions[-1]  # fallback: all sessions closed, return last
 
 
 def compute_session_state(races) -> str:
