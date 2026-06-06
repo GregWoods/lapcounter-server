@@ -318,13 +318,20 @@ def get_active_session_results(dbsession: SessionDep):
     ).all()
 
     if not races:
-        return {"session_id": race_session.id, "races": [], "drivers": []}
+        return {"session_id": race_session.id, "scoring_method": race_session.scoring_method, "races": [], "drivers": []}
 
     race_ids = [r.id for r in races]
 
     all_driver_races = dbsession.exec(
         select(DriverRace).where(DriverRace.race_id.in_(race_ids))
     ).all()
+
+    # Drop races that have no driver entries (finished without a lineup)
+    races_with_data = {dr.race_id for dr in all_driver_races}
+    races = [r for r in races if r.id in races_with_data]
+    race_ids = [r.id for r in races]
+    if not races:
+        return {"session_id": race_session.id, "scoring_method": race_session.scoring_method, "races": [], "drivers": []}
 
     md_rows = dbsession.exec(
         select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)

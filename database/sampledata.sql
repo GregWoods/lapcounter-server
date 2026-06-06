@@ -146,12 +146,12 @@ INSERT INTO races (id, session_id, state) VALUES (3, 2, 'Running') ON CONFLICT (
 INSERT INTO races (id, session_id, state) VALUES (4, 2, 'NotStarted') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (1, 1, 2, 2, 1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (2, 2, 2, 7, 2) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (3, 3, 2, 3, 3) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (4, 4, 2, 5, 4) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (5, 5, 2, 8, 5) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (6, 6, 2, 9, 6) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (1, 1, 2, 2, 1, 5,  9.789) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (2, 2, 2, 7, 2, 6, 10.345) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (3, 3, 2, 3, 3, 2, 10.123) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (4, 4, 2, 5, 4, 5, 11.345) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (5, 5, 2, 8, 5, 6, 10.789) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (6, 6, 2, 9, 6, 2, 11.567) ON CONFLICT (id) DO NOTHING;
 
 -- Race 3: drivers rotated one lane forward, cars stay on their colour-matched lane
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (7,  2, 3, 2, 1) ON CONFLICT (id) DO NOTHING;
