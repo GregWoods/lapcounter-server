@@ -115,13 +115,15 @@ INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 8, '
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 9, 'Jake')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
 
 
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 1, 1) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 2, 2) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 3, 3) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, 4) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 5, 5) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;
-INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 7, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 2, 1) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- red car → red lane
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 7, 2) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- green car → green lane
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 3, 3) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- blue car → blue lane
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 5, 4) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- yellow car → yellow lane
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 8, 5) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- orange car → orange lane
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 9, 6) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- silver car → white lane
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 1, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- spare cars, unassigned
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
+INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
 INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
@@ -144,20 +146,20 @@ INSERT INTO races (id, session_id, state) VALUES (3, 2, 'Running') ON CONFLICT (
 INSERT INTO races (id, session_id, state) VALUES (4, 2, 'NotStarted') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (1, 1, 2, 1, 1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (1, 1, 2, 2, 1) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (2, 2, 2, 7, 2) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (3, 3, 2, 2, 3) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (4, 4, 2, 3, 4) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (5, 5, 2, 4, 5) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (6, 6, 2, 5, 6) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (3, 3, 2, 3, 3) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (4, 4, 2, 5, 4) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (5, 5, 2, 8, 5) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (6, 6, 2, 9, 6) ON CONFLICT (id) DO NOTHING;
 
--- Race 3: drivers rotated one lane forward, cars follow the lane (meeting_cars defaults)
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (7,  2, 3, 1, 1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (8,  3, 3, 2, 2) ON CONFLICT (id) DO NOTHING;
+-- Race 3: drivers rotated one lane forward, cars stay on their colour-matched lane
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (7,  2, 3, 2, 1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (8,  3, 3, 7, 2) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (9,  4, 3, 3, 3) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (10, 5, 3, 4, 4) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (11, 6, 3, 5, 5) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (12, 1, 3, 6, 6) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (10, 5, 3, 5, 4) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (11, 6, 3, 8, 5) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (12, 1, 3, 9, 6) ON CONFLICT (id) DO NOTHING;
 
 -- sample driver_laps data for the race which has already finished
 

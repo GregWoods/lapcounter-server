@@ -7,8 +7,26 @@
 
 html,
 body {
+    font-size: 2em;
+    background: black;
+    margin: 0;
+    overflow: hidden;
+}
+
+#lapcounter-viewport {
+    position: fixed;
+    inset: 0;
+    background: black;
+    overflow: hidden;
+}
+
+#lapcounter-scaler {
+    position: absolute;
+    width: 1920px;
+    height: 1080px;
     background-color: rgb(128, 128, 128);
-    font-size:2em;
+    transform-origin: top left;
+    overflow: hidden;
 }
 
   

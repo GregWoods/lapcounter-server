@@ -50,6 +50,23 @@ const LapCounter = () => {
     raceIdRef.current = raceId;
 
     const mqttClientRef = useRef(null);
+    const scalerRef = useRef(null);
+
+    useEffect(() => {
+        const updateScale = () => {
+            const el = scalerRef.current;
+            if (!el) return;
+            const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+            const x = (window.innerWidth - 1920 * scale) / 2;
+            const y = (window.innerHeight - 1080 * scale) / 2;
+            el.style.transform = `scale(${scale})`;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+        };
+        updateScale();
+        window.addEventListener('resize', updateScale);
+        return () => window.removeEventListener('resize', updateScale);
+    }, []);
 
     // Seed driver names and raceId from pending race on page load
     useEffect(() => {
@@ -261,6 +278,8 @@ const LapCounter = () => {
         : (previewDriverCards ? drivers.length : drivers.filter(d => d.hasStartedRacing).length);
     const numberOfDriversRacingClassName = `numberOfDriversRacing${shownDriverCount || 6}`;
     return (
+        <div id="lapcounter-viewport">
+        <div id="lapcounter-scaler" ref={scalerRef}>
         <div id="top">
 
             <div id={'lapcounter'}>
@@ -331,6 +350,8 @@ const LapCounter = () => {
                 setDrivers={setDrivers}
                 driverIdxToFocus={driverNamesModalDriverIdx}
             />
+        </div>
+        </div>
         </div>
     );
 }
