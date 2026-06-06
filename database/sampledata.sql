@@ -128,8 +128,8 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, NULL) ON CONFL
 
 INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
     VALUES (1, 3, 'FastestLap', 'Laps', 3, 'FastestLap', NULL, TIME '14:30:00', TIME '15:00:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
-    VALUES (2, 3, 'Points', 'Laps', 20, 'PositionPoints', NULL, TIME '15:00:00', NULL) ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time)
+    VALUES (2, 3, 'Points', 'Laps', 20, 'PositionPoints', '[10, 8, 6, 5, 4, 3]', TIME '15:00:00', NULL) ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO lanes (lane_number, color, enabled) VALUES (1, 'red', true) ON CONFLICT (lane_number) DO NOTHING;

@@ -10,8 +10,8 @@ function posClass(pos) {
 }
 
 function Results() {
-    const data = useLoaderData() || { races: [], drivers: [] };
-    const { races, drivers } = data;
+    const data = useLoaderData() || { races: [], drivers: [], scoring_method: null };
+    const { races, drivers, scoring_method } = data;
 
     return (
         <div className="results-page">
@@ -27,6 +27,7 @@ function Results() {
                                 {races.map(r => (
                                     <th key={r.race_id} className="race-col">R{r.race_number}</th>
                                 ))}
+                                <th className="total-col">Total</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -35,12 +36,14 @@ function Results() {
                                     <td className="driver-name-cell">{d.driver_name}</td>
                                     {races.map(r => {
                                         const pos = d.positions[String(r.race_id)];
+                                        const pts = d.points?.[String(r.race_id)];
                                         return (
                                             <td key={r.race_id} className={`position-cell ${posClass(pos)}`}>
-                                                {pos ?? '–'}
+                                                {pos == null ? '–' : (scoring_method === 'LapPoints' ? pts : pts)}
                                             </td>
                                         );
                                     })}
+                                    <td className="total-cell">{d.total_points}</td>
                                 </tr>
                             ))}
                         </tbody>

@@ -11,6 +11,7 @@ from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
 from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup
+from points import calculate_race_points
 
 settings = Settings()
 
@@ -335,28 +336,47 @@ def get_active_session_results(dbsession: SessionDep):
         race_groups[dr.race_id].append(dr)
 
     positions = {}
+    laps_by_race = defaultdict(dict)
     for race_id in race_ids:
         sorted_drs = sorted(
             race_groups.get(race_id, []),
             key=lambda dr: (-(dr.laps_completed or 0), dr.fastest_lap_time or 999999)
         )
         positions[race_id] = {dr.driver_id: i + 1 for i, dr in enumerate(sorted_drs)}
+        for dr in race_groups.get(race_id, []):
+            laps_by_race[race_id][dr.driver_id] = dr.laps_completed
 
+    scoring_method = race_session.scoring_method
+    scoring_points_json = race_session.scoring_points
     dns_score = len(meeting_driver_names) + 1
-    driver_rows = [
-        {
+
+    driver_rows = []
+    for did, name in meeting_driver_names.items():
+        pos_map = {str(race_id): positions.get(race_id, {}).get(did) for race_id in race_ids}
+        pts_map = {
+            str(race_id): calculate_race_points(
+                scoring_method, scoring_points_json,
+                positions.get(race_id, {}).get(did),
+                laps_by_race.get(race_id, {}).get(did),
+            )
+            for race_id in race_ids
+        }
+        driver_rows.append({
             "driver_id": did,
             "driver_name": name,
-            "positions": {str(race_id): positions.get(race_id, {}).get(did) for race_id in race_ids},
-        }
-        for did, name in meeting_driver_names.items()
-    ]
-    driver_rows.sort(key=lambda d: sum(
-        p if p is not None else dns_score for p in d["positions"].values()
+            "positions": pos_map,
+            "points": pts_map,
+            "total_points": sum(pts_map.values()),
+        })
+
+    driver_rows.sort(key=lambda d: (
+        -d["total_points"],
+        sum(p if p is not None else dns_score for p in d["positions"].values()),
     ))
 
     return {
         "session_id": race_session.id,
+        "scoring_method": scoring_method,
         "races": [{"race_id": r.id, "race_number": i + 1} for i, r in enumerate(races)],
         "drivers": driver_rows,
     }
