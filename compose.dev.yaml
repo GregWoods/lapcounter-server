@@ -84,6 +84,24 @@ services:
       - "8000:8000"
 
 
+  dbwriter:
+    container_name: dbwriter
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - DB_HOST=database
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_PORT=5432
+    build: ./dbwriter
+    volumes:
+      - ./dbwriter:/app
+    depends_on:
+      - mosquitto
+      - database
+    restart: unless-stopped
+
+
   database:
     image: postgres:latest
     container_name: database
