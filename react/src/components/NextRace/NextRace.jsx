@@ -28,6 +28,30 @@ function NextRace() {
         setOtherDrivers(data.other_drivers);
     };
 
+    const hasFreeSlot = laneAssignments.some(a => a.id === 0 && a.lane_enabled);
+
+    const handleRemoveDriver = async (laneNumber) => {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/lanes/${laneNumber}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setLaneAssignments(data.lane_assignments);
+        setOtherDrivers(data.other_drivers);
+    };
+
+    const handleAddDriver = async (driverId) => {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/drivers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ driver_id: driverId }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        setLaneAssignments(data.lane_assignments);
+        setOtherDrivers(data.other_drivers);
+    };
+
     const handleCarSelected = async (car) => {
         const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/lanes/${carSelectorLane}`, {
             method: 'PATCH',
@@ -42,8 +66,8 @@ function NextRace() {
     };
 
     return (
-        <Container>
-            <h1>Next Race</h1>
+        <Container fluid className="px-0">
+            <h1>Next Race #{next_race_setup.race_number}</h1>
 
             <Table responsive className="lane-assignments-table">
                 <colgroup>
@@ -93,6 +117,8 @@ function NextRace() {
                                 size="sm"
                                 className="remove-button"
                                 aria-label="Remove driver"
+                                disabled={driver.id === 0}
+                                onClick={() => handleRemoveDriver(driver.lane_number)}
                             >
                                 ×
                             </Button>
@@ -131,6 +157,8 @@ function NextRace() {
                                 size="sm"
                                 className="add-button"
                                 aria-label="Add driver"
+                                disabled={!hasFreeSlot}
+                                onClick={() => handleAddDriver(driver.id)}
                             >
                                 +
                             </Button>

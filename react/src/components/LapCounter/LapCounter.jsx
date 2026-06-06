@@ -189,6 +189,17 @@ const LapCounter = () => {
         setCarSelectorModalShown(false);
     }
 
+    const handleCarSelectedInLapCounter = (car) => {
+        const laneNumber = drivers[carSelectorModalDriverIdx].number;
+        if (raceIdRef.current) {
+            fetch(`${config.apiurl}/races/${raceIdRef.current}/lanes/${laneNumber}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ car_id: car.id }),
+            }).catch(e => console.error('Failed to save car assignment:', e));
+        }
+    }
+
     // Primary display update: map race_state from LapData onto the drivers viewmodel
     const processRaceStateMsg = (raceState) => {
         const { state, drivers: raceDrivers, race_fastest_lap } = raceState;
@@ -307,6 +318,7 @@ const LapCounter = () => {
                             setDrivers={setDrivers}
                             driverIdx={carSelectorModalDriverIdx}
                             setDriverIdx={setCarSelectorModalDriverIdx}
+                            onCarSelected={handleCarSelectedInLapCounter}
                         />
                     </div>
                 </div>

@@ -14,18 +14,12 @@ logger = logging.getLogger('uvicorn.error')
 logger.setLevel(logging.DEBUG)
 
 
-def get_drivers_for_next_race_sql(session):
+def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
     try:
-        #if testing:
-        #    seed_query = text("SELECT setseed(0.42)")
-        #    session.exec(seed_query)
-
         from sqlalchemy import text
         query = text("""
-            SELECT 
+            SELECT
                 d.id,
-                --d.first_name, 
-                --d.last_name,
                 md.driver_name,
                 d.sit_out_next_race,
                 COUNT(r.id) as completed_races,
@@ -36,24 +30,22 @@ def get_drivers_for_next_race_sql(session):
                 COUNT(CASE WHEN dr.lane = 5 THEN 1 END) as lane5_count,
                 COUNT(CASE WHEN dr.lane = 6 THEN 1 END) as lane6_count,
                 RANDOM() as random_value
-            FROM 
+            FROM
                 drivers d
-            LEFT JOIN 
+            LEFT JOIN
                 meeting_drivers md ON d.id = md.driver_id
-            --LEFT_JOIN sessions s on md.meeting_id = s.meeting_id
-            --LEFT JOIN meetings m ON s.meeting_id = m.id
-            LEFT JOIN 
+            LEFT JOIN
                 driver_races dr ON d.id = dr.driver_id
-            LEFT JOIN 
-                races r ON dr.race_id = r.id AND r.state = 'Finished'
-            GROUP BY 
+            LEFT JOIN
+                races r ON dr.race_id = r.id AND r.state = 'Finished' AND r.session_id = :session_id
+            GROUP BY
                 d.id, md.driver_name, d.sit_out_next_race
-            ORDER BY 
-                sit_out_next_race ASC, 
+            ORDER BY
+                sit_out_next_race ASC,
                 completed_races ASC,
                 random_value ASC
         """)
-        rows = session.exec(query).all()
+        rows = dbsession.exec(query.bindparams(session_id=race_session_id)).all()
         # Convert SQL rows to DriverWithLane objects
         drivers = []
         for row in rows:
@@ -149,10 +141,10 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
     )
 
 
-def get_active_meeting(session):
+def get_active_meeting(dbsession):
     """Return the earliest meeting with date >= today. Raises 404 if none found."""
     today = date_type.today()
-    meeting = session.exec(
+    meeting = dbsession.exec(
         select(Meeting).where(Meeting.date >= today).order_by(Meeting.date.asc())
     ).first()
     if not meeting:
@@ -160,21 +152,21 @@ def get_active_meeting(session):
     return meeting
 
 
-def get_active_meeting_id(session):
-    return get_active_meeting(session).id
+def get_active_meeting_id(dbsession):
+    return get_active_meeting(dbsession).id
 
 
-def get_active_session(session):
-    """Return the active session for the active meeting.
+def get_active_session(dbsession):
+    """Return the active race session for the active meeting.
 
-    'Active' = earliest session in the active meeting that has no races yet,
+    'Active' = earliest race session in the active meeting that has no races yet,
     or has at least one non-Finished race. Falls back to the last session if
     all sessions are fully finished.
     """
     from sqlalchemy import text
-    meeting_id = get_active_meeting_id(session)
+    meeting_id = get_active_meeting_id(dbsession)
 
-    sessions = session.exec(
+    sessions = dbsession.exec(
         select(RaceSession)
         .where(RaceSession.meeting_id == meeting_id)
         .order_by(RaceSession.id.asc())
@@ -184,11 +176,11 @@ def get_active_session(session):
         raise HTTPException(status_code=404, detail="No sessions found for active meeting")
 
     for s in sessions:
-        races = session.exec(select(Race).where(Race.session_id == s.id)).all()
+        races = dbsession.exec(select(Race).where(Race.session_id == s.id)).all()
         if not races:
-            return s  # pre-configured session with no races yet
+            return s  # pre-configured race session with no races yet
         if any(r.state != 'Finished' for r in races):
-            return s  # session still in progress
+            return s  # race session still in progress
 
     return sessions[-1]  # all sessions finished — return last
 
@@ -203,31 +195,31 @@ def compute_session_state(races) -> str:
     return 'InProgress'
 
 
-def session_with_state(race_session, db_session) -> RaceSessionWithState:
-    races = db_session.exec(select(Race).where(Race.session_id == race_session.id)).all()
+def session_with_state(race_session, dbsession) -> RaceSessionWithState:
+    races = dbsession.exec(select(Race).where(Race.session_id == race_session.id)).all()
     return RaceSessionWithState(
         **race_session.model_dump(),
         state=compute_session_state(races)
     )
 
 
-def load_pending_race(session):
+def load_pending_race(dbsession):
     """Load the existing NotStarted race from DB. Returns NextRaceSetup or None."""
-    pending_race = session.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
     if not pending_race:
         return None
 
-    driver_races = session.exec(
+    driver_races = dbsession.exec(
         select(DriverRace).where(DriverRace.race_id == pending_race.id)
     ).all()
 
     # Stale race with no lineup (e.g. from sample data) — delete and recalculate
     if not driver_races:
-        session.delete(pending_race)
-        session.commit()
+        dbsession.delete(pending_race)
+        dbsession.commit()
         return None
 
-    lanes_list = session.exec(select(Lane).order_by(Lane.lane_number)).all()
+    lanes_list = dbsession.exec(select(Lane).order_by(Lane.lane_number)).all()
 
     assigned_driver_ids = {dr.driver_id for dr in driver_races}
     driver_race_by_lane = {dr.lane: dr for dr in driver_races}
@@ -236,16 +228,16 @@ def load_pending_race(session):
     car_ids = {dr.car_id for dr in driver_races if dr.car_id is not None}
     car_pictures = {}
     if car_ids:
-        car_rows = session.exec(select(Car).where(Car.id.in_(car_ids))).all()
+        car_rows = dbsession.exec(select(Car).where(Car.id.in_(car_ids))).all()
         car_pictures = {c.id: c.picture for c in car_rows}
 
     # Reuse existing SQL for driver stats (lane counts, completed_races, etc.)
-    all_drivers = get_drivers_for_next_race_sql(session)
+    all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=pending_race.session_id)
     all_drivers_map = {d.id: d for d in all_drivers}
 
     # Get meeting-specific display names
-    race_session = session.get(RaceSession, pending_race.session_id)
-    md_rows = session.exec(
+    race_session = dbsession.get(RaceSession, pending_race.session_id)
+    md_rows = dbsession.exec(
         select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)
     ).all()
     meeting_driver_names = {md.driver_id: md.driver_name for md in md_rows}
@@ -271,72 +263,129 @@ def load_pending_race(session):
     other_drivers = [d for d in all_drivers if d.id not in assigned_driver_ids]
     other_drivers.sort(key=lambda d: d.completed_races)
 
+    finished_count = len(dbsession.exec(
+        select(Race).where(Race.session_id == pending_race.session_id, Race.state == 'Finished')
+    ).all())
+
     return NextRaceSetup(
         race_id=pending_race.id,
+        race_number=finished_count + 1,
         lane_assignments=lane_assignments,
         other_drivers=other_drivers,
     )
 
 
-def set_lane_enabled(session, lane_number: int, enabled: bool):
+def get_car_id_for_lane(dbsession, lane_number: int, meeting_id: int):
+    """Return car_id for a lane: last finished race first, then meeting_cars default."""
+    session_ids = [s.id for s in dbsession.exec(
+        select(RaceSession).where(RaceSession.meeting_id == meeting_id)
+    ).all()]
+    last_race = dbsession.exec(
+        select(Race)
+        .where(Race.session_id.in_(session_ids), Race.state == 'Finished')
+        .order_by(Race.id.desc())
+    ).first()
+    if last_race:
+        dr = dbsession.exec(
+            select(DriverRace).where(
+                DriverRace.race_id == last_race.id,
+                DriverRace.lane == lane_number
+            )
+        ).first()
+        if dr and dr.car_id is not None:
+            return dr.car_id
+    meeting_car = dbsession.exec(
+        select(MeetingCar).where(
+            MeetingCar.meeting_id == meeting_id,
+            MeetingCar.lane == lane_number
+        )
+    ).first()
+    return meeting_car.car_id if meeting_car else None
+
+
+def add_driver_to_pending_lineup(dbsession, pending_race, driver_id: int):
+    """Add a driver to the pending race on their best available enabled lane."""
+    existing = dbsession.exec(
+        select(DriverRace).where(DriverRace.race_id == pending_race.id)
+    ).all()
+    if any(dr.driver_id == driver_id for dr in existing):
+        raise HTTPException(status_code=400, detail="Driver already in this race")
+    occupied_lanes = {dr.lane for dr in existing}
+    lanes = dbsession.exec(select(Lane).order_by(Lane.lane_number)).all()
+    free_lanes = [l for l in lanes if l.enabled and l.lane_number not in occupied_lanes]
+    if not free_lanes:
+        raise HTTPException(status_code=400, detail="No free lanes available")
+    all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=pending_race.session_id)
+    driver_data = next((d for d in all_drivers if d.id == driver_id), None)
+    if not driver_data:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    best_lane = min(free_lanes, key=lambda l: getattr(driver_data, f"lane{l.lane_number}_count"))
+    race_session = dbsession.get(RaceSession, pending_race.session_id)
+    car_id = get_car_id_for_lane(dbsession, best_lane.lane_number, race_session.meeting_id)
+    dbsession.add(DriverRace(
+        driver_id=driver_id,
+        race_id=pending_race.id,
+        car_id=car_id,
+        lane=best_lane.lane_number,
+    ))
+    dbsession.commit()
+    return load_pending_race(dbsession)
+
+
+def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
     """Enable or disable a lane and update the pending race lineup accordingly."""
-    lane = session.get(Lane, lane_number)
+    lane = dbsession.get(Lane, lane_number)
     if not lane:
         raise HTTPException(status_code=404, detail="Lane not found")
 
     lane.enabled = enabled
-    session.add(lane)
-    session.commit()
+    dbsession.add(lane)
+    dbsession.commit()
 
-    pending_race = session.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
     if not pending_race:
-        return load_pending_race(session)
+        return load_pending_race(dbsession)
 
     if not enabled:
-        driver_race = session.exec(
+        driver_race = dbsession.exec(
             select(DriverRace).where(
                 DriverRace.race_id == pending_race.id,
                 DriverRace.lane == lane_number
             )
         ).first()
         if driver_race:
-            session.delete(driver_race)
-            session.commit()
+            dbsession.delete(driver_race)
+            dbsession.commit()
     else:
-        existing = session.exec(
+        existing = dbsession.exec(
             select(DriverRace).where(DriverRace.race_id == pending_race.id)
         ).all()
         assigned_ids = {dr.driver_id for dr in existing}
 
-        all_drivers = get_drivers_for_next_race_sql(session)
+        all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=pending_race.session_id)
         next_driver = next(
             (d for d in all_drivers if not d.sit_out_next_race and d.id not in assigned_ids),
             None
         )
 
         if next_driver:
-            race_session = session.get(RaceSession, pending_race.session_id)
-            meeting_car = session.exec(
-                select(MeetingCar).where(
-                    MeetingCar.meeting_id == race_session.meeting_id,
-                    MeetingCar.lane == lane_number
-                )
-            ).first()
-            session.add(DriverRace(
+            race_session = dbsession.get(RaceSession, pending_race.session_id)
+            car_id = get_car_id_for_lane(dbsession, lane_number, race_session.meeting_id)
+            dbsession.add(DriverRace(
                 driver_id=next_driver.id,
                 race_id=pending_race.id,
-                car_id=meeting_car.car_id if meeting_car else None,
+                car_id=car_id,
                 lane=lane_number,
             ))
-            session.commit()
+            dbsession.commit()
 
-    return load_pending_race(session)
+    return load_pending_race(dbsession)
 
 
-def save_pending_race(session, setup, meeting_id):
+def save_pending_race(dbsession, setup, meeting_id):
     """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
-    # Find or create a session for this meeting
-    race_session = session.exec(
+    # Find or create a dbsession for this meeting
+    race_session = dbsession.exec(
         select(RaceSession).where(RaceSession.meeting_id == meeting_id)
     ).first()
     if not race_session:
@@ -346,27 +395,27 @@ def save_pending_race(session, setup, meeting_id):
             end_condition='Laps',
             scoring_method='PositionPoints',
         )
-        session.add(race_session)
-        session.commit()
-        session.refresh(race_session)
+        dbsession.add(race_session)
+        dbsession.commit()
+        dbsession.refresh(race_session)
 
     race = Race(state='NotStarted', session_id=race_session.id)
-    session.add(race)
-    session.commit()
-    session.refresh(race)
+    dbsession.add(race)
+    dbsession.commit()
+    dbsession.refresh(race)
 
     # Primary: lane → car_id from the last completed race in this meeting
-    session_ids = [s.id for s in session.exec(
+    session_ids = [s.id for s in dbsession.exec(
         select(RaceSession).where(RaceSession.meeting_id == meeting_id)
     ).all()]
-    last_race = session.exec(
+    last_race = dbsession.exec(
         select(Race)
         .where(Race.session_id.in_(session_ids), Race.state == 'Finished')
         .order_by(Race.id.desc())
     ).first()
     last_race_lane_to_car = {}
     if last_race:
-        last_driver_races = session.exec(
+        last_driver_races = dbsession.exec(
             select(DriverRace).where(DriverRace.race_id == last_race.id)
         ).all()
         last_race_lane_to_car = {
@@ -374,7 +423,7 @@ def save_pending_race(session, setup, meeting_id):
         }
 
     # Fallback: lane → car_id from meeting_cars defaults
-    meeting_cars = session.exec(
+    meeting_cars = dbsession.exec(
         select(MeetingCar).where(MeetingCar.meeting_id == meeting_id)
     ).all()
     meeting_lane_to_car = {mc.lane: mc.car_id for mc in meeting_cars if mc.lane is not None}
@@ -389,9 +438,9 @@ def save_pending_race(session, setup, meeting_id):
             car_id=car_id,
             lane=lane_assignment.lane_number,
         )
-        session.add(driver_race)
+        dbsession.add(driver_race)
 
-    session.commit()
+    dbsession.commit()
     # Reload from DB so the response includes everything load_pending_race adds
     # (car pictures, meeting display names), not just the in-memory lineup.
-    return load_pending_race(session)
+    return load_pending_race(dbsession)

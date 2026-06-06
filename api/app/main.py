@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting_id, get_active_meeting, get_active_session, session_with_state, set_lane_enabled
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup
 
 settings = Settings()
 
@@ -32,8 +32,8 @@ except Exception as e:
 
 
 def get_session():
-    with Session(engine) as session:
-        yield session
+    with Session(engine) as dbsession:
+        yield dbsession
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -65,9 +65,9 @@ app.add_middleware(
 )
 
 @app.get("/api/cars")
-def get_cars(session: SessionDep):
+def get_cars(dbsession: SessionDep):
     car_pic_base_url = f"{settings.API_URL}/{settings.CARS_MEDIA_FOLDER}"
-    cars = session.exec(select(Car)).all()
+    cars = dbsession.exec(select(Car)).all()
     return [
         {"id": c.id, "name": c.name, "picture": c.picture, "url": f"{car_pic_base_url}/{c.picture}"}
         for c in cars if c.picture
@@ -75,9 +75,9 @@ def get_cars(session: SessionDep):
 
 
 @app.get("/meetings")
-def get_all_meetings(session: SessionDep):
+def get_all_meetings(dbsession: SessionDep):
     try:
-        meetings = session.exec(select(Meeting)).all()
+        meetings = dbsession.exec(select(Meeting)).all()
         return meetings
     except Exception as e:
         logger.error(f"Error retrieving meetings: {str(e)}")
@@ -86,14 +86,14 @@ def get_all_meetings(session: SessionDep):
         raise HTTPException(status_code=500, detail=error_detail)
 
 @app.get("/meetings/active", response_model=Meeting)
-def get_active_meeting_endpoint(session: SessionDep):
-    return get_active_meeting(session)
+def get_active_meeting_endpoint(dbsession: SessionDep):
+    return get_active_meeting(dbsession)
 
 
 @app.get("/meetings/upcoming")
-def get_upcoming_meetings(session: SessionDep):
+def get_upcoming_meetings(dbsession: SessionDep):
     try:
-        meetings = session.exec(select(Meeting).where(Meeting.date >= datetime.now())).all()
+        meetings = dbsession.exec(select(Meeting).where(Meeting.date >= datetime.now())).all()
         return meetings
     except Exception as e:
         logger.error(f"Error retrieving meetings: {str(e)}")
@@ -107,16 +107,16 @@ def get_upcoming_meetings(session: SessionDep):
          description="Retrieve all race sessions, or filter by meeting ID",
          response_model=list[RaceSession])
 def get_sessions_by_meeting_id(
-    session: SessionDep, 
+    dbsession: SessionDep, 
     meeting_id: int = Query(None, 
         description="Filter sessions by meeting ID",
     )
 ):
     try:
         if meeting_id is not None:
-            race_sessions = session.exec(select(RaceSession).where(RaceSession.meeting_id == meeting_id)).all()
+            race_sessions = dbsession.exec(select(RaceSession).where(RaceSession.meeting_id == meeting_id)).all()
         else:
-            race_sessions = session.exec(select(RaceSession)).all()
+            race_sessions = dbsession.exec(select(RaceSession)).all()
         return race_sessions
     except Exception as e:
         logger.error(f"Error retrieving sessions: {str(e)}")
@@ -125,9 +125,9 @@ def get_sessions_by_meeting_id(
         raise HTTPException(status_code=500, detail=error_detail)
 
 
-def get_lanes(session: SessionDep):
+def get_lanes(dbsession: SessionDep):
     try:
-        lanes = session.exec(select(Lane).order_by(Lane.lane_number)).all()
+        lanes = dbsession.exec(select(Lane).order_by(Lane.lane_number)).all()
         return lanes
     except Exception as e:
         logger.error(f"Error retrieving lanes: {str(e)}")
@@ -137,97 +137,123 @@ def get_lanes(session: SessionDep):
     
 
 @app.get("/sessions/active", response_model=RaceSessionWithState)
-def get_active_session_endpoint(session: SessionDep):
-    return session_with_state(get_active_session(session), session)
+def get_active_session_endpoint(dbsession: SessionDep):
+    return session_with_state(get_active_session(dbsession), dbsession)
 
 
 @app.get("/sessions/{session_id}", response_model=RaceSessionWithState)
-def get_session(session_id: int, session: SessionDep):
-    race_session = session.get(RaceSession, session_id)
+def get_session(session_id: int, dbsession: SessionDep):
+    race_session = dbsession.get(RaceSession, session_id)
     if not race_session:
         raise HTTPException(status_code=404, detail="Session not found")
-    return session_with_state(race_session, session)
+    return session_with_state(race_session, dbsession)
 
 
 @app.patch("/sessions/{session_id}", response_model=RaceSession)
-def update_session(session_id: int, session_update: RaceSessionUpdate, session: SessionDep):
-    db_session = session.get(RaceSession, session_id)
-    if not db_session:
+def update_session(session_id: int, session_update: RaceSessionUpdate, dbsession: SessionDep):
+    race_session = dbsession.get(RaceSession, session_id)
+    if not race_session:
         raise HTTPException(status_code=404, detail="Session not found")
     update_data = session_update.model_dump(exclude_unset=True)
-    db_session.sqlmodel_update(update_data)
-    session.add(db_session)
-    session.commit()
-    session.refresh(db_session)
-    return db_session
+    race_session.sqlmodel_update(update_data)
+    dbsession.add(race_session)
+    dbsession.commit()
+    dbsession.refresh(race_session)
+    return race_session
 
 
 @app.get("/races/pending/")
-def get_pending_race(session: SessionDep):
-    existing = load_pending_race(session)
+def get_pending_race(dbsession: SessionDep):
+    existing = load_pending_race(dbsession)
     if existing:
         return existing
-    meeting_id = get_active_meeting_id(session)
-    lanes = get_lanes(session)
-    drivers = get_drivers_for_next_race_sql(session)
+    active_session = get_active_session(dbsession)
+    lanes = get_lanes(dbsession)
+    drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=active_session.id)
     setup = assign_drivers_to_lanes(drivers, lanes)
-    return save_pending_race(session, setup, meeting_id)
+    return save_pending_race(dbsession, setup, active_session.meeting_id)
 
 
 @app.get("/drivers/nextrace/")
-def get_drivers_for_next_race(session: SessionDep):
-    lanes = get_lanes(session)
-    drivers = get_drivers_for_next_race_sql(session)
+def get_drivers_for_next_race(dbsession: SessionDep):
+    active_session = get_active_session(dbsession)
+    lanes = get_lanes(dbsession)
+    drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=active_session.id)
     return assign_drivers_to_lanes(drivers, lanes)
 
 
 
 @app.post("/drivers/")
-def create_driver(driver: Driver, session: SessionDep) -> Driver:
-    session.add(driver)
-    session.commit()
-    session.refresh(driver)
+def create_driver(driver: Driver, dbsession: SessionDep) -> Driver:
+    dbsession.add(driver)
+    dbsession.commit()
+    dbsession.refresh(driver)
     return driver
 
 @app.get("/drivers/")
 def get_all_drivers(
-    session: SessionDep,
+    dbsession: SessionDep,
     offset: int = 0,
     limit: Annotated[int, Query(le=100)] = 100,
 ) -> list[Driver]:
-    drivers = session.exec(select(Driver).offset(offset).limit(limit)).all()
+    drivers = dbsession.exec(select(Driver).offset(offset).limit(limit)).all()
     return drivers
 
 @app.get("/drivers/{driver_id}")
-def get_driver(driver_id: int, session: SessionDep) -> Driver:
-    driver = session.get(Driver, driver_id)
+def get_driver(driver_id: int, dbsession: SessionDep) -> Driver:
+    driver = dbsession.get(Driver, driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     return driver
 
 @app.delete("/drivers/{driver_id}")
-def delete_driver(driver_id: int, session: SessionDep):
-    driver = session.get(Driver, driver_id)
+def delete_driver(driver_id: int, dbsession: SessionDep):
+    driver = dbsession.get(Driver, driver_id)
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
-    session.delete(driver)
-    session.commit()
+    dbsession.delete(driver)
+    dbsession.commit()
     return {"ok": True}
 
 
 
 
 @app.patch("/lanes/{lane_number}")
-def patch_lane(lane_number: int, update: LaneUpdate, session: SessionDep):
-    return set_lane_enabled(session, lane_number, update.enabled)
+def patch_lane(lane_number: int, update: LaneUpdate, dbsession: SessionDep):
+    return set_lane_enabled(dbsession, lane_number, update.enabled)
+
+
+@app.delete("/races/pending/lanes/{lane_number}")
+def remove_driver_from_pending_lane(lane_number: int, dbsession: SessionDep):
+    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    if not pending_race:
+        raise HTTPException(status_code=404, detail="No pending race")
+    driver_race = dbsession.exec(
+        select(DriverRace).where(
+            DriverRace.race_id == pending_race.id,
+            DriverRace.lane == lane_number
+        )
+    ).first()
+    if driver_race:
+        dbsession.delete(driver_race)
+        dbsession.commit()
+    return load_pending_race(dbsession)
+
+
+@app.post("/races/pending/drivers")
+def add_driver_to_pending_race(body: PendingRaceAddDriver, dbsession: SessionDep):
+    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    if not pending_race:
+        raise HTTPException(status_code=404, detail="No pending race")
+    return add_driver_to_pending_lineup(dbsession, pending_race, body.driver_id)
 
 
 @app.patch("/races/pending/lanes/{lane_number}")
-def update_pending_race_lane_car(lane_number: int, update: LaneCarUpdate, session: SessionDep):
-    pending_race = session.exec(select(Race).where(Race.state == 'NotStarted')).first()
+def update_pending_race_lane_car(lane_number: int, update: LaneCarUpdate, dbsession: SessionDep):
+    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
     if not pending_race:
         raise HTTPException(status_code=404, detail="No pending race")
-    driver_race = session.exec(
+    driver_race = dbsession.exec(
         select(DriverRace).where(
             DriverRace.race_id == pending_race.id,
             DriverRace.lane == lane_number
@@ -236,31 +262,108 @@ def update_pending_race_lane_car(lane_number: int, update: LaneCarUpdate, sessio
     if not driver_race:
         raise HTTPException(status_code=404, detail="No driver assigned to that lane")
     driver_race.car_id = update.car_id
-    session.add(driver_race)
-    session.commit()
-    return load_pending_race(session)
+    dbsession.add(driver_race)
+    dbsession.commit()
+    return load_pending_race(dbsession)
+
+
+@app.patch("/races/{race_id}/lanes/{lane_number}")
+def update_race_lane_car(race_id: int, lane_number: int, update: LaneCarUpdate, dbsession: SessionDep):
+    driver_race = dbsession.exec(
+        select(DriverRace).where(
+            DriverRace.race_id == race_id,
+            DriverRace.lane == lane_number
+        )
+    ).first()
+    if not driver_race:
+        raise HTTPException(status_code=404, detail="No driver assigned to that lane")
+    driver_race.car_id = update.car_id
+    dbsession.add(driver_race)
+    dbsession.commit()
+    return {"ok": True}
 
 
 @app.post("/races/{race_id}/start")
-def start_race(race_id: int, session: SessionDep):
-    race = session.get(Race, race_id)
+def start_race(race_id: int, dbsession: SessionDep):
+    race = dbsession.get(Race, race_id)
     if not race:
         raise HTTPException(status_code=404, detail="Race not found")
     race.state = 'Running'
-    session.add(race)
-    session.commit()
+    dbsession.add(race)
+    dbsession.commit()
     return {"ok": True}
 
 
 @app.post("/races/{race_id}/finish")
-def finish_race(race_id: int, session: SessionDep):
-    race = session.get(Race, race_id)
+def finish_race(race_id: int, dbsession: SessionDep):
+    race = dbsession.get(Race, race_id)
     if not race:
         raise HTTPException(status_code=404, detail="Race not found")
     race.state = 'Finished'
-    session.add(race)
-    session.commit()
+    dbsession.add(race)
+    dbsession.commit()
     return {"ok": True}
+
+
+@app.get("/sessions/active/results")
+def get_active_session_results(dbsession: SessionDep):
+    from collections import defaultdict
+    race_session = get_active_session(dbsession)
+
+    races = dbsession.exec(
+        select(Race)
+        .where(Race.session_id == race_session.id, Race.state == 'Finished')
+        .order_by(Race.id)
+    ).all()
+
+    if not races:
+        return {"session_id": race_session.id, "races": [], "drivers": []}
+
+    race_ids = [r.id for r in races]
+
+    all_driver_races = dbsession.exec(
+        select(DriverRace).where(DriverRace.race_id.in_(race_ids))
+    ).all()
+
+    md_rows = dbsession.exec(
+        select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)
+    ).all()
+    meeting_driver_names = {md.driver_id: md.driver_name for md in md_rows}
+
+    driver_ids = {dr.driver_id for dr in all_driver_races}
+    drivers_list = dbsession.exec(select(Driver).where(Driver.id.in_(driver_ids))).all()
+    driver_name_fallback = {d.id: d.first_name for d in drivers_list}
+
+    race_groups = defaultdict(list)
+    for dr in all_driver_races:
+        race_groups[dr.race_id].append(dr)
+
+    positions = {}
+    for race_id in race_ids:
+        sorted_drs = sorted(
+            race_groups.get(race_id, []),
+            key=lambda dr: (-(dr.laps_completed or 0), dr.fastest_lap_time or 999999)
+        )
+        positions[race_id] = {dr.driver_id: i + 1 for i, dr in enumerate(sorted_drs)}
+
+    max_pos = len(driver_ids) + 1
+    driver_rows = [
+        {
+            "driver_id": did,
+            "driver_name": meeting_driver_names.get(did) or driver_name_fallback.get(did, "?"),
+            "positions": {str(race_id): positions.get(race_id, {}).get(did) for race_id in race_ids},
+        }
+        for did in driver_ids
+    ]
+    driver_rows.sort(key=lambda d: sum(
+        p if p is not None else max_pos for p in d["positions"].values()
+    ))
+
+    return {
+        "session_id": race_session.id,
+        "races": [{"race_id": r.id, "race_number": i + 1} for i, r in enumerate(races)],
+        "drivers": driver_rows,
+    }
 
 
 # === Diagnostic Endpoints ===

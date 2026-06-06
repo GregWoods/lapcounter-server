@@ -136,13 +136,41 @@ tr.lane-color-orange .form-check-input:checked {
   padding-right: 1rem;
 }
 
+/* Edge-to-edge row colour with inset content */
+.container-fluid.px-0 > h1 {
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+.lane-assignments-table td,
+.lane-assignments-table th,
+.other-drivers-table td,
+.other-drivers-table th {
+  padding: 2px 12px;
+  vertical-align: middle;
+}
+
+.lane-assignments-table td:first-child,
+.lane-assignments-table th:first-child,
+.other-drivers-table td:first-child,
+.other-drivers-table th:first-child {
+  padding-left: 2rem;
+}
+
+.lane-assignments-table td:last-child,
+.lane-assignments-table th:last-child,
+.other-drivers-table td:last-child,
+.other-drivers-table th:last-child {
+  padding-right: 2rem;
+}
+
 .car-image-col {
-  padding: 4px 8px;
+  padding: 2px 12px;
   vertical-align: middle;
 }
 
 .car-thumbnail {
-  height: 48px;
+  height: 80px;
   width: auto;
   cursor: pointer;
   border-radius: 4px;

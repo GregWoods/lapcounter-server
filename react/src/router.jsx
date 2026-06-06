@@ -1,11 +1,17 @@
-import { BrowserRouter, Routes, Route, Link, createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter } from 'react-router-dom';
 import App from './App.jsx'
 import NextRace from './components/NextRace/NextRace.jsx'
+import Home from './components/Home/Home.jsx'
+import Results from './components/Results/Results.jsx'
 
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
     {
         path: "/",
+        element: <Home />,
+    },
+    {
+        path: "currentrace",
         element: <App />,
         loader: async () => {
             try {
@@ -16,20 +22,29 @@ const router = createBrowserRouter([
                 return null;
             }
         },
-    }, {
+    },
+    {
         path: "nextrace",
         element: <NextRace />,
         loader: async () => {
-            const url = `${import.meta.env.VITE_API_URL}/races/pending/`;
-            console.log('fetch driver data: ', url);
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error('Failed to load drivers data');
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/`);
+            if (!res.ok) throw new Error('Failed to load pending race');
+            return res.json();
+        },
+    },
+    {
+        path: "results",
+        element: <Results />,
+        loader: async () => {
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/sessions/active/results`);
+                if (!res.ok) return { races: [], drivers: [] };
+                return res.json();
+            } catch {
+                return { races: [], drivers: [] };
             }
-            return response.json();
         },
     },
 ]);
 
 export default router;
-

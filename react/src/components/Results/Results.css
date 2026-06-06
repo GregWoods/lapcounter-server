@@ -1,0 +1,80 @@
+.results-page {
+    min-height: 100vh;
+    background: #111;
+    color: #fff;
+    padding: 60px 80px;
+}
+
+.results-page h1 {
+    font-size: 3.5rem;
+    margin-bottom: 60px;
+    text-align: center;
+    letter-spacing: 0.04em;
+}
+
+.no-results {
+    font-size: 2rem;
+    text-align: center;
+    color: #888;
+    margin-top: 80px;
+}
+
+.results-table-wrapper {
+    overflow-x: auto;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 2rem;
+}
+
+.results-table thead th {
+    font-size: 1.6rem;
+    padding: 16px 20px;
+    color: #aaa;
+    border-bottom: 3px solid #444;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.driver-col {
+    text-align: left !important;
+    min-width: 220px;
+}
+
+.race-col {
+    min-width: 72px;
+}
+
+.results-table tbody tr {
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.results-table tbody tr:hover {
+    background: #1e1e1e;
+}
+
+.results-table tbody td {
+    padding: 18px 20px;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.driver-name-cell {
+    text-align: left !important;
+    font-size: 2.2rem;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.position-cell {
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.pos-first  { color: #ffd700; }
+.pos-second { color: #c0c0c0; }
+.pos-third  { color: #cd7f32; }
+.pos-other  { color: #ddd; }
+.pos-dns    { color: #555; }
