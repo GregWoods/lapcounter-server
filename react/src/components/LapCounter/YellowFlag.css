@@ -1,6 +1,6 @@
 .yellowflagModalOverlay {
-    display:flex;
-    flex-direction:column;
+    display: flex;
+    flex-direction: column;
     position: fixed;
     inset: 0;
 }
@@ -11,8 +11,8 @@
 }
 
 #yellowflagcontainer {
-    display:flex;
-    flex-direction:column;
+    display: flex;
+    flex-direction: column;
     position: fixed;
     inset: 0;
 }
@@ -41,37 +41,34 @@
 }
 
 #yellowflagcountdown {
-    width: 600px;
-    height: 400px;
-    background-color:rgb(236, 232, 0);
-    border-radius: 20px;
+    width: 31.25vw;       /* 600/1920 */
+    height: 37.04vh;      /* 400/1080 */
+    background-color: rgb(236, 232, 0);
+    border-radius: 1.04vw;
     padding: 0.05em 0.2em 0.2em 0.2em;
     font-size: 5em;
     font-family: 'Selawik-Bold';
     text-align: center;
     position: relative;
-    top: -100px;
+    top: -9.26vh;         /* -100/1080 */
 }
 
 .racePausedModalOverlay {
-    display:flex;
-    flex-direction:column;
+    display: flex;
+    flex-direction: column;
     position: fixed;
     inset: 0;
-    background-color:rgba(0,0,0,0);
-    /*backdrop-filter: none;*/
+    background-color: rgba(0, 0, 0, 0);
 }
 
 #yellowflagcontent.yellow {
-    background-color:rgba(236, 232, 0, 0.6);
-    /*backdrop-filter: blur(10px);*/
+    background-color: rgba(236, 232, 0, 0.6);
     flex: 1;
     width: 100%;
 }
 
 #yellowflagcontent.black {
-    background-color:rgba(0, 0, 0, 0.6);
-    /*backdrop-filter: blur(10px);*/
+    background-color: rgba(0, 0, 0, 0.6);
     flex: 1;
     width: 100%;
 }

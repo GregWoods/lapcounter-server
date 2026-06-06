@@ -1,47 +1,35 @@
 .drivercard {
-    width: 310px;
+    width: 16.15vw;       /* 310/1920 */
     margin: 0;
-    border-radius: 30px;
-    display:block;
-    position:absolute;
-    left:2000px;
-    top:3px;
-    height: 760px;
+    border-radius: 1.56vw;
+    display: block;
+    position: absolute;
+    left: 104.17vw;       /* 2000/1920 — starts off screen right */
+    top: 0.28vh;          /* 3/1080 */
+    height: 70.37vh;      /* 760/1080 */
     transition: 0.5s;
 }
 
 .drivercard.show {
-    opacity:1;
+    opacity: 1;
 }
 
 .drivercard.suspended {
-    opacity:0.1;
+    opacity: 0.1;
 }
 
 
-.drivercard[data-order="1"].show {
-    left:0px;
-}
-.drivercard[data-order="2"].show {
-    left:322px;
-}
-.drivercard[data-order="3"].show {
-    left:644px;
-}
-.drivercard[data-order="4"].show {
-    left:966px;
-}
-.drivercard[data-order="5"].show {
-    left:1288px;
-}
-.drivercard[data-order="6"].show {
-    left:1610px;
-}
+.drivercard[data-order="1"].show { left: 0; }
+.drivercard[data-order="2"].show { left: 16.77vw; }   /* 322/1920 */
+.drivercard[data-order="3"].show { left: 33.54vw; }   /* 644/1920 */
+.drivercard[data-order="4"].show { left: 50.31vw; }   /* 966/1920 */
+.drivercard[data-order="5"].show { left: 67.08vw; }   /* 1288/1920 */
+.drivercard[data-order="6"].show { left: 83.85vw; }   /* 1610/1920 */
 
 .drivername {
     padding: 0.3rem 0.25rem 0.65rem 0.25rem;
     text-align: center;
-    border-radius: 20px 20px 0 0;
+    border-radius: 1.04vw 1.04vw 0 0;   /* 20/1920 */
     white-space: nowrap;
     overflow: hidden;
     cursor: pointer;
@@ -68,15 +56,15 @@
     font-size: 2.6rem;
     text-align: center;
     font-family: 'Selawik-SemiBold';
-    color:#333;
+    color: #333;
     line-height: 90%;
 }
 
 .drivercard .personalFastestLap .time {
-    color:#070;
+    color: #070;
 }
 .drivercard .raceFastestLap .time {
-    color:rgb(170, 0, 180);
+    color: rgb(170, 0, 180);
 }
 
 .drivercard .timelbl {
@@ -88,28 +76,25 @@
 }
 
 .carimg {
-    cursor:pointer;
+    cursor: pointer;
 }
 
 .carimg img {
-
-    object-fit: cover;      /* investigate this */
+    object-fit: cover;
     width: 100%;
-    height: 200px;
+    height: 18.52vh;      /* 200/1080 */
 }
 
 .fastestlaptime {
     padding: 0.1em 0 0.3em 0;
-    border-radius:0.3em;
+    border-radius: 0.3em;
 }
 
 
 .drivercard .raceFastestLap .time {
-    /*color: white; */
     color: rgb(180, 0, 180);
 }
 
 .lastlaptime {
-    margin-bottom:0.9rem;
+    margin-bottom: 0.9rem;
 }
-
