@@ -6,14 +6,13 @@
 }
 
 .results-page h1 {
-    font-size: 2rem;
+    font-size: 3.2rem;
     margin-bottom: 16px;
-    text-align: center;
     letter-spacing: 0.04em;
 }
 
 .no-results {
-    font-size: 1.4rem;
+    font-size: 2.24rem;
     text-align: center;
     color: #888;
     margin-top: 40px;
@@ -24,27 +23,28 @@
 }
 
 .results-table {
-    width: 100%;
+    width: auto;
     border-collapse: collapse;
-    font-size: 1.4rem;
+    font-size: 2.24rem;
 }
 
 .results-table thead th {
-    font-size: 1.1rem;
-    padding: 6px 10px;
+    font-size: 1.76rem;
+    padding: 6px 12px 6px 0;
     color: #aaa;
     border-bottom: 2px solid #444;
-    text-align: center;
+    text-align: left;
     white-space: nowrap;
 }
 
 .driver-col {
-    text-align: left !important;
-    min-width: 140px;
+    min-width: 160px;
+    padding-right: 20px !important;
 }
 
 .race-col {
-    min-width: 44px;
+    min-width: 0;
+    width: 1px;
 }
 
 .results-table tbody tr {
@@ -56,20 +56,21 @@
 }
 
 .results-table tbody td {
-    padding: 8px 12px;
-    text-align: center;
+    padding: 8px 12px 8px 0;
+    text-align: left;
     vertical-align: middle;
-}
-
-.driver-name-cell {
-    text-align: left !important;
-    font-size: 1.5rem;
-    font-weight: bold;
     white-space: nowrap;
 }
 
+.driver-name-cell {
+    font-size: 2.4rem;
+    font-weight: bold;
+    white-space: nowrap;
+    padding-right: 20px !important;
+}
+
 .position-cell {
-    font-size: 1.4rem;
+    font-size: 2.24rem;
     font-weight: bold;
 }
 
