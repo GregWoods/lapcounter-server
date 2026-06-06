@@ -24,26 +24,26 @@ function Results() {
                         <thead>
                             <tr>
                                 <th className="driver-col">Driver</th>
+                                <th className="total-col">Total</th>
                                 {races.map(r => (
                                     <th key={r.race_id} className="race-col">R{r.race_number}</th>
                                 ))}
-                                <th className="total-col">Total</th>
                             </tr>
                         </thead>
                         <tbody>
                             {drivers.map(d => (
                                 <tr key={d.driver_id}>
                                     <td className="driver-name-cell">{d.driver_name}</td>
+                                    <td className="total-cell">{d.total_points}</td>
                                     {races.map(r => {
                                         const pos = d.positions[String(r.race_id)];
                                         const pts = d.points?.[String(r.race_id)];
                                         return (
                                             <td key={r.race_id} className={`position-cell ${posClass(pos)}`}>
-                                                {pos == null ? '–' : (scoring_method === 'LapPoints' ? pts : pts)}
+                                                {pos == null ? '–' : pts}
                                             </td>
                                         );
                                     })}
-                                    <td className="total-cell">{d.total_points}</td>
                                 </tr>
                             ))}
                         </tbody>
