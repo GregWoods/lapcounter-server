@@ -53,7 +53,8 @@ const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestO
                 <div>{driver.name}</div>
             </div>
             <div className="carimg" onClick={onRequestOpenCarSelector}>
-                <img alt="Car Image" src={driver.carImgUrl ?? '../../images/cars/car0.png'} />
+                <img alt="Car Image" src={driver.carImgUrl}
+                    onError={(e) => { e.target.onerror = null; e.target.src = `${import.meta.env.VITE_API_URL}/${import.meta.env.VITE_CAR_MEDIA_FOLDER}/GT_AA_Generic.jpg`; }} />
             </div>
 
             <div className="drivercontent">

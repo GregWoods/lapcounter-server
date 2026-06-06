@@ -151,6 +151,10 @@ class LaneUpdate(SQLModel):
     enabled: bool
 
 
+class LaneCarUpdate(SQLModel):
+    car_id: Optional[int] = None
+
+
 class RaceSessionUpdate(SQLModel):
     session_type: Optional[str] = None
     end_condition: Optional[str] = None

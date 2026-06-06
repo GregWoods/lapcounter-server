@@ -92,6 +92,8 @@ services:
       - DB_PASSWORD=lap
       - DB_HOST=database
       - DB_PORT=5432
+    volumes:
+      - car_images:/usr/src/app/media/cars
     restart: unless-stopped
 
 
@@ -111,3 +113,4 @@ services:
 volumes:
   postgres_data_prod:
   static_volume:
+  car_images:

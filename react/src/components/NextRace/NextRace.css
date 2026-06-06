@@ -135,3 +135,20 @@ tr.lane-color-orange .form-check-input:checked {
   text-align: right;
   padding-right: 1rem;
 }
+
+.car-image-col {
+  padding: 4px 8px;
+  vertical-align: middle;
+}
+
+.car-thumbnail {
+  height: 48px;
+  width: auto;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity 0.15s;
+}
+
+.car-thumbnail:hover {
+  opacity: 0.75;
+}

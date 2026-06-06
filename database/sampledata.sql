@@ -46,7 +46,7 @@ INSERT INTO chip_firmwares (id, name) VALUES (4, 'InCar Pro 4.01') ON CONFLICT (
 
 
 INSERT INTO cars (id, name, car_model_id, tyre_id, magnet, modifications_notes, weight_added, chip_hardware_id, chip_firmware_id, picture, rfid) 
-    VALUES (1, 'Porsche Red/Black', 1, 1, false, '', 20.0, 1, 1, 'GT_Porsche_RedBlack.jpg', '') 
+    VALUES (1, 'Porsche Red/Black', 1, 1, false, '', 20.0, 1, 1, 'GT_Porsche_White.jpg', '')
     ON CONFLICT (id) DO NOTHING;
 INSERT INTO cars (id, name, car_model_id, tyre_id, magnet, modifications_notes, weight_added, chip_hardware_id, chip_firmware_id, picture, rfid) 
     VALUES (2, 'Porsche Red/silver', 1, 1, false, '', 20.0, 1, 1, 'GT_Porsche_RedSilver.jpg', '') 
@@ -150,6 +150,14 @@ INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (3, 3, 2,
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (4, 4, 2, 3, 4) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (5, 5, 2, 4, 5) ON CONFLICT (id) DO NOTHING;
 INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (6, 6, 2, 5, 6) ON CONFLICT (id) DO NOTHING;
+
+-- Race 3: drivers rotated one lane forward, cars follow the lane (meeting_cars defaults)
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (7,  2, 3, 1, 1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (8,  3, 3, 2, 2) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (9,  4, 3, 3, 3) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (10, 5, 3, 4, 4) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (11, 6, 3, 5, 5) ON CONFLICT (id) DO NOTHING;
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (12, 1, 3, 6, 6) ON CONFLICT (id) DO NOTHING;
 
 -- sample driver_laps data for the race which has already finished
 

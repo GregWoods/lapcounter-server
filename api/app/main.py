@@ -65,12 +65,13 @@ app.add_middleware(
 )
 
 @app.get("/api/cars")
-def get_cars():
-    car_pics_local_path = os.path.join(os.getcwd(), settings.CARS_MEDIA_FOLDER)
+def get_cars(session: SessionDep):
     car_pic_base_url = f"{settings.API_URL}/{settings.CARS_MEDIA_FOLDER}"
-    files = [f"{car_pic_base_url}/{filename}" for filename in os.listdir(car_pics_local_path)]
-    print(f"Car pics: {files}")
-    return files
+    cars = session.exec(select(Car)).all()
+    return [
+        {"id": c.id, "name": c.name, "picture": c.picture, "url": f"{car_pic_base_url}/{c.picture}"}
+        for c in cars if c.picture
+    ]
 
 
 @app.get("/meetings")
@@ -219,6 +220,25 @@ def delete_driver(driver_id: int, session: SessionDep):
 @app.patch("/lanes/{lane_number}")
 def patch_lane(lane_number: int, update: LaneUpdate, session: SessionDep):
     return set_lane_enabled(session, lane_number, update.enabled)
+
+
+@app.patch("/races/pending/lanes/{lane_number}")
+def update_pending_race_lane_car(lane_number: int, update: LaneCarUpdate, session: SessionDep):
+    pending_race = session.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    if not pending_race:
+        raise HTTPException(status_code=404, detail="No pending race")
+    driver_race = session.exec(
+        select(DriverRace).where(
+            DriverRace.race_id == pending_race.id,
+            DriverRace.lane == lane_number
+        )
+    ).first()
+    if not driver_race:
+        raise HTTPException(status_code=404, detail="No driver assigned to that lane")
+    driver_race.car_id = update.car_id
+    session.add(driver_race)
+    session.commit()
+    return load_pending_race(session)
 
 
 @app.post("/races/{race_id}/start")

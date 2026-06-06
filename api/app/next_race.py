@@ -355,19 +355,38 @@ def save_pending_race(session, setup, meeting_id):
     session.commit()
     session.refresh(race)
 
-    # Map lane → car_id from meeting_cars
+    # Primary: lane → car_id from the last completed race in this meeting
+    session_ids = [s.id for s in session.exec(
+        select(RaceSession).where(RaceSession.meeting_id == meeting_id)
+    ).all()]
+    last_race = session.exec(
+        select(Race)
+        .where(Race.session_id.in_(session_ids), Race.state == 'Finished')
+        .order_by(Race.id.desc())
+    ).first()
+    last_race_lane_to_car = {}
+    if last_race:
+        last_driver_races = session.exec(
+            select(DriverRace).where(DriverRace.race_id == last_race.id)
+        ).all()
+        last_race_lane_to_car = {
+            dr.lane: dr.car_id for dr in last_driver_races if dr.car_id is not None
+        }
+
+    # Fallback: lane → car_id from meeting_cars defaults
     meeting_cars = session.exec(
         select(MeetingCar).where(MeetingCar.meeting_id == meeting_id)
     ).all()
-    lane_to_car = {mc.lane: mc.car_id for mc in meeting_cars if mc.lane is not None}
+    meeting_lane_to_car = {mc.lane: mc.car_id for mc in meeting_cars if mc.lane is not None}
 
     for lane_assignment in setup.lane_assignments:
         if lane_assignment.id == 0:
             continue
+        car_id = last_race_lane_to_car.get(lane_assignment.lane_number) or meeting_lane_to_car.get(lane_assignment.lane_number)
         driver_race = DriverRace(
             driver_id=lane_assignment.id,
             race_id=race.id,
-            car_id=lane_to_car.get(lane_assignment.lane_number),
+            car_id=car_id,
             lane=lane_assignment.lane_number,
         )
         session.add(driver_race)
