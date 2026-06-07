@@ -199,9 +199,20 @@ def session_with_state(race_session, dbsession) -> RaceSessionWithState:
     return RaceSessionWithState(**race_session.model_dump())
 
 
+def find_pending_race(dbsession):
+    """Return the NotStarted race in the active session, or None."""
+    try:
+        active_session = get_active_session(dbsession)
+    except HTTPException:
+        return None
+    return dbsession.exec(
+        select(Race).where(Race.state == 'NotStarted', Race.session_id == active_session.id)
+    ).first()
+
+
 def load_pending_race(dbsession):
     """Load the existing NotStarted race from DB. Returns NextRaceSetup or None."""
-    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = find_pending_race(dbsession)
     if not pending_race:
         return None
 
@@ -338,7 +349,7 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
     dbsession.add(lane)
     dbsession.commit()
 
-    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = find_pending_race(dbsession)
     if not pending_race:
         return load_pending_race(dbsession)
 
@@ -378,23 +389,9 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
     return load_pending_race(dbsession)
 
 
-def save_pending_race(dbsession, setup, meeting_id):
+def save_pending_race(dbsession, setup, race_session):
     """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
-    # Find or create a dbsession for this meeting
-    race_session = dbsession.exec(
-        select(RaceSession).where(RaceSession.meeting_id == meeting_id)
-    ).first()
-    if not race_session:
-        race_session = RaceSession(
-            meeting_id=meeting_id,
-            session_type='Points',
-            end_condition='Laps',
-            scoring_method='PositionPoints',
-        )
-        dbsession.add(race_session)
-        dbsession.commit()
-        dbsession.refresh(race_session)
-
+    meeting_id = race_session.meeting_id
     race = Race(state='NotStarted', session_id=race_session.id)
     dbsession.add(race)
     dbsession.commit()

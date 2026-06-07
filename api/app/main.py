@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, find_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup
 from points import calculate_race_points
 
 settings = Settings()
@@ -172,7 +172,7 @@ def get_pending_race(dbsession: SessionDep):
     lanes = get_lanes(dbsession)
     drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=active_session.id)
     setup = assign_drivers_to_lanes(drivers, lanes)
-    return save_pending_race(dbsession, setup, active_session.meeting_id)
+    return save_pending_race(dbsession, setup, active_session)
 
 
 @app.get("/drivers/nextrace/")
@@ -226,7 +226,7 @@ def patch_lane(lane_number: int, update: LaneUpdate, dbsession: SessionDep):
 
 @app.delete("/races/pending/lanes/{lane_number}")
 def remove_driver_from_pending_lane(lane_number: int, dbsession: SessionDep):
-    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = find_pending_race(dbsession)
     if not pending_race:
         raise HTTPException(status_code=404, detail="No pending race")
     driver_race = dbsession.exec(
@@ -243,7 +243,7 @@ def remove_driver_from_pending_lane(lane_number: int, dbsession: SessionDep):
 
 @app.post("/races/pending/drivers")
 def add_driver_to_pending_race(body: PendingRaceAddDriver, dbsession: SessionDep):
-    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = find_pending_race(dbsession)
     if not pending_race:
         raise HTTPException(status_code=404, detail="No pending race")
     return add_driver_to_pending_lineup(dbsession, pending_race, body.driver_id)
@@ -251,7 +251,7 @@ def add_driver_to_pending_race(body: PendingRaceAddDriver, dbsession: SessionDep
 
 @app.patch("/races/pending/lanes/{lane_number}")
 def update_pending_race_lane_car(lane_number: int, update: LaneCarUpdate, dbsession: SessionDep):
-    pending_race = dbsession.exec(select(Race).where(Race.state == 'NotStarted')).first()
+    pending_race = find_pending_race(dbsession)
     if not pending_race:
         raise HTTPException(status_code=404, detail="No pending race")
     driver_race = dbsession.exec(

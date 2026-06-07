@@ -63,8 +63,8 @@ html:has(#nextrace-page) body {
 
 .nr-table thead th {
     font-size: 0.8rem;
-    color: #aaa;
-    border-bottom: 2px solid #444;
+    color: #ccc;
+    border-bottom: 2px solid #666;
     padding: 0.4rem 0.75rem;
     text-align: left;
     white-space: nowrap;
@@ -85,13 +85,13 @@ html:has(#nextrace-page) body {
 .col-raced  { width: 3rem; text-align: right; padding-right: 1.5rem !important; }
 .col-action { width: 3rem; text-align: center; }
 
-/* ── Lane row colours ── */
-tr.lane-color-red    td { background-color: rgba(255, 0,   0,   0.20); }
-tr.lane-color-green  td { background-color: rgba(0,   160, 0,   0.20); }
-tr.lane-color-blue   td { background-color: rgba(0,   80,  255, 0.25); }
-tr.lane-color-yellow td { background-color: rgba(200, 160, 0,   0.25); }
-tr.lane-color-white  td { background-color: rgba(180, 180, 180, 0.15); }
-tr.lane-color-orange td { background-color: rgba(255, 140, 0,   0.25); }
+/* ── Lane row colours — pale version from DriverColors.css, dark text ── */
+tr.lane-color-red    td { background-color: rgb(255, 206, 206); color: #000; }
+tr.lane-color-green  td { background-color: rgb(198, 253, 200); color: #000; }
+tr.lane-color-blue   td { background-color: rgb(198, 200, 255); color: #000; }
+tr.lane-color-yellow td { background-color: rgb(254, 255, 173); color: #000; }
+tr.lane-color-white  td { background-color: rgb(185, 185, 185); color: #000; }
+tr.lane-color-orange td { background-color: rgb(252, 193, 138); color: #000; }
 
 /* ── Toggle switch ── */
 .lane-toggle {
@@ -134,13 +134,20 @@ tr.lane-color-orange td { background-color: rgba(255, 140, 0,   0.25); }
     transform: translateX(1.15rem);
 }
 
-/* Checked colour matches the lane */
-tr.lane-color-red    .lane-toggle input:checked + .toggle-track { background: #cc2222; }
-tr.lane-color-green  .lane-toggle input:checked + .toggle-track { background: #28a745; }
-tr.lane-color-blue   .lane-toggle input:checked + .toggle-track { background: #0066ff; }
-tr.lane-color-yellow .lane-toggle input:checked + .toggle-track { background: #b89000; }
-tr.lane-color-white  .lane-toggle input:checked + .toggle-track { background: #999; }
-tr.lane-color-orange .lane-toggle input:checked + .toggle-track { background: #e07000; }
+/* Toggle unchecked: dark — clearly OFF against the pale row */
+.lane-toggle input:not(:checked) + .toggle-track { background: #555; }
+
+/* Toggle checked: deep emphasized lane colour from DriverColors.css */
+tr.lane-color-red    .lane-toggle input:checked + .toggle-track { background: rgb(155, 0, 0); }
+tr.lane-color-green  .lane-toggle input:checked + .toggle-track { background: rgb(10, 102, 2); }
+tr.lane-color-blue   .lane-toggle input:checked + .toggle-track { background: rgb(8, 0, 155); }
+tr.lane-color-yellow .lane-toggle input:checked + .toggle-track { background: rgb(255, 224, 51); }
+tr.lane-color-white  .lane-toggle input:checked + .toggle-track { background: #444; }
+tr.lane-color-orange .lane-toggle input:checked + .toggle-track { background: rgb(201, 122, 4); }
+
+/* Dark dot for light-coloured toggle tracks */
+tr.lane-color-yellow .lane-toggle input:checked + .toggle-track::after { background: #333; }
+tr.lane-color-white  .lane-toggle input:checked + .toggle-track::after { background: #fff; }
 
 /* ── Buttons ── */
 .nr-btn {
@@ -155,28 +162,37 @@ tr.lane-color-orange .lane-toggle input:checked + .toggle-track { background: #e
 }
 
 .nr-btn:disabled {
-    opacity: 0.3;
     cursor: default;
 }
 
 .nr-btn-remove {
-    border: 1px solid #dc3545;
-    color: #dc3545;
+    background: #cc2222;
+    border: none;
+    color: #fff;
+    font-weight: bold;
 }
 
 .nr-btn-remove:hover:not(:disabled) {
-    background: #dc3545;
-    color: #fff;
+    background: #ff3333;
+}
+
+.nr-btn-remove:disabled {
+    background: #555;
 }
 
 .nr-btn-add {
-    border: 1px solid #28a745;
-    color: #28a745;
+    background: #228822;
+    border: none;
+    color: #fff;
+    font-weight: bold;
 }
 
 .nr-btn-add:hover:not(:disabled) {
-    background: #28a745;
-    color: #fff;
+    background: #33aa33;
+}
+
+.nr-btn-add:disabled {
+    background: #555;
 }
 
 /* ── Car thumbnail ── */

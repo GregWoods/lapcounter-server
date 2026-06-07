@@ -38,7 +38,7 @@
 }
 
 .drivername div {
-    font-size: 3.81rem;
+    font-size: 4.8rem;
     font-family: 'Selawik-SemiBold';
     text-align: center;
     white-space: nowrap;
@@ -60,11 +60,11 @@
 
 .drivercontent {
     flex-shrink: 0;
-    padding: 0.3em;
+    padding: 0;
 }
 
 .drivercard .time {
-    font-size: 6rem;
+    font-size: 4.8rem;
     text-align: center;
     font-family: 'Selawik-SemiBold';
     color: #333;
@@ -79,7 +79,7 @@
 }
 
 .drivercard .timelbl {
-    font-size: 3rem;
+    font-size: 2.6rem;
 }
 
 .spotlightme {
@@ -87,7 +87,7 @@
 }
 
 .fastestlaptime {
-    padding: 0.1em 0 0.3em 0;
+    padding: 0.1em 0 0.6em 0;
     border-radius: 0.3em;
 }
 
@@ -96,5 +96,5 @@
 }
 
 .lastlaptime {
-    margin-bottom: 0.9rem;
+    margin-bottom: 0.3rem;
 }
