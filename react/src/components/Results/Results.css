@@ -6,30 +6,57 @@
 }
 
 .results-page h1 {
-    font-size: 3.2rem;
+    font-size: 1.6rem;
     margin-bottom: 16px;
     letter-spacing: 0.04em;
 }
 
 .no-results {
-    font-size: 2.24rem;
+    font-size: 1.12rem;
     text-align: center;
     color: #888;
     margin-top: 40px;
 }
 
-.results-table-wrapper {
+.results-columns {
+    display: flex;
+    flex-direction: column;
+}
+
+.results-column {
     overflow-x: auto;
+}
+
+@media (orientation: landscape) {
+    .results-page {
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .results-columns {
+        flex: 1;
+        flex-direction: row;
+        gap: 40px;
+        overflow: hidden;
+    }
+
+    .results-column {
+        flex: 1 1 50%;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
 }
 
 .results-table {
     width: auto;
     border-collapse: collapse;
-    font-size: 2.24rem;
+    font-size: 1.12rem;
 }
 
 .results-table thead th {
-    font-size: 1.76rem;
+    font-size: 0.88rem;
     padding: 6px 12px 6px 0;
     color: #aaa;
     border-bottom: 2px solid #444;
@@ -66,7 +93,7 @@
 }
 
 .driver-name-cell {
-    font-size: 2.4rem;
+    font-size: 1.2rem;
     font-weight: bold;
     white-space: nowrap;
     padding-right: 20px !important;
@@ -75,18 +102,18 @@
 .total-col {
     min-width: 0;
     width: 1px;
-    padding-left: 1rem !important;
-    padding-right: 0.5rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.25rem !important;
     color: #fff;
     text-align: right !important;
 }
 
 .total-cell {
-    font-size: 2.4rem;
+    font-size: 1.2rem;
     font-weight: bold;
     color: #fff;
-    padding-left: 1rem !important;
-    padding-right: 0.5rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.25rem !important;
     text-align: right !important;
     white-space: nowrap;
 }
@@ -94,17 +121,17 @@
 .raced-col {
     min-width: 0;
     width: 1px;
-    padding-left: 1.5rem !important;
-    padding-right: 1.5rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
     text-align: right !important;
     color: #888;
     border-right: 1px solid #444;
 }
 
 .raced-cell {
-    font-size: 2.24rem;
-    padding-left: 1.5rem !important;
-    padding-right: 1.5rem !important;
+    font-size: 1.12rem;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
     text-align: right !important;
     color: #666;
     border-right: 1px solid #444;
@@ -113,14 +140,14 @@
 .race-col {
     min-width: 0;
     width: 1px;
-    padding-left: 1.5rem !important;
+    padding-left: 0.75rem !important;
     text-align: right !important;
 }
 
 .position-cell {
-    font-size: 2.24rem;
+    font-size: 1.12rem;
     font-weight: bold;
-    padding-left: 1.5rem !important;
+    padding-left: 0.75rem !important;
     text-align: right !important;
 }
 

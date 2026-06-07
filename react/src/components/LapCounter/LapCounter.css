@@ -5,19 +5,21 @@
     margin: 0;
 }
 
-html {
+/* Scoped to when #lapcounter is in the DOM (i.e. the /currentrace route). */
+html:has(#lapcounter) {
     /* 1rem = 16px at 1920px viewport width, scales proportionally with vw.
        Keeps all existing rem/em font sizes correct at any landscape resolution. */
     font-size: 0.833vw;
 }
 
-html, body {
+html:has(#lapcounter),
+html:has(#lapcounter) body {
     height: 100%;
     overflow: hidden;
     background: black;
 }
 
-body {
+html:has(#lapcounter) body {
     font-size: 2em;
 }
 
@@ -39,6 +41,7 @@ body {
     justify-content: center;
     overflow: hidden;
     padding-top: 0.625vw;
+    background-color: #1a1a1a;
 }
 
 #driverCardContainer {

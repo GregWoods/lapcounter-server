@@ -92,6 +92,14 @@ INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
     VALUES (8, 'Hannah', '', '', '', '') ON CONFLICT (id) DO NOTHING;
 INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
     VALUES (9, 'Jake', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (10, 'Liam', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (11, 'Mia', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (12, 'Noah', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
+    VALUES (13, 'Olivia', '', '', '', '') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO meetings (id, name, date, venue) 
@@ -113,6 +121,10 @@ INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 6, '
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 7, 'Greg')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 8, 'Hannah')  ON CONFLICT (meeting_id, driver_id) DO NOTHING;
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 9, 'Jake')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 10, 'Liam')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 11, 'Mia')    ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 12, 'Noah')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;
+INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 13, 'Olivia') ON CONFLICT (meeting_id, driver_id) DO NOTHING;
 
 
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 2, 1) ON CONFLICT (meeting_id, car_id) DO NOTHING;  -- red car → red lane
@@ -126,10 +138,10 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, NULL) ON CONFL
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time) 
-    VALUES (1, 3, 'FastestLap', 'Laps', 3, 'FastestLap', NULL, TIME '14:30:00', TIME '15:00:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time)
-    VALUES (2, 3, 'Points', 'Laps', 20, 'PositionPoints', '[10, 8, 6, 5, 4, 3]', TIME '15:00:00', NULL) ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time, state)
+    VALUES (1, 3, 'FastestLap', 'Laps', 3, 'FastestLap', NULL, TIME '14:30:00', TIME '15:00:00', 'Finished') ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, scoring_method, scoring_points, start_time, end_time, state)
+    VALUES (2, 3, 'Points', 'Laps', 20, 'PositionPoints', '[10, 8, 6, 5, 4, 3]', TIME '15:00:00', NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO lanes (lane_number, color, enabled) VALUES (1, 'red', true) ON CONFLICT (lane_number) DO NOTHING;
@@ -142,101 +154,85 @@ INSERT INTO lanes (lane_number, color, enabled) VALUES (6, 'white', true) ON CON
 
 INSERT INTO races (id, session_id, state) VALUES (1, 2, 'Finished') ON CONFLICT (id) DO NOTHING;
 INSERT INTO races (id, session_id, state) VALUES (2, 2, 'Finished') ON CONFLICT (id) DO NOTHING;
-INSERT INTO races (id, session_id, state) VALUES (3, 2, 'Running') ON CONFLICT (id) DO NOTHING;
-INSERT INTO races (id, session_id, state) VALUES (4, 2, 'NotStarted') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (1, 1, 2, 2, 1, 5,  9.789) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (2, 2, 2, 7, 2, 6, 10.345) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (3, 3, 2, 3, 3, 2, 10.123) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (4, 4, 2, 5, 4, 5, 11.345) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (5, 5, 2, 8, 5, 6, 10.789) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (6, 6, 2, 9, 6, 2, 11.567) ON CONFLICT (id) DO NOTHING;
-
--- Race 1: drivers rotated one lane (Frank→1, Alice→2, Bob→3, Charlie→4, Dave→5, Eve→6)
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (13, 6, 1, 2, 1, 7, 10.234) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (14, 1, 1, 7, 2, 6, 11.123) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (15, 2, 1, 3, 3, 7,  9.876) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (16, 3, 1, 5, 4, 5, 12.456) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (17, 4, 1, 8, 5, 6, 10.789) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES (18, 5, 1, 9, 6, 7,  9.234) ON CONFLICT (id) DO NOTHING;
-
--- Race 1 laps: Eve P1, Bob P2, Frank P3, Dave P4, Alice P5, Charlie P6
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES
-    (27, 13, 12.567, '2024-06-01 14:00:00'), (28, 13, 11.890, '2024-06-01 14:00:12'),
-    (29, 13, 10.234, '2024-06-01 14:00:24'), (30, 13, 13.456, '2024-06-01 14:00:36'),
-    (31, 13, 11.123, '2024-06-01 14:00:48'), (32, 13, 12.789, '2024-06-01 14:01:00'),
-    (33, 13, 10.678, '2024-06-01 14:01:12'),
-    (34, 14, 13.456, '2024-06-01 14:00:00'), (35, 14, 12.789, '2024-06-01 14:00:13'),
-    (36, 14, 11.123, '2024-06-01 14:00:26'), (37, 14, 14.567, '2024-06-01 14:00:39'),
-    (38, 14, 12.345, '2024-06-01 14:00:52'), (39, 14, 11.890, '2024-06-01 14:01:05'),
-    (40, 15, 12.345, '2024-06-01 14:00:00'), (41, 15, 10.678, '2024-06-01 14:00:12'),
-    (42, 15,  9.876, '2024-06-01 14:00:24'), (43, 15, 11.234, '2024-06-01 14:00:36'),
-    (44, 15, 10.456, '2024-06-01 14:00:48'), (45, 15, 13.567, '2024-06-01 14:01:00'),
-    (46, 15, 11.789, '2024-06-01 14:01:12'),
-    (47, 16, 14.567, '2024-06-01 14:00:00'), (48, 16, 13.890, '2024-06-01 14:00:14'),
-    (49, 16, 12.456, '2024-06-01 14:00:28'), (50, 16, 15.123, '2024-06-01 14:00:42'),
-    (51, 16, 13.678, '2024-06-01 14:00:56'),
-    (52, 17, 12.345, '2024-06-01 14:00:00'), (53, 17, 11.567, '2024-06-01 14:00:12'),
-    (54, 17, 10.789, '2024-06-01 14:00:24'), (55, 17, 13.234, '2024-06-01 14:00:36'),
-    (56, 17, 11.890, '2024-06-01 14:00:48'), (57, 17, 12.456, '2024-06-01 14:01:00'),
-    (58, 18, 11.567, '2024-06-01 14:00:00'), (59, 18, 10.456, '2024-06-01 14:00:12'),
-    (60, 18,  9.234, '2024-06-01 14:00:24'), (61, 18, 12.345, '2024-06-01 14:00:36'),
-    (62, 18, 10.678, '2024-06-01 14:00:48'), (63, 18, 11.234, '2024-06-01 14:01:00'),
-    (64, 18,  9.890, '2024-06-01 14:01:12')
+-- Race 1: Alice L1, Bob L2, Charlie L3, Dave L4, Eve L5, Frank L6  (Greg/Hannah/Jake sit out)
+-- Positions: P1 Bob(20L/9.567), P2 Eve(20L/9.876), P3 Alice(19L), P4 Dave(18L), P5 Frank(17L), P6 Charlie(16L)
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES
+    (1,  1, 1, 2, 1, 19, 10.234),  -- Alice   L1 P3
+    (2,  2, 1, 7, 2, 20,  9.567),  -- Bob     L2 P1
+    (3,  3, 1, 3, 3, 16, 12.123),  -- Charlie L3 P6
+    (4,  4, 1, 5, 4, 18, 10.789),  -- Dave    L4 P4
+    (5,  5, 1, 8, 5, 20,  9.876),  -- Eve     L5 P2
+    (6,  6, 1, 9, 6, 17, 11.234)   -- Frank   L6 P5
     ON CONFLICT (id) DO NOTHING;
 
--- Race 3: drivers rotated one lane forward, cars stay on their colour-matched lane
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (7,  2, 3, 2, 1) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (8,  3, 3, 7, 2) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (9,  4, 3, 3, 3) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (10, 5, 3, 5, 4) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (11, 6, 3, 8, 5) ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane) VALUES (12, 1, 3, 9, 6) ON CONFLICT (id) DO NOTHING;
+-- Race 2: Greg L1, Hannah L2, Jake L3, Alice L4, Bob L5, Charlie L6  (Dave/Eve/Frank sit out)
+-- Positions: P1 Alice(20L/9.456), P2 Jake(20L/9.789), P3 Greg(19L), P4 Bob(18L), P5 Hannah(17L), P6 Charlie(16L)
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES
+    (7,  7, 2, 2, 1, 19, 10.123),  -- Greg    L1 P3
+    (8,  8, 2, 7, 2, 17, 11.345),  -- Hannah  L2 P5
+    (9,  9, 2, 3, 3, 20,  9.789),  -- Jake    L3 P2
+    (10, 1, 2, 5, 4, 20,  9.456),  -- Alice   L4 P1
+    (11, 2, 2, 8, 5, 18, 10.567),  -- Bob     L5 P4
+    (12, 3, 2, 9, 6, 16, 12.456)   -- Charlie L6 P6
+    ON CONFLICT (id) DO NOTHING;
 
--- sample driver_laps data for the race which has already finished
+-- Race 1 laps (sample — not all 20 per driver)
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES
+    -- Alice (dr 1, fastest 10.234)
+    (1,  1, 13.456, '2030-01-01 15:00:00'), (2,  1, 11.789, '2030-01-01 15:00:13'),
+    (3,  1, 10.234, '2030-01-01 15:00:25'), (4,  1, 12.567, '2030-01-01 15:00:36'),
+    (5,  1, 11.890, '2030-01-01 15:00:48'),
+    -- Bob (dr 2, fastest 9.567)
+    (6,  2, 12.456, '2030-01-01 15:00:00'), (7,  2, 10.789, '2030-01-01 15:00:12'),
+    (8,  2,  9.567, '2030-01-01 15:00:23'), (9,  2, 11.234, '2030-01-01 15:00:33'),
+    (10, 2, 10.890, '2030-01-01 15:00:44'), (11, 2, 13.123, '2030-01-01 15:00:55'),
+    -- Charlie (dr 3, fastest 12.123)
+    (12, 3, 15.456, '2030-01-01 15:00:00'), (13, 3, 13.789, '2030-01-01 15:00:15'),
+    (14, 3, 12.123, '2030-01-01 15:00:29'), (15, 3, 14.567, '2030-01-01 15:00:41'),
+    (16, 3, 13.234, '2030-01-01 15:00:56'),
+    -- Dave (dr 4, fastest 10.789)
+    (17, 4, 13.456, '2030-01-01 15:00:00'), (18, 4, 12.234, '2030-01-01 15:00:13'),
+    (19, 4, 10.789, '2030-01-01 15:00:25'), (20, 4, 13.567, '2030-01-01 15:00:36'),
+    (21, 4, 12.789, '2030-01-01 15:00:50'),
+    -- Eve (dr 5, fastest 9.876)
+    (22, 5, 11.234, '2030-01-01 15:00:00'), (23, 5, 10.567, '2030-01-01 15:00:11'),
+    (24, 5,  9.876, '2030-01-01 15:00:22'), (25, 5, 12.345, '2030-01-01 15:00:32'),
+    (26, 5, 11.123, '2030-01-01 15:00:44'), (27, 5, 10.789, '2030-01-01 15:00:55'),
+    -- Frank (dr 6, fastest 11.234)
+    (28, 6, 14.567, '2030-01-01 15:00:00'), (29, 6, 12.890, '2030-01-01 15:00:15'),
+    (30, 6, 11.234, '2030-01-01 15:00:28'), (31, 6, 13.678, '2030-01-01 15:00:39'),
+    (32, 6, 12.456, '2030-01-01 15:00:53')
+    ON CONFLICT (id) DO NOTHING;
 
--- Driver 1, 5 laps completed
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (1, 1, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (2, 1, 11.567, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (3, 1, 9.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (4, 1, 14.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (5, 1, 16.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
-
---Driver 2, 6 laps completed
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (6, 2, 13.456, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (7, 2, 12.678, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (8, 2, 11.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (9, 2, 10.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (10, 2, 14.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (11, 2, 15.789, '2024-06-01 14:30:50') ON CONFLICT (id) DO NOTHING;
-
---Driver 3, 2 laps completed
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (12, 3, 10.123, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (13, 3, 11.456, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-
--- Driver 4, 5 laps completed
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (14, 4, 13.567, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (15, 4, 12.789, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (16, 4, 11.345, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (17, 4, 14.678, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (18, 4, 15.789, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
-
--- Driver 5, 6 laps completed
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (19, 5, 12.123, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (20, 5, 11.456, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (21, 5, 10.789, '2024-06-01 14:30:20') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (22, 5, 13.345, '2024-06-01 14:30:30') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (23, 5, 14.678, '2024-06-01 14:30:40') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (24, 5, 15.789, '2024-06-01 14:30:50') ON CONFLICT (id) DO NOTHING;
-
--- Driver 6, 2 laps completed
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (25, 6, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
-INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES (26, 6, 11.567, '2024-06-01 14:30:10') ON CONFLICT (id) DO NOTHING;
-
-
--- leave driver laps empty for the current race... they will be generated in code
--- INSERT INTO driver_lap (driver_race_id, lap_time, created_at) VALUES (1, 12.345, '2024-06-01 14:30:00') ON CONFLICT (id) DO NOTHING;
+-- Race 2 laps (sample — not all 20 per driver)
+INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES
+    -- Greg (dr 7, fastest 10.123)
+    (33, 7, 13.234, '2030-01-01 16:00:00'), (34, 7, 11.456, '2030-01-01 16:00:13'),
+    (35, 7, 10.123, '2030-01-01 16:00:24'), (36, 7, 12.567, '2030-01-01 16:00:34'),
+    (37, 7, 11.890, '2030-01-01 16:00:47'),
+    -- Hannah (dr 8, fastest 11.345)
+    (38, 8, 14.456, '2030-01-01 16:00:00'), (39, 8, 13.123, '2030-01-01 16:00:14'),
+    (40, 8, 11.345, '2030-01-01 16:00:27'), (41, 8, 14.567, '2030-01-01 16:00:38'),
+    (42, 8, 13.890, '2030-01-01 16:00:53'),
+    -- Jake (dr 9, fastest 9.789)
+    (43, 9, 11.890, '2030-01-01 16:00:00'), (44, 9, 10.567, '2030-01-01 16:00:12'),
+    (45, 9,  9.789, '2030-01-01 16:00:22'), (46, 9, 12.345, '2030-01-01 16:00:32'),
+    (47, 9, 10.234, '2030-01-01 16:00:44'), (48, 9, 11.567, '2030-01-01 16:00:55'),
+    -- Alice R2 (dr 10, fastest 9.456)
+    (49, 10, 12.567, '2030-01-01 16:00:00'), (50, 10, 10.345, '2030-01-01 16:00:13'),
+    (51, 10,  9.456, '2030-01-01 16:00:23'), (52, 10, 11.234, '2030-01-01 16:00:33'),
+    (53, 10, 10.789, '2030-01-01 16:00:44'), (54, 10, 12.123, '2030-01-01 16:00:55'),
+    -- Bob R2 (dr 11, fastest 10.567)
+    (55, 11, 13.789, '2030-01-01 16:00:00'), (56, 11, 12.123, '2030-01-01 16:00:14'),
+    (57, 11, 10.567, '2030-01-01 16:00:26'), (58, 11, 13.456, '2030-01-01 16:00:37'),
+    (59, 11, 11.890, '2030-01-01 16:00:51'),
+    -- Charlie R2 (dr 12, fastest 12.456)
+    (60, 12, 15.678, '2030-01-01 16:00:00'), (61, 12, 13.890, '2030-01-01 16:00:16'),
+    (62, 12, 12.456, '2030-01-01 16:00:30'), (63, 12, 15.123, '2030-01-01 16:00:42'),
+    (64, 12, 14.567, '2030-01-01 16:00:57')
+    ON CONFLICT (id) DO NOTHING;
 
 -- Reset sequences so that auto-generated IDs don't collide with explicitly inserted sample data
 SELECT setval(pg_get_serial_sequence('car_manufacturers', 'id'), MAX(id)) FROM car_manufacturers;

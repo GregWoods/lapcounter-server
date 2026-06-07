@@ -159,36 +159,30 @@ def get_active_meeting_id(dbsession):
 def get_active_session(dbsession):
     """Return the active race session for the active meeting.
 
-    'Active' = earliest race session in the active meeting that has no races yet,
-    or has at least one non-Finished race. Falls back to the last session if
-    all sessions are fully finished.
+    Priority:
+    1. Most recent InProgress session (race day is underway).
+    2. Earliest NotStarted session (next one coming up — multiple may be pre-planned).
+    Finished sessions are never returned.
     """
-    from sqlalchemy import text
     meeting_id = get_active_meeting_id(dbsession)
 
-    sessions = dbsession.exec(
+    in_progress = dbsession.exec(
         select(RaceSession)
-        .where(RaceSession.meeting_id == meeting_id)
+        .where(RaceSession.meeting_id == meeting_id, RaceSession.state == 'InProgress')
+        .order_by(RaceSession.id.desc())
+    ).first()
+    if in_progress:
+        return in_progress
+
+    not_started = dbsession.exec(
+        select(RaceSession)
+        .where(RaceSession.meeting_id == meeting_id, RaceSession.state == 'NotStarted')
         .order_by(RaceSession.id.asc())
-    ).all()
+    ).first()
+    if not_started:
+        return not_started
 
-    if not sessions:
-        raise HTTPException(status_code=404, detail="No sessions found for active meeting")
-
-    for s in sessions:
-        races = dbsession.exec(select(Race).where(Race.session_id == s.id)).all()
-        has_unfinished = any(r.state != 'Finished' for r in races)
-
-        if has_unfinished:
-            return s  # always return if work is in progress
-
-        # Session with end_time set and all races finished = deliberately closed, skip it
-        if s.end_time is not None:
-            continue
-
-        return s  # open-ended session (no end_time), no unfinished races — this is next up
-
-    return sessions[-1]  # fallback: all sessions closed, return last
+    raise HTTPException(status_code=404, detail="No active or upcoming sessions found for this meeting")
 
 
 def compute_session_state(races) -> str:
@@ -202,11 +196,7 @@ def compute_session_state(races) -> str:
 
 
 def session_with_state(race_session, dbsession) -> RaceSessionWithState:
-    races = dbsession.exec(select(Race).where(Race.session_id == race_session.id)).all()
-    return RaceSessionWithState(
-        **race_session.model_dump(),
-        state=compute_session_state(races)
-    )
+    return RaceSessionWithState(**race_session.model_dump())
 
 
 def load_pending_race(dbsession):

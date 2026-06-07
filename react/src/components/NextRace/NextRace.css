@@ -1,182 +1,194 @@
-.nextrace-container {
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-  background-color: #f5f5f5;
+html:has(#nextrace-page) body {
+    background: #111;
 }
 
-.nextrace-container h1 {
-  color: #333;
-
-  margin-bottom: 24px;
-  text-align: center;
+/* ── Page shell ── */
+#nextrace-page {
+    background: #111;
+    color: #fff;
+    min-height: 100vh;
+    padding: 1rem 2rem;
+    box-sizing: border-box;
+    font-family: "Selawik", sans-serif;
 }
 
-.drivers-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+/* ── Columns ── */
+.nr-columns {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
 }
 
-.driver-card {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  background-color: #fff;
+.nr-col h1 {
+    font-size: 1.6rem;
+    margin: 0 0 0.75rem 0;
+    letter-spacing: 0.04em;
 }
 
-.driver-card h2 {
-  margin-top: 0;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 8px;
-  font-size: 1.4rem;
+/* ── Landscape: side-by-side ── */
+@media (orientation: landscape) {
+    #nextrace-page {
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nr-columns {
+        flex: 1;
+        flex-direction: row;
+        gap: 3rem;
+        overflow: hidden;
+    }
+
+    .nr-col {
+        flex: 1 1 50%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .others-scroll {
+        flex: 1;
+        overflow-y: auto;
+    }
 }
 
-.driver-stats {
-  margin-top: 12px;
+/* ── Tables ── */
+.nr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1rem;
 }
 
-.lane-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin: 8px 0;
+.nr-table thead th {
+    font-size: 0.8rem;
+    color: #aaa;
+    border-bottom: 2px solid #444;
+    padding: 0.4rem 0.75rem;
+    text-align: left;
+    white-space: nowrap;
 }
 
-.lane-stats span {
-  background-color: #f5f5f5;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+.nr-table tbody tr {
+    border-bottom: 1px solid #2a2a2a;
 }
 
-.sit-out-warning {
-  color: #d32f2f;
-  font-weight: bold;
-  margin-top: 8px;
+.nr-table tbody td {
+    padding: 0.3rem 0.75rem;
+    vertical-align: middle;
 }
 
-.loading, .error {
-  text-align: center;
-  padding: 40px;
-  font-size: 1.2rem;
+/* ── Column sizing ── */
+.col-toggle { width: 4rem; }
+.col-car    { width: 5rem; }
+.col-raced  { width: 3rem; text-align: right; padding-right: 1.5rem !important; }
+.col-action { width: 3rem; text-align: center; }
+
+/* ── Lane row colours ── */
+tr.lane-color-red    td { background-color: rgba(255, 0,   0,   0.20); }
+tr.lane-color-green  td { background-color: rgba(0,   160, 0,   0.20); }
+tr.lane-color-blue   td { background-color: rgba(0,   80,  255, 0.25); }
+tr.lane-color-yellow td { background-color: rgba(200, 160, 0,   0.25); }
+tr.lane-color-white  td { background-color: rgba(180, 180, 180, 0.15); }
+tr.lane-color-orange td { background-color: rgba(255, 140, 0,   0.25); }
+
+/* ── Toggle switch ── */
+.lane-toggle {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
 }
 
-.error {
-  color: #d32f2f;
+.lane-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
 }
 
-
-
-/* Lane color styles */
-tr.lane-color-red td {
-  background-color: rgba(255, 0, 0, 0.25);
+.toggle-track {
+    display: inline-block;
+    width: 2.4rem;
+    height: 1.25rem;
+    background: #555;
+    border-radius: 0.625rem;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
 }
 
-tr.lane-color-green td {
-  background-color: rgba(0, 128, 0, 0.25);
+.toggle-track::after {
+    content: '';
+    position: absolute;
+    left: 0.15rem;
+    top: 0.15rem;
+    width: 0.95rem;
+    height: 0.95rem;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
 }
 
-tr.lane-color-blue td {
-  background-color: rgba(0, 0, 255, 0.25);
+.lane-toggle input:checked + .toggle-track::after {
+    transform: translateX(1.15rem);
 }
 
-tr.lane-color-yellow td {
-  background-color: rgba(255, 255, 0, 0.3);
+/* Checked colour matches the lane */
+tr.lane-color-red    .lane-toggle input:checked + .toggle-track { background: #cc2222; }
+tr.lane-color-green  .lane-toggle input:checked + .toggle-track { background: #28a745; }
+tr.lane-color-blue   .lane-toggle input:checked + .toggle-track { background: #0066ff; }
+tr.lane-color-yellow .lane-toggle input:checked + .toggle-track { background: #b89000; }
+tr.lane-color-white  .lane-toggle input:checked + .toggle-track { background: #999; }
+tr.lane-color-orange .lane-toggle input:checked + .toggle-track { background: #e07000; }
+
+/* ── Buttons ── */
+.nr-btn {
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0.25rem 0.65rem;
+    border-radius: 0.3rem;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
 }
 
-tr.lane-color-white td {
-  background-color: rgba(120, 120, 120, 0.25);
+.nr-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 
-tr.lane-color-orange td {
-  background-color: rgba(255, 165, 0, 0.3);
+.nr-btn-remove {
+    border: 1px solid #dc3545;
+    color: #dc3545;
 }
 
-/* Customize toggle colors based on lane color */
-tr.lane-color-red .form-check-input:checked {
-  background-color: rgb(220, 53, 69);
-  border-color: rgb(220, 53, 69);
+.nr-btn-remove:hover:not(:disabled) {
+    background: #dc3545;
+    color: #fff;
 }
 
-tr.lane-color-green .form-check-input:checked {
-  background-color: rgb(40, 167, 69);
-  border-color: rgb(40, 167, 69);
+.nr-btn-add {
+    border: 1px solid #28a745;
+    color: #28a745;
 }
 
-tr.lane-color-blue .form-check-input:checked {
-  background-color: rgb(0, 123, 255);
-  border-color: rgb(0, 123, 255);
+.nr-btn-add:hover:not(:disabled) {
+    background: #28a745;
+    color: #fff;
 }
 
-tr.lane-color-yellow .form-check-input:checked {
-  background-color: rgb(255, 193, 7);
-  border-color: rgb(255, 193, 7);
-}
-
-tr.lane-color-white .form-check-input:checked {
-  background-color: rgb(120, 120, 120);
-  border-color: rgb(120, 120, 120);
-}
-
-tr.lane-color-orange .form-check-input:checked {
-  background-color: rgb(253, 126, 20);
-  border-color: rgb(253, 126, 20);
-}
-
-/* Optional: Style the toggle switch when unchecked */
-.form-check-input:not(:checked) {
-  background-color: #f8f9fa;
-  border-color: #ced4da;
-}
-
-.sit-out-col, .completed-races-col, .add-driver-col {
-  text-align: right;
-  padding-right: 1rem;
-}
-
-/* Edge-to-edge row colour with inset content */
-.container-fluid.px-0 > h1 {
-  padding-left: 2rem;
-  padding-right: 2rem;
-}
-
-.lane-assignments-table td,
-.lane-assignments-table th,
-.other-drivers-table td,
-.other-drivers-table th {
-  padding: 2px 12px;
-  vertical-align: middle;
-}
-
-.lane-assignments-table td:first-child,
-.lane-assignments-table th:first-child,
-.other-drivers-table td:first-child,
-.other-drivers-table th:first-child {
-  padding-left: 2rem;
-}
-
-.lane-assignments-table td:last-child,
-.lane-assignments-table th:last-child,
-.other-drivers-table td:last-child,
-.other-drivers-table th:last-child {
-  padding-right: 2rem;
-}
-
-.car-image-col {
-  padding: 2px 12px;
-  vertical-align: middle;
-}
-
+/* ── Car thumbnail ── */
 .car-thumbnail {
-  height: 80px;
-  width: auto;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: opacity 0.15s;
+    height: 2.5rem;
+    width: auto;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: opacity 0.15s;
+    display: block;
 }
 
 .car-thumbnail:hover {
-  opacity: 0.75;
+    opacity: 0.75;
 }

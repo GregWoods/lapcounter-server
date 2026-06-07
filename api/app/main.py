@@ -291,6 +291,21 @@ def start_race(race_id: int, dbsession: SessionDep):
         raise HTTPException(status_code=404, detail="Race not found")
     race.state = 'Running'
     dbsession.add(race)
+    race_session = dbsession.get(RaceSession, race.session_id)
+    if race_session and race_session.state == 'NotStarted':
+        race_session.state = 'InProgress'
+        dbsession.add(race_session)
+    dbsession.commit()
+    return {"ok": True}
+
+
+@app.post("/sessions/{session_id}/finish")
+def finish_session(session_id: int, dbsession: SessionDep):
+    race_session = dbsession.get(RaceSession, session_id)
+    if not race_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    race_session.state = 'Finished'
+    dbsession.add(race_session)
     dbsession.commit()
     return {"ok": True}
 

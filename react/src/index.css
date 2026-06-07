@@ -23,6 +23,10 @@
 
 
 
+html {
+  font-size: 1.666vw; /* 32px at 1920px — TV display default */
+}
+
 body {
   margin: 0;
   font-family: "Selawik";

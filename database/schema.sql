@@ -112,7 +112,8 @@ CREATE TABLE sessions (
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,
-    end_time TIME NULL
+    end_time TIME NULL,
+    state VARCHAR(20) NOT NULL DEFAULT 'NotStarted' CHECK (state IN ('NotStarted', 'InProgress', 'Finished'))
 );
 
 

@@ -91,7 +91,7 @@ class MeetingCar(SQLModel, table=True):
     lane: Optional[int] = Field(default=None)   # default lane assignment for this car at this meeting (1-6, nullable for spare cars)
 
 
-class RaceSession(SQLModel, table=True): 
+class RaceSession(SQLModel, table=True):
     __tablename__ = "sessions"  #To be renamed to race_sessions
     id: Optional[int] = Field(default=None, primary_key=True)
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id")
@@ -102,6 +102,7 @@ class RaceSession(SQLModel, table=True):
     scoring_points: Optional[str]   # JSON string with points array used for PositionPoints (and FastestLap points?)
     start_time: Optional[time]
     end_time: Optional[time]
+    state: str = Field(default='NotStarted')  # 'NotStarted', 'InProgress', 'Finished'
 
 
 class Race(SQLModel, table=True):

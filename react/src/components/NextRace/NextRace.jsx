@@ -1,8 +1,6 @@
-import 'bootstrap/dist/css/bootstrap.min.css';
 import './NextRace.css';
 import { useState } from 'react';
 import { useLoaderData } from 'react-router-dom';
-import { Table, Container, Form, Button} from 'react-bootstrap';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
 
 
@@ -66,107 +64,98 @@ function NextRace() {
     };
 
     return (
-        <Container fluid className="px-0">
-            <h1>Next Race #{next_race_setup.race_number}</h1>
+        <div id="nextrace-page">
+            <div className="nr-columns">
 
-            <Table responsive className="lane-assignments-table">
-                <colgroup>
-                    <col style={{width: "10%"}} />
-                    <col style={{width: "10%"}} />
-                    <col style={{width: "60%"}} />
-                    <col style={{width: "10%"}} />
-                    <col style={{width: "10%"}} />
-                </colgroup>
-                <thead>
-                    <tr>
-                        <th>Lane</th>
-                        <th>Car</th>
-                        <th>Driver</th>
-                        <th>Raced</th>
-                        <th>Sit&#8209;out</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {laneAssignments.map(driver => (
-                    <tr key={driver.lane_number} className={`lane-color-${driver.lane_color}`}>
-                        <td className="lane-enabled-col">
-                            <Form.Check
-                                type="switch"
-                                id={`lane-enabled-switch-${driver.lane_number}`}
-                                checked={driver.lane_enabled}
-                                onChange={(e) => handleLaneToggle(driver.lane_number, e.target.checked)}
-                                className="lane-toggle"
-                            />
-                        </td>
-                        <td className="car-image-col">
-                            {driver.id > 0 && (
-                                <img
-                                    src={carImageUrl(driver.car_picture)}
-                                    alt="Car"
-                                    className="car-thumbnail"
-                                    onClick={() => setCarSelectorLane(driver.lane_number)}
-                                    onError={(e) => { e.target.onerror = null; e.target.src = defaultCarImg; }}
-                                />
-                            )}
-                        </td>
-                        <td className="driver-name-col">{driver.driver_name}</td>
-                        <td className="completed-races-col">{driver.completed_races}</td>
-                        <td className="sit-out-col">
-                            <Button
-                                variant="outline-danger"
-                                size="sm"
-                                className="remove-button"
-                                aria-label="Remove driver"
-                                disabled={driver.id === 0}
-                                onClick={() => handleRemoveDriver(driver.lane_number)}
-                            >
-                                ×
-                            </Button>
-                        </td>
-                    </tr>
-                ))}
-                </tbody>
-            </Table>
+                <div className="nr-col nr-col-assigned">
+                    <h1>Next Race #{next_race_setup.race_number}</h1>
+                    <table className="nr-table">
+                        <thead>
+                            <tr>
+                                <th className="col-toggle">Lane</th>
+                                <th className="col-car">Car</th>
+                                <th className="col-name">Driver</th>
+                                <th className="col-raced">Raced</th>
+                                <th className="col-action"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {laneAssignments.map(driver => (
+                            <tr key={driver.lane_number} className={`lane-color-${driver.lane_color}`}>
+                                <td className="col-toggle">
+                                    <label className="lane-toggle">
+                                        <input
+                                            type="checkbox"
+                                            role="switch"
+                                            checked={driver.lane_enabled}
+                                            onChange={(e) => handleLaneToggle(driver.lane_number, e.target.checked)}
+                                        />
+                                        <span className="toggle-track" />
+                                    </label>
+                                </td>
+                                <td className="col-car">
+                                    {driver.id > 0 && (
+                                        <img
+                                            src={carImageUrl(driver.car_picture)}
+                                            alt="Car"
+                                            className="car-thumbnail"
+                                            onClick={() => setCarSelectorLane(driver.lane_number)}
+                                            onError={(e) => { e.target.onerror = null; e.target.src = defaultCarImg; }}
+                                        />
+                                    )}
+                                </td>
+                                <td className="col-name">{driver.driver_name}</td>
+                                <td className="col-raced">{driver.completed_races}</td>
+                                <td className="col-action">
+                                    <button
+                                        className="nr-btn nr-btn-remove"
+                                        aria-label="Remove driver"
+                                        disabled={driver.id === 0}
+                                        onClick={() => handleRemoveDriver(driver.lane_number)}
+                                    >
+                                        ×
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
 
-            <h1>Other Drivers</h1>
+                <div className="nr-col nr-col-others">
+                    <h1>Other Drivers</h1>
+                    <div className="others-scroll">
+                        <table className="nr-table">
+                            <thead>
+                                <tr>
+                                    <th className="col-name">Driver</th>
+                                    <th className="col-raced">Raced</th>
+                                    <th className="col-action">Add</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {otherDrivers.map(driver => (
+                                <tr key={driver.id}>
+                                    <td className="col-name">{driver.driver_name}</td>
+                                    <td className="col-raced">{driver.completed_races}</td>
+                                    <td className="col-action">
+                                        <button
+                                            className="nr-btn nr-btn-add"
+                                            aria-label="Add driver"
+                                            disabled={!hasFreeSlot}
+                                            onClick={() => handleAddDriver(driver.id)}
+                                        >
+                                            +
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
 
-            <Table responsive className="other-drivers-table">
-                <colgroup>
-                    <col style={{width: "00%"}} />
-                    <col style={{width: "80%"}} />
-                    <col style={{width: "10%"}} />
-                    <col style={{width: "10%"}} />
-                </colgroup>
-                <thead>
-                    <tr>
-                        <td></td>
-                        <th>Driver</th>
-                        <th>Raced</th>
-                        <th className="add-driver-col">Add</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {otherDrivers.map(driver => (
-                    <tr key={driver.id}>
-                        <td></td>
-                        <td className="driver-name-col">{driver.driver_name}</td>
-                        <td className="completed-races-col">{driver.completed_races}</td>
-                        <td className="add-driver-col">
-                            <Button
-                                variant="outline-success"
-                                size="sm"
-                                className="add-button"
-                                aria-label="Add driver"
-                                disabled={!hasFreeSlot}
-                                onClick={() => handleAddDriver(driver.id)}
-                            >
-                                +
-                            </Button>
-                        </td>
-                    </tr>
-                ))}
-                </tbody>
-            </Table>
+            </div>
 
             <CarSelectorModal
                 showMe={carSelectorLane !== null}
@@ -174,8 +163,7 @@ function NextRace() {
                 carImgListUrl={`${import.meta.env.VITE_API_URL}/api/cars`}
                 onCarSelected={handleCarSelected}
             />
-
-        </Container>
+        </div>
     );
 }
 
