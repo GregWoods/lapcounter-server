@@ -1,18 +1,14 @@
-import 'bootstrap/dist/css/bootstrap.min.css';
-import { Modal, Button } from 'react-bootstrap';
+import './StartRaceModal.css';
 
 function StartRaceModal({ showMe, onStart, onClose }) {
+    if (!showMe) return null;
     return (
-        <Modal show={showMe} onHide={onClose} centered size="xl">
-            <Modal.Header closeButton>
-                <Modal.Title>Next Race</Modal.Title>
-            </Modal.Header>
-            <Modal.Body className="text-center">
-                <Button variant="success" size="lg" onClick={onStart}>
-                    Start
-                </Button>
-            </Modal.Body>
-        </Modal>
+        <div className="start-race-overlay" onClick={onClose}>
+            <div className="start-race-modal" onClick={e => e.stopPropagation()}>
+                <h2>Next Race</h2>
+                <button className="start-race-btn" onClick={onStart}>Start</button>
+            </div>
+        </div>
     );
 }
 
