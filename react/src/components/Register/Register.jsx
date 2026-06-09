@@ -42,6 +42,24 @@ const Register = () => {
         }
     };
 
+    const handleSelectExisting = async (driverId) => {
+        setSelectedDriverId(driverId);
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/drivers/${driverId}/meetings`);
+            if (res.ok) {
+                const registeredIds = await res.json();
+                const upcomingIds = new Set(meetings.map(m => m.id));
+                setSelectedMeetingIds(new Set(registeredIds.filter(id => upcomingIds.has(id))));
+            }
+        } catch {
+            setSelectedMeetingIds(new Set());
+        } finally {
+            setLoading(false);
+        }
+        setStep('meetings');
+    };
+
     const toggleMeeting = (id) => {
         setSelectedMeetingIds(prev => {
             const next = new Set(prev);
@@ -155,7 +173,8 @@ const Register = () => {
                                 <button
                                     key={d.id}
                                     className="register-driver-btn"
-                                    onClick={() => { setSelectedDriverId(d.id); setStep('meetings'); }}
+                                    onClick={() => handleSelectExisting(d.id)}
+                                    disabled={loading}
                                 >
                                     {d.first_name}{d.last_name ? ` ${d.last_name}` : ''}
                                 </button>

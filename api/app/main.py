@@ -207,6 +207,14 @@ def search_drivers(q: str, dbsession: SessionDep) -> list[Driver]:
         select(Driver).where(Driver.first_name.ilike(q))
     ).all()
 
+@app.get("/drivers/{driver_id}/meetings")
+def get_driver_meeting_ids(driver_id: int, dbsession: SessionDep) -> list[int]:
+    """Return the meeting IDs the driver is registered for."""
+    rows = dbsession.exec(
+        select(MeetingDriver.meeting_id).where(MeetingDriver.driver_id == driver_id)
+    ).all()
+    return list(rows)
+
 @app.get("/drivers/{driver_id}")
 def get_driver(driver_id: int, dbsession: SessionDep) -> Driver:
     driver = dbsession.get(Driver, driver_id)
