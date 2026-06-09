@@ -128,19 +128,18 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
             </div>
             <div className="admin-form-row">
                 <label>End condition</label>
-                <div className="admin-form-inline">
-                    <select value={form.end_condition} onChange={e => set('end_condition', e.target.value)}>
-                        {END_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <input
-                        type="number"
-                        className="admin-input-narrow"
-                        value={form.end_condition_info || ''}
-                        onChange={e => set('end_condition_info', parseInt(e.target.value) || null)}
-                        placeholder={form.end_condition === 'Laps' ? '# laps' : '# min'}
-                        min="1"
-                    />
-                </div>
+                <select value={form.end_condition} onChange={e => set('end_condition', e.target.value)}>
+                    {END_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+            </div>
+            <div className="admin-form-row">
+                <label>{form.end_condition === 'Laps' ? 'Laps' : 'Minutes'}</label>
+                <input
+                    type="number"
+                    value={form.end_condition_info || ''}
+                    onChange={e => set('end_condition_info', parseInt(e.target.value) || null)}
+                    min="1"
+                />
             </div>
             <div className="admin-form-row">
                 <label>Scoring method</label>
