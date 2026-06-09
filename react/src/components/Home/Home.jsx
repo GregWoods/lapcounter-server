@@ -9,6 +9,7 @@ function Home() {
                 <Link to="/currentrace" className="home-button">Current Race</Link>
                 <Link to="/nextrace" className="home-button">Next Race</Link>
                 <Link to="/results" className="home-button">Results</Link>
+                <Link to="/register" className="home-button">Driver Registration</Link>
             </nav>
         </div>
     );

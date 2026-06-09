@@ -3,6 +3,7 @@ import App from './App.jsx'
 import NextRace from './components/NextRace/NextRace.jsx'
 import Home from './components/Home/Home.jsx'
 import Results from './components/Results/Results.jsx'
+import Register from './components/Register/Register.jsx'
 
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
@@ -42,6 +43,19 @@ const router = createBrowserRouter([
                 return res.json();
             } catch {
                 return { races: [], drivers: [] };
+            }
+        },
+    },
+    {
+        path: "register",
+        element: <Register />,
+        loader: async () => {
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/meetings/upcoming`);
+                if (!res.ok) return [];
+                return res.json();
+            } catch {
+                return [];
             }
         },
     },

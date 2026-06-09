@@ -1,6 +1,7 @@
 import logging
 import traceback
 import random
+from collections import Counter
 from datetime import date as date_type
 from typing import List
 from fastapi import HTTPException
@@ -403,6 +404,41 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
             dbsession.commit()
 
     return load_pending_race(dbsession)
+
+
+def recalculate_meeting_driver_names(dbsession, meeting_id: int):
+    """Recompute disambiguated driver_name for every driver in a meeting.
+
+    Normally just first_name. Adds last initial when two drivers share a first name,
+    e.g. two drivers named Jake become 'Jake W' and 'Jake H'.
+    """
+    meeting_drivers = dbsession.exec(
+        select(MeetingDriver).where(MeetingDriver.meeting_id == meeting_id)
+    ).all()
+    if not meeting_drivers:
+        return
+
+    driver_ids = [md.driver_id for md in meeting_drivers]
+    drivers = dbsession.exec(select(Driver).where(Driver.id.in_(driver_ids))).all()
+    driver_map = {d.id: d for d in drivers}
+
+    first_name_counts = Counter(
+        driver_map[md.driver_id].first_name.lower()
+        for md in meeting_drivers
+        if md.driver_id in driver_map
+    )
+
+    for md in meeting_drivers:
+        driver = driver_map.get(md.driver_id)
+        if not driver:
+            continue
+        if first_name_counts[driver.first_name.lower()] > 1 and driver.last_name:
+            md.driver_name = f"{driver.first_name} {driver.last_name[0].upper()}"
+        else:
+            md.driver_name = driver.first_name
+        dbsession.add(md)
+
+    dbsession.commit()
 
 
 def save_pending_race(dbsession, setup, race_session):

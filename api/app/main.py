@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, find_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, find_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names
 from points import calculate_race_points
 
 settings = Settings()
@@ -94,7 +94,7 @@ def get_active_meeting_endpoint(dbsession: SessionDep):
 @app.get("/meetings/upcoming")
 def get_upcoming_meetings(dbsession: SessionDep):
     try:
-        meetings = dbsession.exec(select(Meeting).where(Meeting.date >= datetime.now())).all()
+        meetings = dbsession.exec(select(Meeting).where(Meeting.date >= date.today())).all()
         return meetings
     except Exception as e:
         logger.error(f"Error retrieving meetings: {str(e)}")
@@ -200,6 +200,13 @@ def get_all_drivers(
     drivers = dbsession.exec(select(Driver).offset(offset).limit(limit)).all()
     return drivers
 
+@app.get("/drivers/search")
+def search_drivers(q: str, dbsession: SessionDep) -> list[Driver]:
+    """Case-insensitive first-name search for the self-registration flow."""
+    return dbsession.exec(
+        select(Driver).where(Driver.first_name.ilike(q))
+    ).all()
+
 @app.get("/drivers/{driver_id}")
 def get_driver(driver_id: int, dbsession: SessionDep) -> Driver:
     driver = dbsession.get(Driver, driver_id)
@@ -214,6 +221,35 @@ def delete_driver(driver_id: int, dbsession: SessionDep):
         raise HTTPException(status_code=404, detail="Driver not found")
     dbsession.delete(driver)
     dbsession.commit()
+    return {"ok": True}
+
+
+@app.post("/meetings/{meeting_id}/drivers")
+def add_driver_to_meeting(meeting_id: int, body: PendingRaceAddDriver, dbsession: SessionDep):
+    """Register a driver for a meeting and recompute all display names."""
+    meeting = dbsession.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    driver = dbsession.get(Driver, body.driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    existing = dbsession.exec(
+        select(MeetingDriver).where(
+            MeetingDriver.meeting_id == meeting_id,
+            MeetingDriver.driver_id == body.driver_id,
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Driver already registered for this meeting")
+
+    dbsession.add(MeetingDriver(
+        meeting_id=meeting_id,
+        driver_id=body.driver_id,
+        driver_name=driver.first_name,  # recalculated below
+    ))
+    dbsession.commit()
+    recalculate_meeting_driver_names(dbsession, meeting_id)
     return {"ok": True}
 
 
