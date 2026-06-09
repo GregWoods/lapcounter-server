@@ -216,6 +216,20 @@ def load_pending_race(dbsession):
     if not pending_race:
         return None
 
+    # Recalculate race_number from current DB state so it stays accurate regardless
+    # of when the pending race was created.
+    preceding_count = len(dbsession.exec(
+        select(Race).where(
+            Race.session_id == pending_race.session_id,
+            Race.state.in_(['Finished', 'Running'])
+        )
+    ).all())
+    correct_number = preceding_count + 1
+    if pending_race.race_number != correct_number:
+        pending_race.race_number = correct_number
+        dbsession.add(pending_race)
+        dbsession.commit()
+
     driver_races = dbsession.exec(
         select(DriverRace).where(DriverRace.race_id == pending_race.id)
     ).all()

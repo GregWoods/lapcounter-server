@@ -58,12 +58,13 @@ const StartLights = ({showMe, onClose, lightsOut}) => {
     return (
         <ReactModal
             isOpen={showMe}
-            onRequestClose={onClose}
             contentLabel="Start Lights"
             closeTimeoutMS={400}
             className="ReactModalContent"
             overlayClassName="ReactModalOverlay"
             onAfterOpen={() => startCountdown()}
+            shouldCloseOnOverlayClick={false}
+            shouldCloseOnEsc={false}
             style={{content: { backgroundColor: 'rgba(0,0,0,0.0)' }}}
             ariaHideApp={false}
         >
