@@ -172,6 +172,31 @@ class RaceSessionUpdate(SQLModel):
     end_time: Optional[time] = None
 
 
+class MeetingCreate(SQLModel):
+    name: str
+    date: date
+    venue: Optional[str] = None
+    count_first_crossing: bool = False
+
+
+class MeetingUpdate(SQLModel):
+    name: Optional[str] = None
+    date: Optional[date] = None
+    venue: Optional[str] = None
+    count_first_crossing: Optional[bool] = None
+
+
+class RaceSessionCreate(SQLModel):
+    meeting_id: int
+    session_type: str
+    end_condition: str
+    end_condition_info: Optional[int] = None
+    scoring_method: str
+    scoring_points: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+
+
 # not using relationships yet
 #  https://sqlmodel.tiangolo.com/tutorial/relationship-attributes/define-relationships-attributes/#declare-relationship-attributes
 

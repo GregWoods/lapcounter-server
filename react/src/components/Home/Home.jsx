@@ -10,6 +10,7 @@ function Home() {
                 <Link to="/nextrace" className="home-button">Next Race</Link>
                 <Link to="/results" className="home-button">Results</Link>
                 <Link to="/register" className="home-button">Driver Registration</Link>
+                <Link to="/admin" className="home-button">Admin</Link>
             </nav>
         </div>
     );

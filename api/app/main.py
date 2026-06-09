@@ -103,6 +103,28 @@ def get_upcoming_meetings(dbsession: SessionDep):
         raise HTTPException(status_code=500, detail=error_detail)
 
 
+@app.post("/meetings/", response_model=Meeting)
+def create_meeting(meeting: MeetingCreate, dbsession: SessionDep) -> Meeting:
+    db_meeting = Meeting(**meeting.model_dump())
+    dbsession.add(db_meeting)
+    dbsession.commit()
+    dbsession.refresh(db_meeting)
+    return db_meeting
+
+
+@app.patch("/meetings/{meeting_id}", response_model=Meeting)
+def update_meeting(meeting_id: int, update: MeetingUpdate, dbsession: SessionDep) -> Meeting:
+    meeting = dbsession.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    for field, value in update.model_dump(exclude_unset=True).items():
+        setattr(meeting, field, value)
+    dbsession.add(meeting)
+    dbsession.commit()
+    dbsession.refresh(meeting)
+    return meeting
+
+
 @app.get("/sessions", 
          summary="Get race sessions",
          description="Retrieve all race sessions, or filter by meeting ID",
@@ -136,6 +158,15 @@ def get_lanes(dbsession: SessionDep):
         error_detail = {"message": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(status_code=500, detail=error_detail)
     
+
+@app.post("/sessions/", response_model=RaceSession)
+def create_session(session: RaceSessionCreate, dbsession: SessionDep) -> RaceSession:
+    db_session = RaceSession(**session.model_dump())
+    dbsession.add(db_session)
+    dbsession.commit()
+    dbsession.refresh(db_session)
+    return db_session
+
 
 @app.get("/sessions/active", response_model=RaceSessionWithState)
 def get_active_session_endpoint(dbsession: SessionDep):
