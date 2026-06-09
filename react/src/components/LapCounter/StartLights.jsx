@@ -1,66 +1,59 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ReactModal from 'react-modal';
 
 
 const LIGHTS_OFF_COLOR = "#222";
 const LIGHTS_ON_COLOR = "#F22";
 const initialLightsState = [LIGHTS_OFF_COLOR, LIGHTS_OFF_COLOR, LIGHTS_OFF_COLOR, LIGHTS_OFF_COLOR, LIGHTS_OFF_COLOR];
+const allLightsOn = [LIGHTS_ON_COLOR, LIGHTS_ON_COLOR, LIGHTS_ON_COLOR, LIGHTS_ON_COLOR, LIGHTS_ON_COLOR];
 
-const StartLights = ({showMe, onClose, onLightsOut}) => {
+// lightsOut is controlled by the parent (set true when lapdata publishes Running state).
+// The browser countdown animation is cosmetic only — lapdata owns the actual lights-out moment.
+const StartLights = ({showMe, onClose, lightsOut}) => {
 
-    const [startLightValues, setStartLightValues] = useState(initialLightsState)
+    const [startLightValues, setStartLightValues] = useState(initialLightsState);
+    const longBeepRef = useRef(null);
 
-    function setLightOn (lightNumber, shortBeep) {
+    function setLightOn(lightNumber, shortBeep) {
         shortBeep.play();
-        //we generate the current light values from scratch, without regard for previous state
-        //  because setting state in a setInterval doesn't work as you might expect.
-        //  see: https://www.geeksforgeeks.org/accessing-state-in-settimeout-react-js/
-        const newLightValues = initialLightsState.map((startLightValue, index) => {
-            return (index <= lightNumber-1)
-                ? LIGHTS_ON_COLOR
-                : LIGHTS_OFF_COLOR
-        });
+        const newLightValues = initialLightsState.map((_, index) =>
+            index <= lightNumber - 1 ? LIGHTS_ON_COLOR : LIGHTS_OFF_COLOR
+        );
         setStartLightValues(newLightValues);
     }
-
 
     const startCountdown = () => {
         console.log("start lights");
 
-        //cache the audio to avoid delay on first beep
-        //  10 year old report may reveal why I need a setTimeout to change volume
-        //  https://bugs.chromium.org/p/chromium/issues/detail?id=33023
-        //  Still doesn't work. I suspect I need to use the events on the Audio objects
-        var shortBeep = new Audio('sounds/Beep.wav');
+        const shortBeep = new Audio('sounds/Beep.wav');
         shortBeep.setAttribute("crossOrigin", "anonymous");
-        setTimeout(() => { shortBeep.volume = 0; }, 0 );
-        //shortBeep.volume = 0.0;
-        shortBeep.preload = 'auto';    
-        //shortBeep.play();
-        setTimeout(() => { shortBeep.volume = 1; }, 0 );
+        setTimeout(() => { shortBeep.volume = 1; }, 0);
 
-        var longBeep = new Audio('sounds/LongBeep.wav');
+        const longBeep = new Audio('sounds/LongBeep.wav');
         longBeep.setAttribute("crossOrigin", "anonymous");
-        //setTimeout(() => { longBeep.volume = 0; }, 0 );
-        longBeep.preload = 'auto';
-        //longBeep.play();
-        setTimeout(() => { longBeep.volume = 1; }, 0 );
+        setTimeout(() => { longBeep.volume = 1; }, 0);
+        longBeepRef.current = longBeep;
 
-
-        //https://www.fia.com/sites/default/files/regulation/file/03__Recommended_light_signals.pdf
-        setTimeout(() => {setLightOn(1, shortBeep)}, 2000);
-        setTimeout(() => {setLightOn(2, shortBeep)}, 3000);
-        setTimeout(() => {setLightOn(3, shortBeep)}, 4000);
-        setTimeout(() => {setLightOn(4, shortBeep)}, 5000);
-        setTimeout(() => {setLightOn(5, shortBeep)}, 6000);
-        setTimeout(() => {
-            onLightsOut();
-            longBeep.play();    
-            setStartLightValues(initialLightsState);
-            setTimeout(() => {onClose();}, 1000)
-        //lights go out between 200ms and 3000ms after the last light goes on
-        }, 6000 + (Math.random() * 2800) + 200);
+        // Lights go on 1..5 — lapdata controls the lights-out moment via race_state Running
+        setTimeout(() => { setLightOn(1, shortBeep) }, 2000);
+        setTimeout(() => { setLightOn(2, shortBeep) }, 3000);
+        setTimeout(() => { setLightOn(3, shortBeep) }, 4000);
+        setTimeout(() => { setLightOn(4, shortBeep) }, 5000);
+        setTimeout(() => { setLightOn(5, shortBeep) }, 6000);
     };
+
+    // Triggered when lapdata publishes state: "Running" — lights out, race go!
+    useEffect(() => {
+        if (!lightsOut || !showMe) return;
+        // Force all 5 on (handles edge case where Running arrives before countdown finishes)
+        setStartLightValues(allLightsOn);
+        const t = setTimeout(() => {
+            longBeepRef.current?.play();
+            setStartLightValues(initialLightsState);
+            setTimeout(() => onClose(), 1000);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [lightsOut]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
         <ReactModal
@@ -73,7 +66,7 @@ const StartLights = ({showMe, onClose, onLightsOut}) => {
             onAfterOpen={() => startCountdown()}
             style={{content: { backgroundColor: 'rgba(0,0,0,0.0)' }}}
             ariaHideApp={false}
-        >        
+        >
             <svg className="trafficlights" width="100%" viewBox="0 0 500 100">
                 <rect width="500" height="100" rx="20" ry="20" style={{fill:'#111', strokeWidth:3, stroke:'#000'}} />
                 <circle cx="53"  cy="50" r="30" stroke="black" strokeWidth="2" fill={startLightValues[0]} id="tl_red1"/>

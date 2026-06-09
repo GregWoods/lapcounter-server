@@ -67,6 +67,10 @@ class RaceManager:
             f"count_first_crossing={count_first_crossing})"
         )
 
+    def arm(self):
+        self.state = 'ArmedForStart'
+        logger.info(f"Race {self.race_id} armed — awaiting lights-out timer")
+
     def start(self):
         self.state = 'Running'
         self.race_start_time = time.time()

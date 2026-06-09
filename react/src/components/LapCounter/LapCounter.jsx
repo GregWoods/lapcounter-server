@@ -68,6 +68,7 @@ const LapCounter = () => {
 
     const [startRaceModalShown, setStartRaceModalShown] = useState(false);
     const [startLightsShown, setStartLightsShown] = useState(false);
+    const [lightsOut, setLightsOut] = useState(false);
     const [previewDriverCards, setPreviewDriverCards] = useState(false);
 
     const storeMqttHost = (newMqttHost) => {
@@ -154,32 +155,21 @@ const LapCounter = () => {
         setStartRaceModalShown(true);
     };
 
-    // Start button in popup: close popup and preview, show start lights
+    // Start button in popup: arm the race — lapdata controls the random delay and lights out
     const handleRaceStart = () => {
         setStartRaceModalShown(false);
         setPreviewDriverCards(false);
-        setStartLightsShown(true);
         setRace({ ...defaultRace, underStartersOrders: true, type: race.type });
-    };
-
-    // Lights out: publish race_control start — LapData owns the race from here
-    const handleGoGoGo = () => {
-        setStartLightsShown(false);
-        setRace({...race,
-            underStartersOrders: false,
-            hasStarted: true,
-            paused: false
-        });
 
         const targetLaps = race.type?.details.laps ?? 20;
         if (mqttClientRef.current && raceIdRef.current) {
             mqttClientRef.current.publish('race_control', JSON.stringify({
-                command: 'start',
+                command: 'arm',
                 race_id: raceIdRef.current,
                 target_laps: targetLaps,
             }));
         }
-    }
+    };
 
     const handleRaceEnd = () => {
         if (mqttClientRef.current) {
@@ -251,8 +241,13 @@ const LapCounter = () => {
             })
         );
 
-        if (state === 'Running') {
-            setRace(r => ({ ...r, hasStarted: true, paused: false }));
+        if (state === 'ArmedForStart') {
+            setStartLightsShown(true);
+            setLightsOut(false);
+            setRace(r => ({ ...r, underStartersOrders: true }));
+        } else if (state === 'Running') {
+            setLightsOut(true);
+            setRace(r => ({ ...r, hasStarted: true, paused: false, underStartersOrders: false }));
         } else if (state === 'Paused') {
             setRace(r => ({ ...r, paused: true }));
         } else if (state === 'Finished') {
@@ -309,8 +304,8 @@ const LapCounter = () => {
                 />
                 <StartLights
                     showMe={startLightsShown}
-                    onClose={() => setStartLightsShown(false)}
-                    onLightsOut={handleGoGoGo}
+                    onClose={() => { setStartLightsShown(false); setLightsOut(false); }}
+                    lightsOut={lightsOut}
                 />
                 <div id="driverCardOuter">
                     <div id="driverCardContainer" className={numberOfDriversRacingClassName}>

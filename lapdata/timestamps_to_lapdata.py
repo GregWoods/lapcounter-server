@@ -2,6 +2,8 @@ import time
 import os
 import json
 import logging
+import random
+import threading
 import urllib.request
 import urllib.error
 import paho.mqtt.client as mqtt
@@ -13,9 +15,16 @@ logger = logging.getLogger(__name__)
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 api_url = os.getenv('API_URL', 'http://api:8000')
 min_lap_time_ns = int(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000
+# Delay range from arm command to lights out. All clients (browser, hardware) start
+# their visual countdown on ArmedForStart; lapdata fires lights out at a random moment
+# within this window. Default: 7–10s (lights animated 1..5 at T+2..6s; min 7 ensures
+# all 5 are on before lights out).
+lights_out_min = float(os.getenv('LIGHTS_OUT_MIN_DELAY', '7.0'))
+lights_out_max = float(os.getenv('LIGHTS_OUT_MAX_DELAY', '10.0'))
 
 race = RaceManager()
 pending_race_cache: dict | None = None
+_start_timer: threading.Timer | None = None
 
 # Hardware-level: last crossing time per lane (nanoseconds) for phantom-trigger filtering
 prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
@@ -62,13 +71,49 @@ def handle_car_timestamp(data: dict):
             logger.info("Race finished — waiting for next race_control start")
 
 
+def _do_lights_out():
+    """Timer callback: fires lights out, transitions race to Running."""
+    global pending_race_cache, prev_crossing_ns
+    race.start()
+    prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+    publish_race_state()
+    pending_race_cache = fetch_pending_race()
+
+
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
-    global pending_race_cache, prev_crossing_ns
+    global pending_race_cache, prev_crossing_ns, _start_timer
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
-    if command == 'start':
+    if command == 'arm':
+        race_id = data.get('race_id')
+        target_laps = data.get('target_laps', 20)
+
+        if _start_timer and _start_timer.is_alive():
+            _start_timer.cancel()
+
+        if pending_race_cache and pending_race_cache.get('race_id') == race_id:
+            pending = pending_race_cache
+        else:
+            pending = fetch_pending_race()
+
+        if not pending:
+            logger.error("Cannot arm: failed to load pending race from API")
+            return
+
+        race.load_lineup(pending['race_id'], pending.get('race_number', 0), target_laps,
+                         pending['lane_assignments'], pending.get('count_first_crossing', False))
+        race.arm()
+        publish_race_state()
+
+        delay = random.uniform(lights_out_min, lights_out_max)
+        logger.info(f"Race {race.race_id} armed — lights out in {delay:.1f}s")
+        _start_timer = threading.Timer(delay, _do_lights_out)
+        _start_timer.daemon = True
+        _start_timer.start()
+
+    elif command == 'start':
         race_id = data.get('race_id')
         target_laps = data.get('target_laps', 20)
 
@@ -115,6 +160,9 @@ def handle_race_control(data: dict):
         publish_race_state()
 
     elif command == 'end':
+        if _start_timer and _start_timer.is_alive():
+            _start_timer.cancel()
+            _start_timer = None
         race.end()
         publish_race_state()
 
