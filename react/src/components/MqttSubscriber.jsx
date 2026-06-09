@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 
 
-const MqttSubscriber = ({ mqttHost, onRaceStateMessage, clientRef, debug }) => {
+const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, clientRef, debug }) => {
 
     const [client, setClient] = useState(null);
 
@@ -22,6 +22,13 @@ const MqttSubscriber = ({ mqttHost, onRaceStateMessage, clientRef, debug }) => {
             else if (debug) console.log('Subscribed to race_state');
         });
 
+        if (onRaceControlMessage) {
+            client.subscribe('race_control', { qos: 0 }, (error) => {
+                if (error) console.log('Subscribe error (race_control)', error);
+                else if (debug) console.log('Subscribed to race_control');
+            });
+        }
+
         client.on('connect', () => {
             if (debug) console.log('Mqtt Connected');
         });
@@ -33,8 +40,12 @@ const MqttSubscriber = ({ mqttHost, onRaceStateMessage, clientRef, debug }) => {
             if (debug) console.log('Mqtt Reconnecting');
         });
         client.on('message', (topic, message) => {
+            const parsed = JSON.parse(message.toString());
             if (topic === 'race_state' && onRaceStateMessage) {
-                onRaceStateMessage(JSON.parse(message.toString()));
+                onRaceStateMessage(parsed);
+            }
+            if (topic === 'race_control' && onRaceControlMessage) {
+                onRaceControlMessage(parsed);
             }
         });
     }, [client]); // eslint-disable-line react-hooks/exhaustive-deps

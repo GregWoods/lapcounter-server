@@ -35,7 +35,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
     const skipDriver = () => {
         if (!drivers || !setDriverIdx) return;
         const currentDriver = drivers[driverIdx];
-        const tmpDrivers = [...drivers].sort(driverSorter);
+        const tmpDrivers = drivers.filter(Boolean).sort(driverSorter);
         const currentDriverSortedIdx = tmpDrivers.findIndex(driver => driver.number === currentDriver.number);
 
         let nextDriverSortedIdx;
@@ -45,7 +45,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
             nextDriverSortedIdx = currentDriverSortedIdx + 1;
         }
         const nextDriverNumber = tmpDrivers[nextDriverSortedIdx].number;
-        const nextDriverIdx = drivers.findIndex(driver => driver.number === nextDriverNumber);
+        const nextDriverIdx = drivers.findIndex(driver => driver?.number === nextDriverNumber);
 
         setDriverIdx(nextDriverIdx);
     }
@@ -54,6 +54,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
     const setSpotlightMe = () => {
         if (!drivers || !setDrivers) return;
         const newDrivers = drivers.map((driver, index) => {
+            if (!driver) return null;
             return { ...driver, spotlightMe: (index === driverIdx) };
         });
         setDrivers(newDrivers);

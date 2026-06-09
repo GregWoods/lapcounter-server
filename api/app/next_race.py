@@ -270,13 +270,13 @@ def load_pending_race(dbsession):
     other_drivers = [d for d in all_drivers if d.id not in assigned_driver_ids]
     other_drivers.sort(key=lambda d: d.completed_races)
 
-    finished_count = len(dbsession.exec(
-        select(Race).where(Race.session_id == pending_race.session_id, Race.state == 'Finished')
-    ).all())
+    meeting = dbsession.get(Meeting, race_session.meeting_id)
+    count_first_crossing = meeting.count_first_crossing if meeting else False
 
     return NextRaceSetup(
         race_id=pending_race.id,
-        race_number=finished_count + 1,
+        race_number=pending_race.race_number or 1,
+        count_first_crossing=count_first_crossing,
         lane_assignments=lane_assignments,
         other_drivers=other_drivers,
     )
@@ -392,7 +392,13 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
 def save_pending_race(dbsession, setup, race_session):
     """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
     meeting_id = race_session.meeting_id
-    race = Race(state='NotStarted', session_id=race_session.id)
+    preceding_count = len(dbsession.exec(
+        select(Race).where(
+            Race.session_id == race_session.id,
+            Race.state.in_(['Finished', 'Running'])
+        )
+    ).all())
+    race = Race(state='NotStarted', session_id=race_session.id, race_number=preceding_count + 1)
     dbsession.add(race)
     dbsession.commit()
     dbsession.refresh(race)

@@ -75,6 +75,7 @@ class Meeting(SQLModel, table=True):
     name: str
     date: date
     venue: Optional[str]
+    count_first_crossing: bool = Field(default=False)
 
 
 class MeetingDriver(SQLModel, table=True):
@@ -109,6 +110,7 @@ class Race(SQLModel, table=True):
     __tablename__ = "races"
     id: Optional[int] = Field(default=None, primary_key=True)
     session_id: Optional[int] = Field(default=None, foreign_key="sessions.id")
+    race_number: Optional[int] = Field(default=None)
     state: str          # 'NotStarted', 'Running', 'Finished'
 
 
@@ -127,8 +129,8 @@ class DriverRace(SQLModel, table=True):
     lane: int = Field(default=0)    #1 to 6
     # For later use
     laps_completed: Optional[int]
-    last_lap_time: Optional[Decimal] = Field(default=0)
-    fastest_lap_time: Optional[Decimal] = Field(default=0)
+    last_lap_time: Optional[Decimal] = Field(default=None)
+    fastest_lap_time: Optional[Decimal] = Field(default=None)
 
 
 class DriverLap(SQLModel, table=True):

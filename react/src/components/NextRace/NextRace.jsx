@@ -1,7 +1,8 @@
 import './NextRace.css';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useLoaderData } from 'react-router-dom';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
+import MqttSubscriber from '../MqttSubscriber';
 
 
 function NextRace() {
@@ -9,6 +10,34 @@ function NextRace() {
     const [laneAssignments, setLaneAssignments] = useState(next_race_setup.lane_assignments);
     const [otherDrivers, setOtherDrivers] = useState(next_race_setup.other_drivers);
     const [carSelectorLane, setCarSelectorLane] = useState(null);
+
+    const [raceNumber, setRaceNumber] = useState(next_race_setup.race_number);
+
+    const refreshPendingRace = () => {
+        fetch(`${import.meta.env.VITE_API_URL}/races/pending/`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data) {
+                    setLaneAssignments(data.lane_assignments);
+                    setOtherDrivers(data.other_drivers);
+                    if (data.race_number) setRaceNumber(data.race_number);
+                }
+            })
+            .catch(() => {});
+    };
+
+    const handleRaceControl = (msg) => {
+        if (msg.command === 'prepare') refreshPendingRace();
+    };
+
+    const lastRaceStateRef = useRef(null);
+    const handleRaceState = (raceState) => {
+        const prev = lastRaceStateRef.current;
+        lastRaceStateRef.current = raceState.state;
+        if (raceState.state !== prev && (raceState.state === 'Running' || raceState.state === 'Finished')) {
+            refreshPendingRace();
+        }
+    };
 
     const carMediaBase = `${import.meta.env.VITE_API_URL}/${import.meta.env.VITE_CAR_MEDIA_FOLDER}`;
     const defaultCarImg = `${carMediaBase}/GT_AA_Generic.jpg`;
@@ -65,10 +94,15 @@ function NextRace() {
 
     return (
         <div id="nextrace-page">
+            <MqttSubscriber
+                mqttHost={import.meta.env.VITE_MQTT_URL}
+                onRaceStateMessage={handleRaceState}
+                onRaceControlMessage={handleRaceControl}
+            />
             <div className="nr-columns">
 
                 <div className="nr-col nr-col-assigned">
-                    <h1>Next Race #{next_race_setup.race_number}</h1>
+                    <h1>Race {raceNumber}</h1>
                     <table className="nr-table">
                         <thead>
                             <tr>

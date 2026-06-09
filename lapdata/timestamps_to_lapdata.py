@@ -15,6 +15,7 @@ api_url = os.getenv('API_URL', 'http://api:8000')
 min_lap_time_ns = int(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000
 
 race = RaceManager()
+pending_race_cache: dict | None = None
 
 # Hardware-level: last crossing time per lane (nanoseconds) for phantom-trigger filtering
 prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
@@ -63,21 +64,47 @@ def handle_car_timestamp(data: dict):
 
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
+    global pending_race_cache, prev_crossing_ns
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
     if command == 'start':
-        pending = fetch_pending_race()
+        race_id = data.get('race_id')
+        target_laps = data.get('target_laps', 20)
+
+        # Use the pre-cached lineup when the race_id matches — avoids the timing
+        # issue where POST /races/N/start has already run by the time we fetch,
+        # causing fetch_pending_race() to return Race N+1 instead of Race N.
+        if pending_race_cache and pending_race_cache.get('race_id') == race_id:
+            pending = pending_race_cache
+        else:
+            pending = fetch_pending_race()
+
         if not pending:
             logger.error("Cannot start: failed to load pending race from API")
             return
-        target_laps = data.get('target_laps', 20)
-        race.load_lineup(pending['race_id'], target_laps, pending['lane_assignments'])
+
+        race.load_lineup(pending['race_id'], pending.get('race_number', 0), target_laps,
+                         pending['lane_assignments'], pending.get('count_first_crossing', False))
         race.start()
         # Reset hardware crossing times so no phantom laps bleed across race start
-        global prev_crossing_ns
         prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
         publish_race_state()
+
+        # Pre-fetch the next pending race (creates it in DB if needed)
+        pending_race_cache = fetch_pending_race()
+
+    elif command == 'prepare':
+        # Refresh the lineup cache at green-flag time, before POST /races/N/start
+        # can advance the pending race to N+1. This fixes stale cache when lanes
+        # are changed after LapData's startup fetch.
+        race_id = data.get('race_id')
+        fresh = fetch_pending_race()
+        if fresh:
+            pending_race_cache = fresh
+            logger.info(f"Lineup cached for race {fresh.get('race_id')} on prepare (requested {race_id})")
+        else:
+            logger.warning("prepare: failed to refresh lineup cache")
 
     elif command == 'pause':
         race.pause()
@@ -116,9 +143,12 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     logger.info("Connected to MQTT broker")
 
     # Load pending race on startup so race state is available immediately
+    global pending_race_cache
     pending = fetch_pending_race()
     if pending:
-        race.load_lineup(pending['race_id'], 20, pending['lane_assignments'])
+        pending_race_cache = pending
+        race.load_lineup(pending['race_id'], pending.get('race_number', 0), 20,
+                         pending['lane_assignments'], pending.get('count_first_crossing', False))
         publish_race_state()
     else:
         logger.warning("No pending race found on startup — waiting for race_control start")

@@ -284,21 +284,6 @@ def update_race_lane_car(race_id: int, lane_number: int, update: LaneCarUpdate, 
     return {"ok": True}
 
 
-@app.post("/races/{race_id}/start")
-def start_race(race_id: int, dbsession: SessionDep):
-    race = dbsession.get(Race, race_id)
-    if not race:
-        raise HTTPException(status_code=404, detail="Race not found")
-    race.state = 'Running'
-    dbsession.add(race)
-    race_session = dbsession.get(RaceSession, race.session_id)
-    if race_session and race_session.state == 'NotStarted':
-        race_session.state = 'InProgress'
-        dbsession.add(race_session)
-    dbsession.commit()
-    return {"ok": True}
-
-
 @app.post("/sessions/{session_id}/finish")
 def finish_session(session_id: int, dbsession: SessionDep):
     race_session = dbsession.get(RaceSession, session_id)
@@ -309,16 +294,6 @@ def finish_session(session_id: int, dbsession: SessionDep):
     dbsession.commit()
     return {"ok": True}
 
-
-@app.post("/races/{race_id}/finish")
-def finish_race(race_id: int, dbsession: SessionDep):
-    race = dbsession.get(Race, race_id)
-    if not race:
-        raise HTTPException(status_code=404, detail="Race not found")
-    race.state = 'Finished'
-    dbsession.add(race)
-    dbsession.commit()
-    return {"ok": True}
 
 
 @app.get("/sessions/active/results")
@@ -400,7 +375,7 @@ def get_active_session_results(dbsession: SessionDep):
     return {
         "session_id": race_session.id,
         "scoring_method": scoring_method,
-        "races": [{"race_id": r.id, "race_number": i + 1} for i, r in enumerate(races)],
+        "races": [{"race_id": r.id, "race_number": r.race_number or (i + 1)} for i, r in enumerate(races)],
         "drivers": driver_rows,
     }
 

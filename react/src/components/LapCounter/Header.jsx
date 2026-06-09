@@ -10,7 +10,7 @@ import ResetFastestLapTodayModal from './ResetFastestLapTodayModal';
 
 
 function Header({
-    circuitName,
+    raceNumber,
     mqttHost, setMqttHost,
     onGreenFlag,
     fastestLapToday,
@@ -111,7 +111,7 @@ function Header({
                     />                    
                 }
 
-                <h1>{ circuitName }</h1>
+                <h1>{ raceNumber ? `Race ${raceNumber}` : '' }</h1>
                     
                 <div id="laprecord" onClick={() => {setResetFastestLapTodayModalShown(true)}}>
                     <div id="laprecordlbl">Lap Record</div>

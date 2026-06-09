@@ -14,7 +14,6 @@ import { defaultConfig, defaultRace, getDriverDataDefault, getInitialDrivers } f
 const DEBUG = true;
 
 const LapCounter = () => {
-    console.log('VITE_CIRCUIT_NAME', import.meta.env.VITE_CIRCUIT_NAME);
     const pendingRace = useLoaderData();
 
     const [config, setConfig] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
@@ -48,6 +47,8 @@ const LapCounter = () => {
     const [raceId, setRaceId] = useState(null);
     const raceIdRef = useRef();
     raceIdRef.current = raceId;
+
+    const [raceNumber, setRaceNumber] = useState(pendingRace?.race_number ?? null);
 
     const mqttClientRef = useRef(null);
 
@@ -112,27 +113,42 @@ const LapCounter = () => {
             if (res.ok) {
                 const pendingRace = await res.json();
                 if (pendingRace.race_id) setRaceId(pendingRace.race_id);
+                if (pendingRace.race_number) setRaceNumber(pendingRace.race_number);
                 for (const a of pendingRace.lane_assignments ?? []) {
-                    if (a.id !== 0) assignmentByLane[a.lane_number] = a;
+                    if (a.id !== 0 && a.lane_enabled) {
+                        assignmentByLane[a.lane_number] = a;
+                    }
                 }
             }
         } catch (e) {
             console.error('Failed to load pending race:', e);
         }
 
-        setDrivers(currentDrivers =>
-            currentDrivers.map(driver => {
-                const a = assignmentByLane[driver.number];
+        setDrivers(currentDrivers => {
+            let nextPosition = 1;
+            return currentDrivers.map((driver, index) => {
+                const laneNumber = index + 1;
+                const a = assignmentByLane[laneNumber];
+                if (!a) return null;
                 return {
-                    ...driver,
+                    ...(driver ?? { number: laneNumber }),
                     ...getDriverDataDefault(laps),
                     lapsRemaining: laps,
                     p1LapsRemaining: laps,
-                    position: driver.number,
-                    ...(a && { name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture) }),
+                    position: nextPosition++,
+                    name: a.driver_name,
+                    driverId: a.id,
+                    carImgUrl: carImageUrl(a.car_picture),
                 };
-            })
-        );
+            });
+        });
+
+        if (mqttClientRef.current) {
+            mqttClientRef.current.publish('race_control', JSON.stringify({
+                command: 'prepare',
+                race_id: raceIdRef.current,
+            }));
+        }
 
         setPreviewDriverCards(true);
         setStartRaceModalShown(true);
@@ -144,10 +160,6 @@ const LapCounter = () => {
         setPreviewDriverCards(false);
         setStartLightsShown(true);
         setRace({ ...defaultRace, underStartersOrders: true, type: race.type });
-        if (raceId) {
-            fetch(`${config.apiurl}/races/${raceId}/start`, { method: 'POST' })
-                .catch(e => console.error('Failed to mark race as started:', e));
-        }
     };
 
     // Lights out: publish race_control start — LapData owns the race from here
@@ -172,10 +184,6 @@ const LapCounter = () => {
     const handleRaceEnd = () => {
         if (mqttClientRef.current) {
             mqttClientRef.current.publish('race_control', JSON.stringify({ command: 'end' }));
-        }
-        if (raceIdRef.current) {
-            fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
-                .catch(e => console.error('Failed to mark race as finished:', e));
         }
         setRace({...race, underStartersOrders: false, hasStarted: false, paused: false});
     }
@@ -204,6 +212,15 @@ const LapCounter = () => {
     const processRaceStateMsg = (raceState) => {
         const { state, drivers: raceDrivers, race_fastest_lap } = raceState;
 
+        // Keep raceId in sync with what LapData is tracking (needed for car-swap calls)
+        if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
+            setRaceId(raceState.race_id);
+        }
+        // race_number is now published directly by LapData — use it as the source of truth
+        if (raceState.race_number) {
+            setRaceNumber(raceState.race_number);
+        }
+
         if (race_fastest_lap && race_fastest_lap < Number(statsRef.current.fastestLapToday)) {
             storeFastestLapToday(race_fastest_lap.toFixed(3));
         }
@@ -213,10 +230,8 @@ const LapCounter = () => {
 
         setDrivers(currentDrivers =>
             currentDrivers.map(driver => {
+                if (!driver) return null;
                 const rd = raceDrivers.find(d => d.lane === driver.number);
-                // Lane not in this race — make sure it is hidden and not counted,
-                // otherwise a stale hasStartedRacing (from init or a previous race)
-                // inflates the on-screen count and breaks the group centring.
                 if (!rd) return { ...driver, hasStartedRacing: false };
                 return {
                     ...driver,
@@ -242,10 +257,6 @@ const LapCounter = () => {
             setRace(r => ({ ...r, paused: true }));
         } else if (state === 'Finished') {
             setRace(r => ({ ...r, hasStarted: false, paused: false }));
-            if (raceIdRef.current) {
-                fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' })
-                    .catch(e => console.error('Failed to mark race as finished:', e));
-            }
         }
     }
 
@@ -258,7 +269,7 @@ const LapCounter = () => {
     // collapses to 0.
     const shownDriverCount = race.underStartersOrders
         ? 0
-        : (previewDriverCards ? drivers.length : drivers.filter(d => d.hasStartedRacing).length);
+        : (previewDriverCards ? drivers.filter(Boolean).length : drivers.filter(d => d?.hasStartedRacing).length);
     const numberOfDriversRacingClassName = `numberOfDriversRacing${shownDriverCount || 6}`;
     return (
         <div id="top">
@@ -271,7 +282,7 @@ const LapCounter = () => {
                     debug={DEBUG}
                 />
                 <Header
-                    circuitName={config.circuitname}
+                    raceNumber={raceNumber}
                     mqttHost={config.mqtturl}
                     setMqtthost={storeMqttHost}
                     onGreenFlag={handleGreenFlag}

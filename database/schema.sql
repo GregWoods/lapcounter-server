@@ -85,7 +85,8 @@ CREATE TABLE meetings (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     date DATE,
-    venue VARCHAR(255)
+    venue VARCHAR(255),
+    count_first_crossing BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE meeting_drivers (
@@ -120,6 +121,7 @@ CREATE TABLE sessions (
 CREATE TABLE races (
     id SERIAL PRIMARY KEY,
     session_id INT REFERENCES sessions(id),
+    race_number INT,
     state VARCHAR(255) CHECK (state IN ('NotStarted', 'Running', 'Finished'))
 );
 
@@ -139,8 +141,8 @@ CREATE TABLE driver_races (
     car_id INT REFERENCES cars(id),
     lane INT NOT NULL DEFAULT 0,    -- 1 to 6
     laps_completed INT,
-    last_lap_time DECIMAL(10,3) DEFAULT 0,
-    fastest_lap_time DECIMAL(10,3) DEFAULT 0,
+    last_lap_time DECIMAL(10,3),
+    fastest_lap_time DECIMAL(10,3),
     UNIQUE (driver_id, race_id)
 );
 

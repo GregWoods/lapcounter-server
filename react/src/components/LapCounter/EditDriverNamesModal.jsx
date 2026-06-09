@@ -4,7 +4,7 @@ import ReactModal from 'react-modal';
 
 const EditDriverNamesModal = ({ showMe, onClose, drivers, setDrivers, driverIdxToFocus }) => {
     
-    const initialDrivers = drivers.map(d => d.name);
+    const initialDrivers = drivers.filter(Boolean).map(d => d.name);
     const newDrivers = [...drivers];
 
     function changeDriverName(idx, newName) {

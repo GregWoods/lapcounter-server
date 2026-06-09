@@ -102,14 +102,14 @@ INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
     VALUES (13, 'Olivia', '', '', '', '') ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO meetings (id, name, date, venue) 
-    VALUES (1, 'Junior Championship', '2024-06-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
-INSERT INTO meetings (id, name, date, venue) 
-    VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage') ON CONFLICT (id) DO NOTHING;
-INSERT INTO meetings (id, name, date, venue)
-    VALUES (3, 'Village Hall Grand Prix', '2030-01-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
-INSERT INTO meetings (id, name, date, venue)
-    VALUES (4, '2031 Village Hall Grand Prix', '2031-02-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue, count_first_crossing)
+    VALUES (1, 'Junior Championship', '2024-06-01', 'Village Hall', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue, count_first_crossing)
+    VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue, count_first_crossing)
+    VALUES (3, 'Village Hall Grand Prix', '2030-01-01', 'Village Hall', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue, count_first_crossing)
+    VALUES (4, '2031 Village Hall Grand Prix', '2031-02-01', 'Village Hall', false) ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO meeting_drivers (meeting_id, driver_id, driver_name) VALUES (3, 1, 'Alice')   ON CONFLICT (meeting_id, driver_id) DO NOTHING;
@@ -152,8 +152,8 @@ INSERT INTO lanes (lane_number, color, enabled) VALUES (5, 'orange', true) ON CO
 INSERT INTO lanes (lane_number, color, enabled) VALUES (6, 'white', true) ON CONFLICT (lane_number) DO NOTHING;
 
 
-INSERT INTO races (id, session_id, state) VALUES (1, 2, 'Finished') ON CONFLICT (id) DO NOTHING;
-INSERT INTO races (id, session_id, state) VALUES (2, 2, 'Finished') ON CONFLICT (id) DO NOTHING;
+INSERT INTO races (id, session_id, race_number, state) VALUES (1, 2, 1, 'Finished') ON CONFLICT (id) DO NOTHING;
+INSERT INTO races (id, session_id, race_number, state) VALUES (2, 2, 2, 'Finished') ON CONFLICT (id) DO NOTHING;
 
 
 -- Race 1: Alice L1, Bob L2, Charlie L3, Dave L4, Eve L5, Frank L6  (Greg/Hannah/Jake sit out)

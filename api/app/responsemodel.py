@@ -90,6 +90,7 @@ class RaceSessionWithState(SQLModel):
 class NextRaceSetup(SQLModel):
     race_id: int = 0
     race_number: int = 1
+    count_first_crossing: bool = False
     lane_assignments: list[DriverWithLane] = []
     other_drivers: list[DriverWithLane] = []
 

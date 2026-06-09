@@ -2,7 +2,6 @@
 export const defaultConfig = {
     // These defaults are based on the production docker setup
     // They are stored in localstorage
-    circuitname: import.meta.env.VITE_CIRCUIT_NAME,
     mqtturl: import.meta.env.VITE_MQTT_URL,
     apiurl: import.meta.env.VITE_API_URL,
     carmediafolder: import.meta.env.VITE_CAR_MEDIA_FOLDER,

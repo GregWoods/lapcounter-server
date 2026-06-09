@@ -65,7 +65,6 @@ services:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
     environment:
-      - VITE_CIRCUIT_NAME=Barton Road Grand Prix
       - VITE_MQTT_URL=ws://192.168.8.3:8080
       - VITE_API_URL=http://192.168.8.3:8000
       - VITE_CAR_MEDIA_FOLDER=media/cars

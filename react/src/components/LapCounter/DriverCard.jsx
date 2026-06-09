@@ -5,6 +5,7 @@ import DriverCardTime from './DriverCardTime';
 
 
 const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
+    if (!driver) return null;
     let className = 'drivercard driver' + driver.number;
     if (!underStartersOrders && (driver.hasStartedRacing || previewDriverCards)) {
         //if (driver.suspended) {
