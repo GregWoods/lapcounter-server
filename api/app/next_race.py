@@ -217,11 +217,13 @@ def load_pending_race(dbsession):
         return None
 
     # Recalculate race_number from current DB state so it stays accurate regardless
-    # of when the pending race was created.
+    # of when the pending race was created. Also counts earlier NotStarted (queued)
+    # races so numbers stay correct when multiple races are queued in advance.
     preceding_count = len(dbsession.exec(
         select(Race).where(
             Race.session_id == pending_race.session_id,
-            Race.state.in_(['Finished', 'Running'])
+            (Race.state.in_(['Finished', 'Running'])) |
+            ((Race.state == 'NotStarted') & (Race.id < pending_race.id))
         )
     ).all())
     correct_number = preceding_count + 1
