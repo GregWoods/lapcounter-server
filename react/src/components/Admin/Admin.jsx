@@ -39,7 +39,7 @@ function serializePoints(str) {
 
 function MeetingForm({ initial, onSave, onCancel }) {
     const today = new Date().toISOString().slice(0, 10);
-    const [form, setForm] = useState(initial || { name: '', date: today, venue: '', count_first_crossing: false });
+    const [form, setForm] = useState(initial || { name: '', date: today, venue: '', count_first_crossing: false, display_title: '' });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
@@ -70,6 +70,10 @@ function MeetingForm({ initial, onSave, onCancel }) {
             <div className="admin-form-row">
                 <label>Venue</label>
                 <input value={form.venue || ''} onChange={e => set('venue', e.target.value)} placeholder="Optional" />
+            </div>
+            <div className="admin-form-row">
+                <label>Display title</label>
+                <input value={form.display_title || ''} onChange={e => set('display_title', e.target.value)} placeholder="e.g. Village Hall Grand Prix" />
             </div>
             <div className="admin-form-row">
                 <label>Count first crossing</label>

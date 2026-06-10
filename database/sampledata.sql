@@ -87,7 +87,7 @@ INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
 INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
     VALUES (6, 'Frank', '', '', '', '') ON CONFLICT (id) DO NOTHING;
 INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (7, 'Greg', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+    VALUES (7, 'Greg', 'Woods', '', '', '') ON CONFLICT (id) DO NOTHING;
 INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
     VALUES (8, 'Hannah', '', '', '', '') ON CONFLICT (id) DO NOTHING;
 INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)

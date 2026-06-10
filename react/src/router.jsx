@@ -5,12 +5,22 @@ import Home from './components/Home/Home.jsx'
 import Results from './components/Results/Results.jsx'
 import Register from './components/Register/Register.jsx'
 import Admin from './components/Admin/Admin.jsx'
+import Drivers from './components/Drivers/Drivers.jsx'
 
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
     {
         path: "/",
         element: <Home />,
+        loader: async () => {
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/meetings/active`);
+                if (!res.ok) return null;
+                return res.json();
+            } catch {
+                return null;
+            }
+        },
     },
     {
         path: "currentrace",
@@ -53,6 +63,19 @@ const router = createBrowserRouter([
         loader: async () => {
             try {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/meetings/upcoming`);
+                if (!res.ok) return [];
+                return res.json();
+            } catch {
+                return [];
+            }
+        },
+    },
+    {
+        path: "drivers",
+        element: <Drivers />,
+        loader: async () => {
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/drivers/`);
                 if (!res.ok) return [];
                 return res.json();
             } catch {

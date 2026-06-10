@@ -253,6 +253,19 @@ def get_driver(driver_id: int, dbsession: SessionDep) -> Driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     return driver
 
+@app.patch("/drivers/{driver_id}")
+def update_driver(driver_id: int, body: dict, dbsession: SessionDep) -> Driver:
+    driver = dbsession.get(Driver, driver_id)
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+    for field in ("first_name", "last_name", "sit_out_next_race"):
+        if field in body:
+            setattr(driver, field, body[field])
+    dbsession.add(driver)
+    dbsession.commit()
+    dbsession.refresh(driver)
+    return driver
+
 @app.delete("/drivers/{driver_id}")
 def delete_driver(driver_id: int, dbsession: SessionDep):
     driver = dbsession.get(Driver, driver_id)
