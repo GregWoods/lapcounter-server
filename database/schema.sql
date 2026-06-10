@@ -86,8 +86,7 @@ CREATE TABLE meetings (
     name VARCHAR(255) NOT NULL,
     date DATE,
     venue VARCHAR(255),
-    count_first_crossing BOOLEAN NOT NULL DEFAULT false,
-    display_title VARCHAR(255)
+    count_first_crossing BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE meeting_drivers (

@@ -1,6 +1,7 @@
 import './NextRace.css';
 import { useState, useRef } from 'react';
-import { useLoaderData } from 'react-router-dom';
+import { useLoaderData, Link } from 'react-router-dom';
+import { House } from 'lucide-react';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
 import MqttSubscriber from '../MqttSubscriber';
 
@@ -99,10 +100,13 @@ function NextRace() {
                 onRaceStateMessage={handleRaceState}
                 onRaceControlMessage={handleRaceControl}
             />
+            <div className="nr-title-row">
+                <Link to="/" className="home-icon-link"><House /></Link>
+                <h1>Next Race: R{raceNumber}</h1>
+            </div>
             <div className="nr-columns">
 
                 <div className="nr-col nr-col-assigned">
-                    <h1>Race {raceNumber}</h1>
                     <table className="nr-table">
                         <thead>
                             <tr>
@@ -110,7 +114,7 @@ function NextRace() {
                                 <th className="col-car">Car</th>
                                 <th className="col-name">Driver</th>
                                 <th className="col-raced">Raced</th>
-                                <th className="col-action"></th>
+                                <th className="col-action">Sit Out</th>
                             </tr>
                         </thead>
                         <tbody>

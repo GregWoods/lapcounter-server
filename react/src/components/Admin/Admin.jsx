@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
+import { House } from 'lucide-react';
 import './Admin.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -39,7 +40,7 @@ function serializePoints(str) {
 
 function MeetingForm({ initial, onSave, onCancel }) {
     const today = new Date().toISOString().slice(0, 10);
-    const [form, setForm] = useState(initial || { name: '', date: today, venue: '', count_first_crossing: false, display_title: '' });
+    const [form, setForm] = useState(initial || { name: '', date: today, venue: '', count_first_crossing: false });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
@@ -70,10 +71,6 @@ function MeetingForm({ initial, onSave, onCancel }) {
             <div className="admin-form-row">
                 <label>Venue</label>
                 <input value={form.venue || ''} onChange={e => set('venue', e.target.value)} placeholder="Optional" />
-            </div>
-            <div className="admin-form-row">
-                <label>Display title</label>
-                <input value={form.display_title || ''} onChange={e => set('display_title', e.target.value)} placeholder="e.g. Village Hall Grand Prix" />
             </div>
             <div className="admin-form-row">
                 <label>Count first crossing</label>
@@ -180,7 +177,8 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
 
 const Admin = () => {
     const loaderData = useLoaderData();
-    const [meetings, setMeetings] = useState(loaderData || []);
+    const [meetings, setMeetings] = useState(loaderData?.meetings || []);
+    const activeMeetingId = loaderData?.activeMeetingId ?? null;
     const [newMeetingOpen, setNewMeetingOpen] = useState(false);
     const [editingMeetingId, setEditingMeetingId] = useState(null);
     const [addingSessionTo, setAddingSessionTo] = useState(null);
@@ -251,7 +249,7 @@ const Admin = () => {
         <div className="admin-page">
             <div className="admin-header">
                 <div className="admin-header-left">
-                    <Link to="/" className="admin-back">← Home</Link>
+                    <Link to="/" className="home-icon-link"><House /></Link>
                     <h1 className="admin-title">Race Meetings</h1>
                 </div>
                 <button
@@ -287,7 +285,10 @@ const Admin = () => {
                     ) : (
                         <div className="admin-meeting-header">
                             <div className="admin-meeting-info">
-                                <span className="admin-meeting-name">{meeting.name}</span>
+                                <span className="admin-meeting-name">
+                                    {meeting.name}
+                                    {meeting.id === activeMeetingId && <span className="admin-active-badge">Active</span>}
+                                </span>
                                 <span className="admin-meeting-meta">
                                     {meeting.date}
                                     {meeting.venue && ` · ${meeting.venue}`}
@@ -334,12 +335,18 @@ const Admin = () => {
                                         <span className={`admin-session-state admin-session-state--${(session.state || 'notstarted').toLowerCase().replace(' ', '')}`}>
                                             {session.state || 'NotStarted'}
                                         </span>
-                                        <button
-                                            className="admin-btn-ghost admin-btn-sm"
-                                            onClick={() => { setEditingSessionId(session.id); setAddingSessionTo(null); }}
-                                        >
-                                            Edit
-                                        </button>
+                                        {['Finished', 'InProgress'].includes(session.state) ? (
+                                            <Link to={`/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
+                                                Results
+                                            </Link>
+                                        ) : (
+                                            <button
+                                                className="admin-btn-ghost admin-btn-sm"
+                                                onClick={() => { setEditingSessionId(session.id); setAddingSessionTo(null); }}
+                                            >
+                                                Edit
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>

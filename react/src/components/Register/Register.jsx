@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useLoaderData } from 'react-router-dom';
+import { useLoaderData, Link } from 'react-router-dom';
+import { House } from 'lucide-react';
 import './Register.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -131,7 +132,10 @@ const Register = () => {
 
                 {step === 'name' && (
                     <>
-                        <h1 className="register-heading">Driver Registration</h1>
+                        <div className="register-title-row">
+                            <Link to="/" className="home-icon-link"><House /></Link>
+                            <h1 className="register-heading">Driver Registration</h1>
+                        </div>
                         <form onSubmit={handleNameSubmit} className="register-form">
                             <label className="register-label">First name</label>
                             <input

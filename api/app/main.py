@@ -384,32 +384,32 @@ def finish_session(session_id: int, dbsession: SessionDep):
 
 
 
-@app.get("/sessions/active/results")
-def get_active_session_results(dbsession: SessionDep):
+def build_session_results(race_session, dbsession):
     from collections import defaultdict
-    race_session = get_active_session(dbsession)
+    meeting = dbsession.get(Meeting, race_session.meeting_id)
+    meeting_name = meeting.name if meeting else ""
+    empty = {"session_id": race_session.id, "session_type": race_session.session_type,
+             "meeting_name": meeting_name, "scoring_method": race_session.scoring_method,
+             "races": [], "drivers": []}
 
     races = dbsession.exec(
         select(Race)
         .where(Race.session_id == race_session.id, Race.state == 'Finished')
         .order_by(Race.id)
     ).all()
-
     if not races:
-        return {"session_id": race_session.id, "scoring_method": race_session.scoring_method, "races": [], "drivers": []}
+        return empty
 
     race_ids = [r.id for r in races]
-
     all_driver_races = dbsession.exec(
         select(DriverRace).where(DriverRace.race_id.in_(race_ids))
     ).all()
 
-    # Drop races that have no driver entries (finished without a lineup)
     races_with_data = {dr.race_id for dr in all_driver_races}
     races = [r for r in races if r.id in races_with_data]
     race_ids = [r.id for r in races]
     if not races:
-        return {"session_id": race_session.id, "scoring_method": race_session.scoring_method, "races": [], "drivers": []}
+        return empty
 
     md_rows = dbsession.exec(
         select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)
@@ -433,7 +433,6 @@ def get_active_session_results(dbsession: SessionDep):
 
     scoring_method = race_session.scoring_method
     scoring_points_json = race_session.scoring_points
-    dns_score = len(meeting_driver_names) + 1
 
     driver_rows = []
     for did, name in meeting_driver_names.items():
@@ -448,24 +447,34 @@ def get_active_session_results(dbsession: SessionDep):
         }
         races_entered = sum(1 for p in pos_map.values() if p is not None)
         driver_rows.append({
-            "driver_id": did,
-            "driver_name": name,
-            "positions": pos_map,
-            "points": pts_map,
-            "total_points": sum(pts_map.values()),
-            "races_entered": races_entered,
+            "driver_id": did, "driver_name": name,
+            "positions": pos_map, "points": pts_map,
+            "total_points": sum(pts_map.values()), "races_entered": races_entered,
         })
 
-    # Sort: most points first; among equal points, fewer races entered ranks higher
-    # (fewer races = more remaining opportunity, so currently ranked better)
     driver_rows.sort(key=lambda d: (-d["total_points"], d["races_entered"]))
 
     return {
         "session_id": race_session.id,
+        "session_type": race_session.session_type,
+        "meeting_name": meeting_name,
         "scoring_method": scoring_method,
         "races": [{"race_id": r.id, "race_number": r.race_number or (i + 1)} for i, r in enumerate(races)],
         "drivers": driver_rows,
     }
+
+
+@app.get("/sessions/active/results")
+def get_active_session_results(dbsession: SessionDep):
+    return build_session_results(get_active_session(dbsession), dbsession)
+
+
+@app.get("/sessions/{session_id}/results")
+def get_session_results(session_id: int, dbsession: SessionDep):
+    race_session = dbsession.get(RaceSession, session_id)
+    if not race_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return build_session_results(race_session, dbsession)
 
 
 # === Diagnostic Endpoints ===

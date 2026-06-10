@@ -58,6 +58,19 @@ const router = createBrowserRouter([
         },
     },
     {
+        path: "results/:sessionId",
+        element: <Results />,
+        loader: async ({ params }) => {
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/sessions/${params.sessionId}/results`);
+                if (!res.ok) return { races: [], drivers: [] };
+                return res.json();
+            } catch {
+                return { races: [], drivers: [] };
+            }
+        },
+    },
+    {
         path: "register",
         element: <Register />,
         loader: async () => {
@@ -84,13 +97,17 @@ const router = createBrowserRouter([
         },
     },
     {
-        path: "admin",
+        path: "meetings",
         element: <Admin />,
         loader: async () => {
             try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/meetings`);
-                if (!res.ok) return [];
-                const meetings = await res.json();
+                const [meetingsRes, activeRes] = await Promise.all([
+                    fetch(`${import.meta.env.VITE_API_URL}/meetings`),
+                    fetch(`${import.meta.env.VITE_API_URL}/meetings/active`),
+                ]);
+                if (!meetingsRes.ok) return { meetings: [], activeMeetingId: null };
+                const meetings = await meetingsRes.json();
+                const activeMeetingId = activeRes.ok ? (await activeRes.json()).id : null;
                 const withSessions = await Promise.all(
                     meetings.map(async m => {
                         try {
@@ -101,9 +118,9 @@ const router = createBrowserRouter([
                         }
                     })
                 );
-                return withSessions;
+                return { meetings: withSessions, activeMeetingId };
             } catch {
-                return [];
+                return { meetings: [], activeMeetingId: null };
             }
         },
     },

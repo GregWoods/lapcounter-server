@@ -76,7 +76,6 @@ class Meeting(SQLModel, table=True):
     date: date
     venue: Optional[str]
     count_first_crossing: bool = Field(default=False)
-    display_title: Optional[str] = None
 
 
 class MeetingDriver(SQLModel, table=True):
@@ -178,7 +177,6 @@ class MeetingCreate(SQLModel):
     date: date
     venue: Optional[str] = None
     count_first_crossing: bool = False
-    display_title: Optional[str] = None
 
 
 class MeetingUpdate(SQLModel):
@@ -186,7 +184,6 @@ class MeetingUpdate(SQLModel):
     date: Optional[date] = None
     venue: Optional[str] = None
     count_first_crossing: Optional[bool] = None
-    display_title: Optional[str] = None
 
 
 class RaceSessionCreate(SQLModel):

@@ -2,7 +2,7 @@
     min-height: 100vh;
     background: #111;
     color: #fff;
-    padding: 20px 40px;
+    padding: 4px 40px 20px;
 }
 
 .results-header {
@@ -10,6 +10,7 @@
     align-items: center;
     gap: 16px;
     margin-bottom: 16px;
+    position: relative;
 }
 
 .results-header h1 {

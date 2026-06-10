@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
+import { House } from 'lucide-react';
 import '../Admin/Admin.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -91,7 +92,7 @@ const Drivers = () => {
         <div className="admin-page">
             <div className="admin-header">
                 <div className="admin-header-left">
-                    <Link to="/" className="admin-back">← Home</Link>
+                    <Link to="/" className="home-icon-link"><House /></Link>
                     <h1 className="admin-title">Drivers</h1>
                 </div>
                 <button

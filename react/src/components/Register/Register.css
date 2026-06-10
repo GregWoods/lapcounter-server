@@ -2,8 +2,8 @@
     min-height: 100vh;
     background: #111;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     padding: 32px 16px;
     box-sizing: border-box;
 }
@@ -16,11 +16,18 @@
     gap: 16px;
 }
 
+.register-title-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+    position: relative;
+}
+
 .register-heading {
     color: #fff;
     font-size: 1.9rem;
     font-weight: 700;
-    margin: 0 0 4px;
+    margin: 0;
 }
 
 .register-subtext {

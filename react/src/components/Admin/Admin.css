@@ -17,18 +17,9 @@
 
 .admin-header-left {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    position: relative;
 }
-
-.admin-back {
-    color: #888;
-    text-decoration: none;
-    font-size: 0.85rem;
-    transition: color 0.15s;
-}
-
-.admin-back:hover { color: #ccc; }
 
 .admin-title {
     color: #fff;
@@ -82,6 +73,21 @@
     color: #fff;
     font-size: 1.2rem;
     font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-active-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: #1a3a1a;
+    color: #5bc75b;
+    border: 1px solid #2d5e2d;
+    border-radius: 5px;
+    padding: 2px 8px;
 }
 
 .admin-meeting-meta {

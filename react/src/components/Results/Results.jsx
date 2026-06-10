@@ -1,4 +1,5 @@
-import { useLoaderData } from 'react-router-dom';
+import { useLoaderData, Link } from 'react-router-dom';
+import { House } from 'lucide-react';
 import { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import MqttSubscriber from '../MqttSubscriber';
 import './Results.css';
@@ -48,9 +49,9 @@ function ResultsTable({ drivers, races, scrollRef }) {
 }
 
 function Results() {
-    const loaded = useLoaderData() || { races: [], drivers: [], scoring_method: null };
+    const loaded = useLoaderData() || { races: [], drivers: [], scoring_method: null, session_type: null, meeting_name: null };
     const [results, setResults] = useState(loaded);
-    const { races, drivers } = results;
+    const { races, drivers, session_type, meeting_name } = results;
     const [wideView, setWideView] = useState(false);
 
     const refreshResults = () => {
@@ -132,7 +133,8 @@ function Results() {
                 onRaceStateMessage={handleRaceState}
             />
             <div className="results-header">
-                <h1>Session Results</h1>
+                <Link to="/" className="home-icon-link"><House /></Link>
+                <h1>Results{meeting_name ? `: ${meeting_name}` : ''}{session_type ? ` — ${session_type}` : ''}</h1>
                 {races.length > 0 && (
                     <button className="view-toggle" onClick={() => setWideView(v => !v)} title={wideView ? 'Split view' : 'Wide view'}>
                         {wideView ? (
