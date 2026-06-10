@@ -4,8 +4,8 @@
     align-items: center;
     min-height: 100vh;
     background: #111;
-    gap: 40px;
-    padding: 60px 0;
+    gap: 36px;
+    padding: 8px 0 40px;
     box-sizing: border-box;
 }
 
@@ -19,16 +19,16 @@
 .home-nav {
     display: flex;
     flex-direction: column;
-    gap: 28px;
-    width: 560px;
+    gap: 32px;
+    width: min(560px, 95vw);
 }
 
 @media (orientation: landscape) {
     .home-nav {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        width: 1160px;
-        max-width: 95vw;
+        grid-auto-rows: 1fr;
+        width: 95vw;
     }
 }
 
@@ -36,13 +36,15 @@
     display: flex;
     align-items: center;
     gap: 20px;
-    padding: 32px 48px;
+    padding: 44px 56px;
     background: #222;
     color: #fff;
     border: 3px solid #555;
     border-radius: 14px;
     font-size: 1.8rem;
     text-decoration: none;
+    white-space: nowrap;
+    width: 100%;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 

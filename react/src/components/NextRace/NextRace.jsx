@@ -102,7 +102,7 @@ function NextRace() {
             />
             <div className="nr-title-row">
                 <Link to="/" className="home-icon-link"><House /></Link>
-                <h1>Next Race: R{raceNumber}</h1>
+                <h1>Next Race — R{raceNumber}</h1>
             </div>
             <div className="nr-columns">
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
-import { House } from 'lucide-react';
+import { House, LogOut } from 'lucide-react';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import '../Admin/Admin.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -44,6 +45,7 @@ function DriverForm({ initial, onSave, onCancel }) {
 }
 
 const Drivers = () => {
+    const { logout } = useAdminAuth();
     const loaderData = useLoaderData();
     const [drivers, setDrivers] = useState(loaderData || []);
     const [newOpen, setNewOpen] = useState(false);
@@ -95,12 +97,17 @@ const Drivers = () => {
                     <Link to="/" className="home-icon-link"><House /></Link>
                     <h1 className="admin-title">Drivers</h1>
                 </div>
-                <button
-                    className={newOpen ? 'admin-btn-ghost' : 'admin-btn-primary'}
-                    onClick={() => { setNewOpen(v => !v); setEditingId(null); }}
-                >
-                    {newOpen ? 'Cancel' : '+ New Driver'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button className="admin-btn-ghost admin-btn-sm" onClick={logout} title="Lock admin">
+                        <LogOut size={16} />
+                    </button>
+                    <button
+                        className={newOpen ? 'admin-btn-ghost' : 'admin-btn-primary'}
+                        onClick={() => { setNewOpen(v => !v); setEditingId(null); }}
+                    >
+                        {newOpen ? 'Cancel' : '+ New Driver'}
+                    </button>
+                </div>
             </div>
 
             {newOpen && (

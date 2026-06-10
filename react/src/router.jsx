@@ -6,6 +6,13 @@ import Results from './components/Results/Results.jsx'
 import Register from './components/Register/Register.jsx'
 import Admin from './components/Admin/Admin.jsx'
 import Drivers from './components/Drivers/Drivers.jsx'
+import PinPrompt from './components/PinPrompt/PinPrompt.jsx'
+import { useAdminAuth } from './contexts/AdminAuthContext.jsx'
+
+function RequireAdmin({ children }) {
+    const { isAdmin } = useAdminAuth();
+    return isAdmin ? children : <PinPrompt />;
+}
 
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
@@ -85,7 +92,7 @@ const router = createBrowserRouter([
     },
     {
         path: "drivers",
-        element: <Drivers />,
+        element: <RequireAdmin><Drivers /></RequireAdmin>,
         loader: async () => {
             try {
                 const res = await fetch(`${import.meta.env.VITE_API_URL}/drivers/`);
@@ -98,7 +105,7 @@ const router = createBrowserRouter([
     },
     {
         path: "meetings",
-        element: <Admin />,
+        element: <RequireAdmin><Admin /></RequireAdmin>,
         loader: async () => {
             try {
                 const [meetingsRes, activeRes] = await Promise.all([

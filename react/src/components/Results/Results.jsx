@@ -49,9 +49,20 @@ function ResultsTable({ drivers, races, scrollRef }) {
 }
 
 function Results() {
-    const loaded = useLoaderData() || { races: [], drivers: [], scoring_method: null, session_type: null, meeting_name: null };
+    const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
+
+    const loaded = useLoaderData() || { races: [], drivers: [], scoring_method: null, session_type: null, meeting_name: null, sessions: [] };
     const [results, setResults] = useState(loaded);
-    const { races, drivers, session_type, meeting_name } = results;
+    const { races, drivers, meeting_name, sessions, session_id } = results;
+
+    useEffect(() => {
+        setResults(loaded);
+        setWideView(false);
+    }, [loaded]);
+
+    const tabLabel = (s, index) =>
+        `Session ${index + 1} — ${SESSION_TYPE_LABELS[s.session_type] || s.session_type}`;
+
     const [wideView, setWideView] = useState(false);
 
     const refreshResults = () => {
@@ -134,7 +145,7 @@ function Results() {
             />
             <div className="results-header">
                 <Link to="/" className="home-icon-link"><House /></Link>
-                <h1>Results{meeting_name ? `: ${meeting_name}` : ''}{session_type ? ` — ${session_type}` : ''}</h1>
+                <h1>Results{meeting_name ? ` — ${meeting_name}` : ''}</h1>
                 {races.length > 0 && (
                     <button className="view-toggle" onClick={() => setWideView(v => !v)} title={wideView ? 'Split view' : 'Wide view'}>
                         {wideView ? (
@@ -150,6 +161,24 @@ function Results() {
                     </button>
                 )}
             </div>
+            {sessions.length > 1 && (
+                <nav className="session-tabs">
+                    {sessions.map((s, idx) => (
+                        <Link
+                            key={s.id}
+                            to={`/results/${s.id}`}
+                            className={[
+                                'session-tab',
+                                s.id === session_id ? 'session-tab--active' : '',
+                                s.state === 'InProgress' ? 'session-tab--inprogress' : '',
+                                s.state === 'NotStarted' ? 'session-tab--notstarted' : '',
+                            ].filter(Boolean).join(' ')}
+                        >
+                            {tabLabel(s, idx)}
+                        </Link>
+                    ))}
+                </nav>
+            )}
             {races.length === 0 ? (
                 <p className="no-results">No races completed yet.</p>
             ) : wideView ? (

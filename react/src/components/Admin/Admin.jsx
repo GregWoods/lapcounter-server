@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
-import { House } from 'lucide-react';
+import { House, LogOut } from 'lucide-react';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import './Admin.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -176,6 +177,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
 }
 
 const Admin = () => {
+    const { logout } = useAdminAuth();
     const loaderData = useLoaderData();
     const [meetings, setMeetings] = useState(loaderData?.meetings || []);
     const activeMeetingId = loaderData?.activeMeetingId ?? null;
@@ -252,12 +254,17 @@ const Admin = () => {
                     <Link to="/" className="home-icon-link"><House /></Link>
                     <h1 className="admin-title">Race Meetings</h1>
                 </div>
-                <button
-                    className={newMeetingOpen ? 'admin-btn-ghost' : 'admin-btn-primary'}
-                    onClick={() => { setNewMeetingOpen(v => !v); setEditingMeetingId(null); }}
-                >
-                    {newMeetingOpen ? 'Cancel' : '+ New Meeting'}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button className="admin-btn-ghost admin-btn-sm" onClick={logout} title="Lock admin">
+                        <LogOut size={16} />
+                    </button>
+                    <button
+                        className={newMeetingOpen ? 'admin-btn-ghost' : 'admin-btn-primary'}
+                        onClick={() => { setNewMeetingOpen(v => !v); setEditingMeetingId(null); }}
+                    >
+                        {newMeetingOpen ? 'Cancel' : '+ New Meeting'}
+                    </button>
+                </div>
             </div>
 
             {newMeetingOpen && (

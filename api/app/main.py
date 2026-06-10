@@ -388,9 +388,15 @@ def build_session_results(race_session, dbsession):
     from collections import defaultdict
     meeting = dbsession.get(Meeting, race_session.meeting_id)
     meeting_name = meeting.name if meeting else ""
+    sibling_sessions = dbsession.exec(
+        select(RaceSession)
+        .where(RaceSession.meeting_id == race_session.meeting_id)
+        .order_by(RaceSession.id)
+    ).all()
+    sessions_list = [{"id": s.id, "session_type": s.session_type, "state": s.state} for s in sibling_sessions]
     empty = {"session_id": race_session.id, "session_type": race_session.session_type,
              "meeting_name": meeting_name, "scoring_method": race_session.scoring_method,
-             "races": [], "drivers": []}
+             "races": [], "drivers": [], "sessions": sessions_list}
 
     races = dbsession.exec(
         select(Race)
@@ -461,6 +467,7 @@ def build_session_results(race_session, dbsession):
         "scoring_method": scoring_method,
         "races": [{"race_id": r.id, "race_number": r.race_number or (i + 1)} for i, r in enumerate(races)],
         "drivers": driver_rows,
+        "sessions": sessions_list,
     }
 
 

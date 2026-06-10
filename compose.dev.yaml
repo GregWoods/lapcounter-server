@@ -59,6 +59,7 @@ services:
       - VITE_MQTT_URL=ws://localhost:8080
       - VITE_API_URL=http://localhost:8000
       - VITE_CAR_MEDIA_FOLDER=media/cars
+      - VITE_ADMIN_PIN=1234
 
 
   api:
