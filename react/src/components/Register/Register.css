@@ -10,7 +10,7 @@
 
 .register-card {
     width: 100%;
-    max-width: 480px;
+    max-width: 560px;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -28,6 +28,7 @@
     font-size: 1.9rem;
     font-weight: 700;
     margin: 0;
+    white-space: nowrap;
 }
 
 .register-subtext {
