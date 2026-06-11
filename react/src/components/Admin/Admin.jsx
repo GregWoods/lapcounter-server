@@ -1,17 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
 import { House, LogOut } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import './Admin.css';
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
 const SESSION_TYPES = ['Points', 'FastestLap', 'Championship'];
-const END_CONDITIONS = ['Laps', 'Time'];
-const SCORING_METHODS = ['LapPoints', 'PositionPoints', 'FastestLap'];
+const END_CONDITIONS = ['Laps', 'Time', 'RacesPerDriver'];
+const END_CONDITION_LABELS = { Laps: 'Laps', Time: 'Time', RacesPerDriver: 'Races per driver' };
+const POINTS_SCORING_METHODS = ['LapPoints', 'PositionPoints'];
+const FASTEST_LAP_SCORING_METHODS = ['FastestLap', 'AverageFastestLap'];
 
 const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
-const SCORING_METHOD_LABELS = { LapPoints: 'Lap Points', PositionPoints: 'Position Points', FastestLap: 'Fastest Lap' };
+const SCORING_METHOD_LABELS = {
+    LapPoints: 'Lap Points',
+    PositionPoints: 'Position Points',
+    FastestLap: 'Personal best',
+    AverageFastestLap: 'Average best per race',
+};
 
 const DEFAULT_SESSION = {
     session_type: 'Points',
@@ -102,6 +109,19 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
 
     const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
+    const isFastestLapSession = form.session_type === 'FastestLap';
+    const availableScoringMethods = isFastestLapSession ? FASTEST_LAP_SCORING_METHODS : POINTS_SCORING_METHODS;
+
+    const handleSessionTypeChange = (newType) => {
+        const isFl = newType === 'FastestLap';
+        const validMethods = isFl ? FASTEST_LAP_SCORING_METHODS : POINTS_SCORING_METHODS;
+        setForm(f => ({
+            ...f,
+            session_type: newType,
+            scoring_method: validMethods.includes(f.scoring_method) ? f.scoring_method : validMethods[0],
+        }));
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
@@ -124,18 +144,18 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
         <form className="admin-form admin-session-form" onSubmit={handleSubmit}>
             <div className="admin-form-row">
                 <label>Type</label>
-                <select value={form.session_type} onChange={e => set('session_type', e.target.value)}>
+                <select value={form.session_type} onChange={e => handleSessionTypeChange(e.target.value)}>
                     {SESSION_TYPES.map(t => <option key={t} value={t}>{SESSION_TYPE_LABELS[t]}</option>)}
                 </select>
             </div>
             <div className="admin-form-row">
                 <label>End condition</label>
                 <select value={form.end_condition} onChange={e => set('end_condition', e.target.value)}>
-                    {END_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    {END_CONDITIONS.map(c => <option key={c} value={c}>{END_CONDITION_LABELS[c] || c}</option>)}
                 </select>
             </div>
             <div className="admin-form-row">
-                <label>{form.end_condition === 'Laps' ? 'Laps' : 'Minutes'}</label>
+                <label>{form.end_condition === 'Laps' ? 'Laps' : form.end_condition === 'Time' ? 'Minutes' : 'Races per driver'}</label>
                 <input
                     type="number"
                     value={form.end_condition_info || ''}
@@ -144,9 +164,9 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
                 />
             </div>
             <div className="admin-form-row">
-                <label>Scoring method</label>
+                <label>{isFastestLapSession ? 'Ranking' : 'Scoring method'}</label>
                 <select value={form.scoring_method} onChange={e => set('scoring_method', e.target.value)}>
-                    {SCORING_METHODS.map(m => <option key={m} value={m}>{SCORING_METHOD_LABELS[m]}</option>)}
+                    {availableScoringMethods.map(m => <option key={m} value={m}>{SCORING_METHOD_LABELS[m]}</option>)}
                 </select>
             </div>
             {form.scoring_method === 'PositionPoints' && (
@@ -176,6 +196,88 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
     );
 }
 
+function formatDiff(seconds) {
+    if (seconds < 5)    return 'In sync';
+    if (seconds < 60)   return `${seconds}s off`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m off`;
+    return `${Math.round(seconds / 3600)}h off`;
+}
+
+function ClockSync() {
+    const [piTs, setPiTs] = useState(null);
+    const [fetchedAt, setFetchedAt] = useState(null);
+    const [syncing, setSyncing] = useState(false);
+    const [synced, setSynced] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        fetch(`${API_URL}/admin/clock`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data) { setPiTs(data.timestamp); setFetchedAt(Date.now()); } })
+            .catch(() => {});
+    }, []);
+
+    if (!piTs) return null;
+
+    const estimatedPiNow = piTs + (Date.now() - fetchedAt) / 1000;
+    const absDiff = Math.round(Math.abs(Date.now() / 1000 - estimatedPiNow));
+    const inSync = absDiff < 5;
+
+    const handleSync = async () => {
+        setSyncing(true);
+        setError(null);
+        try {
+            const now = Date.now() / 1000;
+            const res = await fetch(`${API_URL}/admin/sync-clock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timestamp: now }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.detail || 'Sync failed');
+            }
+            setPiTs(now);
+            setFetchedAt(Date.now());
+            setSynced(true);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    return (
+        <div className="admin-card">
+            <h2 className="admin-card-title">System Clock</h2>
+            <div className="admin-clock-row">
+                <div className="admin-clock-col">
+                    <span className="admin-clock-label">Pi</span>
+                    <span className="admin-clock-time">{new Date(estimatedPiNow * 1000).toLocaleTimeString()}</span>
+                </div>
+                <div className="admin-clock-col">
+                    <span className="admin-clock-label">This device</span>
+                    <span className="admin-clock-time">{new Date().toLocaleTimeString()}</span>
+                </div>
+                <div className="admin-clock-col">
+                    <span className="admin-clock-label">Difference</span>
+                    <span className={`admin-clock-time ${inSync ? 'admin-clock-ok' : 'admin-clock-warn'}`}>
+                        {formatDiff(absDiff)}
+                    </span>
+                </div>
+                <button
+                    className={synced ? 'admin-btn-ghost' : 'admin-btn-primary'}
+                    onClick={handleSync}
+                    disabled={syncing || synced || inSync}
+                >
+                    {syncing ? 'Syncing…' : synced ? 'Synced ✓' : 'Sync to this device'}
+                </button>
+            </div>
+            {error && <p className="admin-error" style={{ marginTop: '12px' }}>{error}</p>}
+        </div>
+    );
+}
+
 const Admin = () => {
     const { logout } = useAdminAuth();
     const loaderData = useLoaderData();
@@ -185,6 +287,9 @@ const Admin = () => {
     const [editingMeetingId, setEditingMeetingId] = useState(null);
     const [addingSessionTo, setAddingSessionTo] = useState(null);
     const [editingSessionId, setEditingSessionId] = useState(null);
+    const [endingSessionId, setEndingSessionId] = useState(null);
+    const [endingLoading, setEndingLoading] = useState(false);
+    const [endingError, setEndingError] = useState(null);
 
     const reloadAll = async () => {
         const res = await fetch(`${API_URL}/meetings`);
@@ -197,6 +302,21 @@ const Admin = () => {
             })
         );
         setMeetings(withSessions);
+    };
+
+    const handleEndSession = async () => {
+        setEndingLoading(true);
+        setEndingError(null);
+        try {
+            const res = await fetch(`${API_URL}/sessions/${endingSessionId}/finish`, { method: 'POST' });
+            if (!res.ok) throw new Error('Failed to end session');
+            await reloadAll();
+            setEndingSessionId(null);
+        } catch (err) {
+            setEndingError(err.message);
+        } finally {
+            setEndingLoading(false);
+        }
     };
 
     const handleCreateMeeting = async (form) => {
@@ -267,6 +387,8 @@ const Admin = () => {
                 </div>
             </div>
 
+            <ClockSync />
+
             {newMeetingOpen && (
                 <div className="admin-card">
                     <h2 className="admin-card-title">New Meeting</h2>
@@ -331,17 +453,27 @@ const Admin = () => {
                                     <div className="admin-session-display">
                                         <span className="admin-session-type">{SESSION_TYPE_LABELS[session.session_type] || session.session_type}</span>
                                         <span className="admin-session-detail">
-                                            {session.end_condition_info}&nbsp;{session.end_condition === 'Laps' ? 'laps' : 'min'}
+                                            {session.end_condition_info}&nbsp;{session.end_condition === 'Laps' ? 'laps' : session.end_condition === 'Time' ? 'min' : 'races/driver'}
                                         </span>
                                         <span className="admin-session-detail">
-                                            {SCORING_METHOD_LABELS[session.scoring_method] || session.scoring_method}
+                                            {SCORING_METHOD_LABELS[session.scoring_method] || session.scoring_method || '—'}
                                         </span>
                                         {session.start_time && (
                                             <span className="admin-session-detail">{session.start_time.slice(0, 5)}</span>
                                         )}
-                                        <span className={`admin-session-state admin-session-state--${(session.state || 'notstarted').toLowerCase().replace(' ', '')}`}>
-                                            {session.state || 'NotStarted'}
-                                        </span>
+                                        {session.state === 'InProgress' ? (
+                                            <button
+                                                className="admin-session-state admin-session-state--inprogress admin-session-state--end-btn"
+                                                onClick={() => { setEndingSessionId(session.id); setEndingError(null); }}
+                                                title="End this session"
+                                            >
+                                                In Progress
+                                            </button>
+                                        ) : (
+                                            <span className={`admin-session-state admin-session-state--${(session.state || 'notstarted').toLowerCase().replace(' ', '')}`}>
+                                                {session.state || 'NotStarted'}
+                                            </span>
+                                        )}
                                         {['Finished', 'InProgress'].includes(session.state) ? (
                                             <Link to={`/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
                                                 Results
@@ -378,6 +510,24 @@ const Admin = () => {
                     </div>
                 </div>
             ))}
+
+            {endingSessionId && (
+                <div className="admin-modal-overlay" onClick={() => setEndingSessionId(null)}>
+                    <div className="admin-modal" onClick={e => e.stopPropagation()}>
+                        <p className="admin-modal-title">End this session?</p>
+                        <p className="admin-modal-body">
+                            The session will be marked Finished. If there is a next session queued, it will become In Progress.
+                        </p>
+                        {endingError && <p className="admin-error">{endingError}</p>}
+                        <div className="admin-modal-actions">
+                            <button className="admin-btn-ghost" onClick={() => setEndingSessionId(null)}>Cancel</button>
+                            <button className="admin-btn-primary" onClick={handleEndSession} disabled={endingLoading}>
+                                {endingLoading ? 'Ending…' : 'End Session'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

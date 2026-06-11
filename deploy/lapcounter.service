@@ -1,0 +1,27 @@
+[Unit]
+Description=Lap Counter Race Management System
+Documentation=https://github.com/gregkwoods/lapcounter-server
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/lapcounter
+
+# On first boot the images won't be cached locally — pull them.
+# Subsequent boots skip this because all images are already present.
+ExecStartPre=/bin/sh -c \
+  'docker image inspect gregkwoods/lapcounter-server-api:latest >/dev/null 2>&1 \
+   || (echo "First boot: pulling Docker images..." && docker compose pull)'
+
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

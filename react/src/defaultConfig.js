@@ -1,9 +1,11 @@
 
+const host = window.location.hostname;
+
 export const defaultConfig = {
     // These defaults are based on the production docker setup
     // They are stored in localstorage
-    mqtturl: import.meta.env.VITE_MQTT_URL,
-    apiurl: import.meta.env.VITE_API_URL,
+    mqtturl: import.meta.env.VITE_MQTT_URL ?? `ws://${host}:8080`,
+    apiurl: import.meta.env.VITE_API_URL ?? `http://${host}:8000`,
     carmediafolder: import.meta.env.VITE_CAR_MEDIA_FOLDER,
     racepresets: [
         { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},

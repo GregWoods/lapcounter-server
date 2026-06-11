@@ -13,6 +13,7 @@ function NextRace() {
     const [carSelectorLane, setCarSelectorLane] = useState(null);
 
     const [raceNumber, setRaceNumber] = useState(next_race_setup.race_number);
+    const [sessionRacesTotal, setSessionRacesTotal] = useState(next_race_setup.session_races_total ?? null);
 
     const refreshPendingRace = () => {
         fetch(`${import.meta.env.VITE_API_URL}/races/pending/`)
@@ -22,6 +23,7 @@ function NextRace() {
                     setLaneAssignments(data.lane_assignments);
                     setOtherDrivers(data.other_drivers);
                     if (data.race_number) setRaceNumber(data.race_number);
+                    if (data.session_races_total != null) setSessionRacesTotal(data.session_races_total);
                 }
             })
             .catch(() => {});
@@ -102,7 +104,7 @@ function NextRace() {
             />
             <div className="nr-title-row">
                 <Link to="/" className="home-icon-link"><House /></Link>
-                <h1>Next Race — R{raceNumber}</h1>
+                <h1>Next Race — R{raceNumber}{sessionRacesTotal != null ? ` of ${sessionRacesTotal}` : ''}</h1>
             </div>
             <div className="nr-columns">
 

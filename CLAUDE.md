@@ -20,7 +20,7 @@ DB Writer service    React apps        Any client
 
 - **mosquitto/** - Eclipse Mosquitto MQTT broker config
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
-- **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`
+- **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order.
 - **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
 - **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
 - **dbwriter/** *(planned)* - Small service: subscribes to `lap`, persists to DB via API
@@ -140,7 +140,7 @@ Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gr
 
 React subscribes to `race_state` via MQTT and renders it. It contains no race logic. `lapUtils.js` (`calculateLapTime`, `modifyDriversViewModel`, `checkEndOfRace`) is being deleted as part of the LapData race manager refactor.
 
-React publishes `race_control` directly to MQTT (not via API) for speed and so non-browser clients work the same way. It also fires `POST /races/{id}/start` to the API as fire-and-forget for DB state.
+React publishes `race_control` directly to MQTT (not via API) for speed and so non-browser clients work the same way. It also fires `POST /races/{id}/start` and `POST /races/{id}/finish` to the API as fire-and-forget for DB state, triggered by detecting `race_state.state` transitions (`prevRaceStateRef` tracks the previous state to avoid duplicate calls).
 
 Planned routes: `/` (leaderboard), `/nextrace` (lineup), `/tv` (full-screen display), `/driver/N` (per-driver view).
 
@@ -180,6 +180,7 @@ Alternatively, run `python sampledata.py` inside the `api` container (drops all 
 - `RaceSession` model maps to the `sessions` table (should eventually be renamed `race_sessions`).
 - At most one `Race` with `state='NotStarted'` at a time — this is the "pending race".
 - `MeetingDriver.driver_name` is the computed display name (usually `first_name`, but includes last initial when two drivers share a first name). Always use `driver_name` in the UI, not `Driver.first_name`.
+- **`DriverRace.fastest_lap_time` and `laps_completed` are defined in the model but never populated by any current code path.** For per-driver lap time analysis, always use `DriverLap` records joined through `driver_race_id`. `build_session_results()` already does this for FastestLap sessions.
 
 ## Environment Variables
 
@@ -200,12 +201,17 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 **Completed:**
 - PostgreSQL + SQLModel ORM: 15 table models in `api/app/model.py`
 - Full driver CRUD, meetings, sessions endpoints
-- `GET /races/pending/` — loads or creates a pending race
-- `POST /races/{id}/start` and `POST /races/{id}/finish` — race state transitions
+- `GET /races/pending/` — loads or creates a pending race; filters eligible drivers by quota when `end_condition == 'RacesPerDriver'`; returns 409 when no eligible drivers remain
+- `POST /races/{id}/start` — sets race Running, promotes session to InProgress if still NotStarted; called fire-and-forget from React on `race_state.state === 'Running'` transition
+- `POST /races/{id}/finish` — sets race Finished; for RacesPerDriver sessions auto-ends session and promotes next NotStarted session when all eligible drivers reach quota; called fire-and-forget from React on `race_state.state === 'Finished'` transition
+- `POST /sessions/{id}/finish` — ends session, promotes next NotStarted session to InProgress
 - `PATCH /lanes/{lane_number}` — enable/disable a lane, updates pending race lineup
 - Lane assignment algorithm (`next_race.py`) with 8 pytest unit tests
+- `RacesPerDriver` session end condition: `end_condition_info` stores the per-driver quota; `compute_session_progress()` in `next_race.py` calculates projected total races dynamically (T = ⌈N×R/min(N,L)⌉); `NextRaceSetup` carries `session_races_done` and `session_races_total`; NextRace title shows "Race X of Y"
+- `FastestLap` session type: Admin form shows "Ranking" with `FastestLap` (personal best) and `AverageFastestLap` (average best per race) options; results computed from `DriverLap` records in `build_session_results()`, sorted ascending; Results page shows `FastestLapResultsTable`
+- Session end from Admin page: InProgress badge is a button that opens a confirmation modal → `POST /sessions/{id}/finish`
 - React Router with `/` (LapCounter) and `/nextrace` (NextRace) routes
-- NextRace UI: lane toggle (enable/disable) is live; `/` route loads driver names from pending race on page load
+- NextRace UI: lane toggle, × remove driver, + add driver from bench, car image selector all live
 
 **In progress — LapData race manager refactor:**
 - LapData to own all race state (positions, lap counts, fastest laps, race end)
@@ -214,8 +220,8 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 - New DB Writer service to subscribe to `lap` and persist to DB
 - `race_control` MQTT topic for race start/pause/end from any client
 
-**Still needed (NextRace UI):**
-- × and + edit buttons to swap specific drivers in/out of lanes (`PUT /races/pending/lineup`)
+**Still needed:**
 - "Load Next Race" button in LapCounter after a race finishes
+- Meeting and session creation UI (Admin page currently only lists existing meetings/sessions)
 
 Note: `GET /drivers/nextrace/` (old stateless endpoint) still exists alongside `GET /races/pending/`. The old one is superseded but not yet removed.

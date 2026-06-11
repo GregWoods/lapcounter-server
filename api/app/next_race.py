@@ -1,4 +1,5 @@
 import logging
+import math
 import traceback
 import random
 from collections import Counter
@@ -140,6 +141,25 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
         lane_assignments=lane_assignments,
         other_drivers=drivers_not_racing
     )
+
+
+def compute_session_progress(race_session, all_drivers, dbsession):
+    """For RacesPerDriver sessions, return (races_done, projected_total). Else (0, None)."""
+    if race_session.end_condition != 'RacesPerDriver':
+        return 0, None
+    R = race_session.end_condition_info or 0
+    if not R:
+        return 0, None
+    enabled_lanes = dbsession.exec(select(Lane).where(Lane.enabled == True)).all()
+    L = max(1, len(enabled_lanes))
+    races_done = len(dbsession.exec(
+        select(Race).where(Race.session_id == race_session.id, Race.state == 'Finished')
+    ).all())
+    active = [d for d in all_drivers if not d.sit_out_next_race]
+    remaining_slots = sum(max(0, R - d.completed_races) for d in active)
+    effective_L = min(len(active), L)
+    races_remaining = math.ceil(remaining_slots / effective_L) if remaining_slots > 0 and effective_L > 0 else 0
+    return races_done, races_done + races_remaining
 
 
 def get_active_meeting(dbsession):
@@ -290,12 +310,16 @@ def load_pending_race(dbsession):
     meeting = dbsession.get(Meeting, race_session.meeting_id)
     count_first_crossing = meeting.count_first_crossing if meeting else False
 
+    races_done, races_total = compute_session_progress(race_session, all_drivers, dbsession)
+
     return NextRaceSetup(
         race_id=pending_race.id,
         race_number=pending_race.race_number or 1,
         count_first_crossing=count_first_crossing,
         lane_assignments=lane_assignments,
         other_drivers=other_drivers,
+        session_races_done=races_done,
+        session_races_total=races_total,
     )
 
 
@@ -385,15 +409,19 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
             select(DriverRace).where(DriverRace.race_id == pending_race.id)
         ).all()
         assigned_ids = {dr.driver_id for dr in existing}
+        race_session = dbsession.get(RaceSession, pending_race.session_id)
+        quota = race_session.end_condition_info if race_session and race_session.end_condition == 'RacesPerDriver' else None
 
         all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=pending_race.session_id)
         next_driver = next(
-            (d for d in all_drivers if not d.sit_out_next_race and d.id not in assigned_ids),
+            (d for d in all_drivers
+             if not d.sit_out_next_race
+             and d.id not in assigned_ids
+             and (quota is None or d.completed_races < quota)),
             None
         )
 
         if next_driver:
-            race_session = dbsession.get(RaceSession, pending_race.session_id)
             car_id = get_car_id_for_lane(dbsession, lane_number, race_session.meeting_id)
             dbsession.add(DriverRace(
                 driver_id=next_driver.id,

@@ -51,6 +51,7 @@ const LapCounter = () => {
     const [raceNumber, setRaceNumber] = useState(pendingRace?.race_number ?? null);
 
     const mqttClientRef = useRef(null);
+    const prevRaceStateRef = useRef(null);
 
     // Seed driver names and raceId from pending race on page load
     useEffect(() => {
@@ -201,6 +202,16 @@ const LapCounter = () => {
     // Primary display update: map race_state from LapData onto the drivers viewmodel
     const processRaceStateMsg = (raceState) => {
         const { state, drivers: raceDrivers, race_fastest_lap } = raceState;
+
+        const prevState = prevRaceStateRef.current;
+        prevRaceStateRef.current = state;
+        if (raceIdRef.current) {
+            if (state === 'Running' && prevState !== 'Running') {
+                fetch(`${config.apiurl}/races/${raceIdRef.current}/start`, { method: 'POST' }).catch(() => {});
+            } else if (state === 'Finished' && prevState !== 'Finished') {
+                fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' }).catch(() => {});
+            }
+        }
 
         // Keep raceId in sync with what LapData is tracking (needed for car-swap calls)
         if (raceState.race_id && raceState.race_id !== raceIdRef.current) {

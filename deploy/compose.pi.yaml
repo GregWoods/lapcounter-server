@@ -1,0 +1,110 @@
+# Raspberry Pi deployment compose file.
+# Uses pre-built images from DockerHub; pull_policy=missing means Docker only
+# pulls on first boot and then operates fully offline (suitable for Pi-as-AP use).
+#
+# NOTE: VITE_MQTT_URL and VITE_API_URL are compiled into the React bundle at
+# image build time. The values here must match the URL used to build the React
+# image. If you rebuild React images, update build-and-push.ps1 to set
+# VITE_API_URL=http://lapcounter.local:8000 and VITE_MQTT_URL=ws://lapcounter.local:8080
+
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    volumes:
+      - ./mosquitto:/mosquitto
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    ports:
+      - 1883:1883
+      - 8080:8080
+      - 9001:9001
+    restart: unless-stopped
+
+  gpio-lane1:
+    image: gregkwoods/lapcounter-server-gpio:latest
+    pull_policy: missing
+    environment:
+      - LANE_NUMBER=1
+      - MQTT_HOSTNAME=mosquitto
+    container_name: gpio-1
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+
+  gpio-lane2:
+    image: gregkwoods/lapcounter-server-gpio:latest
+    pull_policy: missing
+    environment:
+      - LANE_NUMBER=2
+      - MQTT_HOSTNAME=mosquitto
+    container_name: gpio-2
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - gpio-lane1
+
+  lapdata:
+    image: gregkwoods/lapcounter-server-lapdata:latest
+    pull_policy: missing
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - MINIMUM_LAP_TIME=4
+      - API_URL=http://api:8000
+    container_name: lapdata
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - api
+
+  react:
+    image: gregkwoods/lapcounter-server-react:latest
+    pull_policy: missing
+    container_name: react
+    ports:
+      - 80:80
+    environment:
+      - VITE_MQTT_URL=ws://lapcounter.local:8080
+      - VITE_API_URL=http://lapcounter.local:8000
+      - VITE_CAR_MEDIA_FOLDER=media/cars
+    restart: unless-stopped
+
+  api:
+    image: gregkwoods/lapcounter-server-api:latest
+    pull_policy: missing
+    container_name: api
+    cap_add:
+      - SYS_TIME
+    ports:
+      - "8000:8000"
+    environment:
+      - API_URL=http://lapcounter.local:8000
+      - REACT_URL=http://lapcounter.local
+      - MEDIA_FOLDER=media
+      - CARS_MEDIA_FOLDER=media/cars
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_HOST=database
+      - DB_PORT=5432
+    volumes:
+      - car_images:/usr/src/app/media/cars
+    restart: unless-stopped
+
+  database:
+    image: postgres:17
+    pull_policy: missing
+    container_name: database
+    environment:
+      POSTGRES_DB: lapcounter_server
+      POSTGRES_USER: lap
+      POSTGRES_PASSWORD: lap
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  car_images:

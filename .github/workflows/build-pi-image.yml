@@ -1,0 +1,56 @@
+name: Build Raspberry Pi Image
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static xz-utils
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@main
+
+      - name: Install packer-plugin-arm
+        run: packer plugins install github.com/mkaczanowski/arm
+
+      - name: Build image
+        run: |
+          cd deploy
+          packer init lapcounter.pkr.hcl
+          packer build lapcounter.pkr.hcl
+
+      - name: Compress image
+        run: |
+          xz -T0 -6 deploy/output/lapcounter.img
+          mv deploy/output/lapcounter.img.xz lapcounter-${{ github.ref_name }}.img.xz
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Lap Counter ${{ github.ref_name }}
+          body: |
+            ## Installation
+
+            1. Download `lapcounter-${{ github.ref_name }}.img.xz`
+            2. Open **Raspberry Pi Imager**
+            3. Choose OS → **Use custom** → select the downloaded file
+            4. Choose your SD card
+            5. Click **Write**
+            6. Boot the Pi — the stack starts automatically on first boot
+
+            The Pi will be accessible at **http://lapcounter.local** once booted
+            (allow ~2 minutes on first boot for Docker images to download).
+          files: lapcounter-${{ github.ref_name }}.img.xz
+          generate_release_notes: false

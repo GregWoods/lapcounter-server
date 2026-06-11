@@ -93,5 +93,7 @@ class NextRaceSetup(SQLModel):
     count_first_crossing: bool = False
     lane_assignments: list[DriverWithLane] = []
     other_drivers: list[DriverWithLane] = []
+    session_races_done: int = 0
+    session_races_total: Optional[int] = None  # None for non-RacesPerDriver sessions
 
 

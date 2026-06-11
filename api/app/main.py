@@ -1,4 +1,6 @@
 import os
+import subprocess
+import time
 import logging
 import traceback
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +9,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine, select
 from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
@@ -202,8 +205,59 @@ def get_pending_race(dbsession: SessionDep):
     active_session = get_active_session(dbsession)
     lanes = get_lanes(dbsession)
     drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=active_session.id)
+    if active_session.end_condition == 'RacesPerDriver':
+        quota = active_session.end_condition_info or 0
+        drivers = [d for d in drivers if d.completed_races < quota]
+        if not drivers:
+            raise HTTPException(status_code=409, detail="Session complete — all drivers reached race quota")
     setup = assign_drivers_to_lanes(drivers, lanes)
     return save_pending_race(dbsession, setup, active_session)
+
+
+@app.post("/races/{race_id}/start")
+def start_race(race_id: int, dbsession: SessionDep):
+    race = dbsession.get(Race, race_id)
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+    race.state = 'Running'
+    dbsession.add(race)
+    session = dbsession.get(RaceSession, race.session_id)
+    if session and session.state == 'NotStarted':
+        session.state = 'InProgress'
+        dbsession.add(session)
+    dbsession.commit()
+    return {"ok": True}
+
+
+@app.post("/races/{race_id}/finish")
+def finish_race(race_id: int, dbsession: SessionDep):
+    race = dbsession.get(Race, race_id)
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+    race.state = 'Finished'
+    dbsession.add(race)
+    dbsession.commit()
+    session = dbsession.get(RaceSession, race.session_id)
+    if session and session.end_condition == 'RacesPerDriver':
+        quota = session.end_condition_info or 0
+        if quota:
+            all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=session.id)
+            eligible = [d for d in all_drivers if not d.sit_out_next_race and d.completed_races < quota]
+            if not eligible:
+                session.state = 'Finished'
+                dbsession.add(session)
+                next_session = dbsession.exec(
+                    select(RaceSession)
+                    .where(RaceSession.meeting_id == session.meeting_id,
+                           RaceSession.state == 'NotStarted',
+                           RaceSession.id > session.id)
+                    .order_by(RaceSession.id)
+                ).first()
+                if next_session:
+                    next_session.state = 'InProgress'
+                    dbsession.add(next_session)
+                dbsession.commit()
+    return {"ok": True}
 
 
 @app.get("/drivers/nextrace/")
@@ -379,6 +433,18 @@ def finish_session(session_id: int, dbsession: SessionDep):
         raise HTTPException(status_code=404, detail="Session not found")
     race_session.state = 'Finished'
     dbsession.add(race_session)
+    next_session = dbsession.exec(
+        select(RaceSession)
+        .where(
+            RaceSession.meeting_id == race_session.meeting_id,
+            RaceSession.state == 'NotStarted',
+            RaceSession.id > session_id,
+        )
+        .order_by(RaceSession.id)
+    ).first()
+    if next_session:
+        next_session.state = 'InProgress'
+        dbsession.add(next_session)
     dbsession.commit()
     return {"ok": True}
 
@@ -426,6 +492,58 @@ def build_session_results(race_session, dbsession):
     for dr in all_driver_races:
         race_groups[dr.race_id].append(dr)
 
+    scoring_method = race_session.scoring_method
+    races_out = [{"race_id": r.id, "race_number": r.race_number or (i + 1)} for i, r in enumerate(races)]
+
+    if race_session.session_type == 'FastestLap':
+        all_dr_ids = [dr.id for dr in all_driver_races]
+        all_laps = dbsession.exec(
+            select(DriverLap).where(DriverLap.driver_race_id.in_(all_dr_ids))
+        ).all()
+
+        best_lap_per_dr: dict = {}
+        for lap in all_laps:
+            t = float(lap.lap_time)
+            prev = best_lap_per_dr.get(lap.driver_race_id)
+            if prev is None or t < prev:
+                best_lap_per_dr[lap.driver_race_id] = t
+
+        best_lap_by_race: dict = defaultdict(dict)
+        for dr in all_driver_races:
+            best = best_lap_per_dr.get(dr.id)
+            if best is not None:
+                best_lap_by_race[dr.race_id][dr.driver_id] = best
+
+        driver_rows = []
+        for did, name in meeting_driver_names.items():
+            laptimes_map = {str(race_id): best_lap_by_race.get(race_id, {}).get(did) for race_id in race_ids}
+            valid_times = [t for t in laptimes_map.values() if t is not None]
+            best_lap = round(min(valid_times), 3) if valid_times else None
+            avg_lap = round(sum(valid_times) / len(valid_times), 3) if valid_times else None
+            summary = avg_lap if scoring_method == 'AverageFastestLap' else best_lap
+            driver_rows.append({
+                "driver_id": did, "driver_name": name,
+                "lap_times": laptimes_map,
+                "best_lap": best_lap,
+                "avg_best_lap": avg_lap,
+                "total_lap_time": summary,
+                "races_entered": len(valid_times),
+            })
+
+        driver_rows.sort(key=lambda d: (d["total_lap_time"] is None, d["total_lap_time"] or 0))
+
+        return {
+            "session_id": race_session.id,
+            "session_type": race_session.session_type,
+            "meeting_name": meeting_name,
+            "scoring_method": scoring_method,
+            "races": races_out,
+            "drivers": driver_rows,
+            "sessions": sessions_list,
+        }
+
+    # Points / position scoring path
+    scoring_points_json = race_session.scoring_points
     positions = {}
     laps_by_race = defaultdict(dict)
     for race_id in race_ids:
@@ -436,9 +554,6 @@ def build_session_results(race_session, dbsession):
         positions[race_id] = {dr.driver_id: i + 1 for i, dr in enumerate(sorted_drs)}
         for dr in race_groups.get(race_id, []):
             laps_by_race[race_id][dr.driver_id] = dr.laps_completed
-
-    scoring_method = race_session.scoring_method
-    scoring_points_json = race_session.scoring_points
 
     driver_rows = []
     for did, name in meeting_driver_names.items():
@@ -465,7 +580,7 @@ def build_session_results(race_session, dbsession):
         "session_type": race_session.session_type,
         "meeting_name": meeting_name,
         "scoring_method": scoring_method,
-        "races": [{"race_id": r.id, "race_number": r.race_number or (i + 1)} for i, r in enumerate(races)],
+        "races": races_out,
         "drivers": driver_rows,
         "sessions": sessions_list,
     }
@@ -482,6 +597,29 @@ def get_session_results(session_id: int, dbsession: SessionDep):
     if not race_session:
         raise HTTPException(status_code=404, detail="Session not found")
     return build_session_results(race_session, dbsession)
+
+
+# === Admin Utility Endpoints ===
+
+@app.get("/admin/clock")
+def get_clock():
+    return {"timestamp": time.time()}
+
+
+class SyncClockRequest(BaseModel):
+    timestamp: float
+
+
+@app.post("/admin/sync-clock")
+def sync_clock(body: SyncClockRequest):
+    ts = body.timestamp
+    if not (1_000_000_000 < ts < 9_999_999_999):
+        raise HTTPException(status_code=422, detail="timestamp out of plausible range")
+    try:
+        subprocess.run(["date", "-s", f"@{ts:.3f}"], check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to set clock: {e.stderr.decode()}")
+    return {"ok": True, "timestamp": time.time()}
 
 
 # === Diagnostic Endpoints ===

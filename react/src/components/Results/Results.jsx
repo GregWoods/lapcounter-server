@@ -12,6 +12,11 @@ function posClass(pos) {
     return 'pos-other';
 }
 
+function fmtLap(t) {
+    if (t == null) return '–';
+    return Number(t).toFixed(3) + 's';
+}
+
 function ResultsTable({ drivers, races, scrollRef }) {
     return (
         <div className="results-column" ref={scrollRef}>
@@ -48,12 +53,50 @@ function ResultsTable({ drivers, races, scrollRef }) {
     );
 }
 
+function FastestLapResultsTable({ drivers, races, scrollRef, scoringMethod }) {
+    const totalLabel = scoringMethod === 'AverageFastestLap' ? 'Avg Lap' : 'Best Lap';
+    return (
+        <div className="results-column" ref={scrollRef}>
+            <table className="results-table">
+                <thead>
+                    <tr>
+                        <th className="driver-col">Driver</th>
+                        <th className="total-col">{totalLabel}</th>
+                        <th className="raced-col">Raced</th>
+                        {[...races].reverse().map(r => (
+                            <th key={r.race_id} className="race-col">R{r.race_number}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {drivers.map(d => (
+                        <tr key={d.driver_id}>
+                            <td className="driver-name-cell">{d.driver_name}</td>
+                            <td className="total-cell">{fmtLap(d.total_lap_time)}</td>
+                            <td className="raced-cell">{d.races_entered}</td>
+                            {[...races].reverse().map(r => {
+                                const t = d.lap_times?.[String(r.race_id)];
+                                return (
+                                    <td key={r.race_id} className="position-cell pos-other">
+                                        {fmtLap(t)}
+                                    </td>
+                                );
+                            })}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
 function Results() {
     const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
 
     const loaded = useLoaderData() || { races: [], drivers: [], scoring_method: null, session_type: null, meeting_name: null, sessions: [] };
     const [results, setResults] = useState(loaded);
-    const { races, drivers, meeting_name, sessions, session_id } = results;
+    const { races, drivers, meeting_name, sessions, session_id, session_type, scoring_method } = results;
+    const isFastestLap = session_type === 'FastestLap';
 
     useEffect(() => {
         setResults(loaded);
@@ -183,12 +226,23 @@ function Results() {
                 <p className="no-results">No races completed yet.</p>
             ) : wideView ? (
                 <div className="results-columns results-columns--wide">
-                    <ResultsTable drivers={drivers} races={races} scrollRef={col1Ref} />
+                    {isFastestLap
+                        ? <FastestLapResultsTable drivers={drivers} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} />
+                        : <ResultsTable drivers={drivers} races={races} scrollRef={col1Ref} />}
                 </div>
             ) : (
                 <div className="results-columns" ref={colRef}>
-                    <ResultsTable drivers={col1} races={races} scrollRef={col1Ref} />
-                    <ResultsTable drivers={col2} races={races} scrollRef={col2Ref} />
+                    {isFastestLap ? (
+                        <>
+                            <FastestLapResultsTable drivers={col1} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} />
+                            <FastestLapResultsTable drivers={col2} races={races} scrollRef={col2Ref} scoringMethod={scoring_method} />
+                        </>
+                    ) : (
+                        <>
+                            <ResultsTable drivers={col1} races={races} scrollRef={col1Ref} />
+                            <ResultsTable drivers={col2} races={races} scrollRef={col2Ref} />
+                        </>
+                    )}
                 </div>
             )}
         </div>

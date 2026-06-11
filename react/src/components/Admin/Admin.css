@@ -304,3 +304,90 @@
     font-size: 0.85rem;
     margin: 0;
 }
+
+.admin-session-state--end-btn {
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    transition: background 0.15s, color 0.15s;
+}
+
+.admin-session-state--end-btn:hover {
+    background: #254825;
+    color: #7de87d;
+}
+
+/* End session confirmation modal */
+
+.admin-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.admin-modal {
+    background: #1c1c1c;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
+    padding: 28px 32px;
+    max-width: 380px;
+    width: 90%;
+}
+
+.admin-modal-title {
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+}
+
+.admin-modal-body {
+    color: #888;
+    font-size: 0.9rem;
+    margin: 0 0 24px;
+    line-height: 1.5;
+}
+
+.admin-modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+/* Clock sync */
+
+.admin-clock-row {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    flex-wrap: wrap;
+}
+
+.admin-clock-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.admin-clock-label {
+    color: #666;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.admin-clock-time {
+    color: #fff;
+    font-size: 1.1rem;
+    font-family: monospace;
+}
+
+.admin-clock-warn { color: #e84040; }
+.admin-clock-ok   { color: #5bc75b; }

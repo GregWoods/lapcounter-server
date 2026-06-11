@@ -106,6 +106,7 @@ class RaceManager:
         # This covers the case where the grid is just before the S/F line and the
         # car crosses almost immediately after lights out — not a real lap.
         if not self.count_first_crossing and driver.crossings == 1:
+            driver.last_crossing_time = crossing_time  # preserves crossing order for position sort
             logger.info(f"Lane {lane}: start-line crossing discarded")
             return True
 
