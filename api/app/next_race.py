@@ -8,7 +8,7 @@ from typing import List
 from fastapi import HTTPException
 from sqlmodel import select
 from model import *
-from responsemodel import NextRaceSetup, DriverWithLane, RaceSessionWithState
+from responsemodel import NextRaceSetup, DriverWithLane, RaceSessionWithState, SessionDriverFastestLap
 from pprint import pprint
 
 
@@ -141,6 +141,45 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
         lane_assignments=lane_assignments,
         other_drivers=drivers_not_racing
     )
+
+
+def get_session_fastest_laps(dbsession, session_id: int) -> list:
+    """Return all session drivers with their best lap time across finished races.
+
+    Returns [] for non-FastestLap contexts. Until the DB writer is implemented
+    all session_fastest_lap values will be None (no DriverLap records exist in
+    production), but the list of drivers is correct for initialising LapData's
+    in-memory session state.
+    """
+    from sqlalchemy import text
+    query = text("""
+        SELECT
+            d.id            AS driver_id,
+            md.driver_name,
+            MIN(dl.lap_time) AS session_fastest_lap
+        FROM sessions s
+        JOIN meeting_drivers md ON s.meeting_id = md.meeting_id
+        JOIN drivers d ON d.id = md.driver_id
+        LEFT JOIN driver_races dr
+            ON d.id = dr.driver_id
+            AND dr.race_id IN (
+                SELECT id FROM races
+                WHERE session_id = :session_id AND state = 'Finished'
+            )
+        LEFT JOIN driver_laps dl ON dl.driver_race_id = dr.id
+        WHERE s.id = :session_id
+        GROUP BY d.id, md.driver_name
+        ORDER BY session_fastest_lap ASC NULLS LAST
+    """)
+    rows = dbsession.exec(query.bindparams(session_id=session_id)).all()
+    return [
+        SessionDriverFastestLap(
+            driver_id=row.driver_id,
+            driver_name=row.driver_name,
+            session_fastest_lap=float(row.session_fastest_lap) if row.session_fastest_lap is not None else None,
+        )
+        for row in rows
+    ]
 
 
 def compute_session_progress(race_session, all_drivers, dbsession):
@@ -312,6 +351,14 @@ def load_pending_race(dbsession):
 
     races_done, races_total = compute_session_progress(race_session, all_drivers, dbsession)
 
+    race_duration_seconds = None
+    if race_session.end_condition == 'Time' and race_session.end_condition_info:
+        race_duration_seconds = race_session.end_condition_info * 60
+
+    session_drivers = []
+    if race_session.session_type == 'FastestLap':
+        session_drivers = get_session_fastest_laps(dbsession, race_session.id)
+
     return NextRaceSetup(
         race_id=pending_race.id,
         race_number=pending_race.race_number or 1,
@@ -320,6 +367,9 @@ def load_pending_race(dbsession):
         other_drivers=other_drivers,
         session_races_done=races_done,
         session_races_total=races_total,
+        session_type=race_session.session_type,
+        race_duration_seconds=race_duration_seconds,
+        session_drivers=session_drivers,
     )
 
 

@@ -4,6 +4,7 @@ import MqttSubscriber from '../MqttSubscriber.jsx'
 import EditDriverNamesModal from './EditDriverNamesModal.jsx';
 import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
+import FastestLapCounter from './FastestLapCounter.jsx';
 import Header from './Header.jsx';
 import StartRaceModal from './StartRaceModal.jsx';
 import StartLights from './StartLights.jsx';
@@ -49,6 +50,8 @@ const LapCounter = () => {
     raceIdRef.current = raceId;
 
     const [raceNumber, setRaceNumber] = useState(pendingRace?.race_number ?? null);
+    const [sessionType, setSessionType] = useState(pendingRace?.session_type ?? 'Points');
+    const [fastestLapRaceState, setFastestLapRaceState] = useState(null);
 
     const mqttClientRef = useRef(null);
     const prevRaceStateRef = useRef(null);
@@ -201,8 +204,22 @@ const LapCounter = () => {
 
     // Primary display update: map race_state from LapData onto the drivers viewmodel
     const processRaceStateMsg = (raceState) => {
-        const { state, drivers: raceDrivers, race_fastest_lap } = raceState;
+        const { state, race_fastest_lap } = raceState;
 
+        // Keep raceId and raceNumber in sync with LapData
+        if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
+            setRaceId(raceState.race_id);
+        }
+        if (raceState.race_number) {
+            setRaceNumber(raceState.race_number);
+        }
+
+        // Sync session type from race_state
+        if (raceState.session_type) {
+            setSessionType(raceState.session_type);
+        }
+
+        // Fire-and-forget API calls to persist race state transitions
         const prevState = prevRaceStateRef.current;
         prevRaceStateRef.current = state;
         if (raceIdRef.current) {
@@ -213,19 +230,29 @@ const LapCounter = () => {
             }
         }
 
-        // Keep raceId in sync with what LapData is tracking (needed for car-swap calls)
-        if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
-            setRaceId(raceState.race_id);
-        }
-        // race_number is now published directly by LapData — use it as the source of truth
-        if (raceState.race_number) {
-            setRaceNumber(raceState.race_number);
-        }
-
         if (race_fastest_lap && race_fastest_lap < Number(statsRef.current.fastestLapToday)) {
             storeFastestLapToday(race_fastest_lap.toFixed(3));
         }
 
+        // FastestLap sessions: pass raw state to FastestLapCounter; skip driver-card update
+        if (raceState.session_type === 'FastestLap') {
+            setFastestLapRaceState(raceState);
+            if (state === 'ArmedForStart') {
+                setStartLightsShown(true);
+                setLightsOut(false);
+                setRace(r => ({ ...r, underStartersOrders: true }));
+            } else if (state === 'Running') {
+                setLightsOut(true);
+                setRace(r => ({ ...r, hasStarted: true, paused: false, underStartersOrders: false }));
+            } else if (state === 'Paused') {
+                setRace(r => ({ ...r, paused: true }));
+            } else if (state === 'Finished') {
+                setRace(r => ({ ...r, hasStarted: false, paused: false }));
+            }
+            return;
+        }
+
+        const raceDrivers = raceState.drivers ?? [];
         const p1Driver = raceDrivers.find(d => d.position === 1);
         const p1LapsRemaining = p1Driver?.laps_remaining ?? 0;
 
@@ -318,27 +345,34 @@ const LapCounter = () => {
                     onClose={() => { setStartLightsShown(false); setLightsOut(false); }}
                     lightsOut={lightsOut}
                 />
-                <div id="driverCardOuter">
-                    <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
-                        <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
-                        <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
-                        <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
-                        <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
-                        <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
-                        <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
+                {sessionType === 'FastestLap' ? (
+                    <FastestLapCounter
+                        raceState={fastestLapRaceState}
+                        pendingRace={pendingRace}
+                    />
+                ) : (
+                    <div id="driverCardOuter">
+                        <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
+                            <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
+                            <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
+                            <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
+                            <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
+                            <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
+                            <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
 
-                        <CarSelectorModal
-                            showMe={carSelectorModalShown}
-                            onClose={closeCarSelectorModal}
-                            carImgListUrl={config.apiurl + '/api/cars'}
-                            drivers={drivers}
-                            setDrivers={setDrivers}
-                            driverIdx={carSelectorModalDriverIdx}
-                            setDriverIdx={setCarSelectorModalDriverIdx}
-                            onCarSelected={handleCarSelectedInLapCounter}
-                        />
+                            <CarSelectorModal
+                                showMe={carSelectorModalShown}
+                                onClose={closeCarSelectorModal}
+                                carImgListUrl={config.apiurl + '/api/cars'}
+                                drivers={drivers}
+                                setDrivers={setDrivers}
+                                driverIdx={carSelectorModalDriverIdx}
+                                setDriverIdx={setCarSelectorModalDriverIdx}
+                                onCarSelected={handleCarSelectedInLapCounter}
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
            <EditDriverNamesModal

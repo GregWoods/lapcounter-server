@@ -25,6 +25,7 @@ lights_out_max = float(os.getenv('LIGHTS_OUT_MAX_DELAY', '10.0'))
 race = RaceManager()
 pending_race_cache: dict | None = None
 _start_timer: threading.Timer | None = None
+_end_timer: threading.Timer | None = None
 
 # Hardware-level: last crossing time per lane (nanoseconds) for phantom-trigger filtering
 prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
@@ -71,18 +72,44 @@ def handle_car_timestamp(data: dict):
             logger.info("Race finished — waiting for next race_control start")
 
 
+def _do_time_expiry():
+    """Timer callback: auto-end a time-limited race when race_end_time is reached."""
+    global _end_timer
+    _end_timer = None
+    if race.state == 'Running':
+        race.end()
+        publish_race_state()
+        logger.info(f"Race {race.race_id} ended by time expiry")
+
+
+def _schedule_end_timer():
+    """Start the time-expiry timer if this race has a race_end_time."""
+    global _end_timer
+    if _end_timer and _end_timer.is_alive():
+        _end_timer.cancel()
+        _end_timer = None
+    if race.race_end_time:
+        delay = race.race_end_time - time.time()
+        if delay > 0:
+            _end_timer = threading.Timer(delay, _do_time_expiry)
+            _end_timer.daemon = True
+            _end_timer.start()
+            logger.info(f"Race end timer set for {delay:.1f}s")
+
+
 def _do_lights_out():
     """Timer callback: fires lights out, transitions race to Running."""
     global pending_race_cache, prev_crossing_ns
     race.start()
     prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+    _schedule_end_timer()
     publish_race_state()
     pending_race_cache = fetch_pending_race()
 
 
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
-    global pending_race_cache, prev_crossing_ns, _start_timer
+    global pending_race_cache, prev_crossing_ns, _start_timer, _end_timer
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
@@ -92,6 +119,9 @@ def handle_race_control(data: dict):
 
         if _start_timer and _start_timer.is_alive():
             _start_timer.cancel()
+        if _end_timer and _end_timer.is_alive():
+            _end_timer.cancel()
+            _end_timer = None
 
         if pending_race_cache and pending_race_cache.get('race_id') == race_id:
             pending = pending_race_cache
@@ -102,8 +132,13 @@ def handle_race_control(data: dict):
             logger.error("Cannot arm: failed to load pending race from API")
             return
 
-        race.load_lineup(pending['race_id'], pending.get('race_number', 0), target_laps,
-                         pending['lane_assignments'], pending.get('count_first_crossing', False))
+        race.load_lineup(
+            pending['race_id'], pending.get('race_number', 0), target_laps,
+            pending['lane_assignments'], pending.get('count_first_crossing', False),
+            session_type=pending.get('session_type', 'Points'),
+            race_duration_seconds=pending.get('race_duration_seconds'),
+            session_drivers=pending.get('session_drivers', []),
+        )
         race.arm()
         publish_race_state()
 
@@ -117,6 +152,10 @@ def handle_race_control(data: dict):
         race_id = data.get('race_id')
         target_laps = data.get('target_laps', 20)
 
+        if _end_timer and _end_timer.is_alive():
+            _end_timer.cancel()
+            _end_timer = None
+
         # Use the pre-cached lineup when the race_id matches — avoids the timing
         # issue where POST /races/N/start has already run by the time we fetch,
         # causing fetch_pending_race() to return Race N+1 instead of Race N.
@@ -129,11 +168,17 @@ def handle_race_control(data: dict):
             logger.error("Cannot start: failed to load pending race from API")
             return
 
-        race.load_lineup(pending['race_id'], pending.get('race_number', 0), target_laps,
-                         pending['lane_assignments'], pending.get('count_first_crossing', False))
+        race.load_lineup(
+            pending['race_id'], pending.get('race_number', 0), target_laps,
+            pending['lane_assignments'], pending.get('count_first_crossing', False),
+            session_type=pending.get('session_type', 'Points'),
+            race_duration_seconds=pending.get('race_duration_seconds'),
+            session_drivers=pending.get('session_drivers', []),
+        )
         race.start()
         # Reset hardware crossing times so no phantom laps bleed across race start
         prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+        _schedule_end_timer()
         publish_race_state()
 
         # Pre-fetch the next pending race (creates it in DB if needed)
@@ -163,6 +208,9 @@ def handle_race_control(data: dict):
         if _start_timer and _start_timer.is_alive():
             _start_timer.cancel()
             _start_timer = None
+        if _end_timer and _end_timer.is_alive():
+            _end_timer.cancel()
+            _end_timer = None
         race.end()
         publish_race_state()
 
@@ -195,8 +243,13 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     pending = fetch_pending_race()
     if pending:
         pending_race_cache = pending
-        race.load_lineup(pending['race_id'], pending.get('race_number', 0), 20,
-                         pending['lane_assignments'], pending.get('count_first_crossing', False))
+        race.load_lineup(
+            pending['race_id'], pending.get('race_number', 0), 20,
+            pending['lane_assignments'], pending.get('count_first_crossing', False),
+            session_type=pending.get('session_type', 'Points'),
+            race_duration_seconds=pending.get('race_duration_seconds'),
+            session_drivers=pending.get('session_drivers', []),
+        )
         publish_race_state()
     else:
         logger.warning("No pending race found on startup — waiting for race_control start")

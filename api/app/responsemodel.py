@@ -87,6 +87,12 @@ class RaceSessionWithState(SQLModel):
     state: str  # 'NotStarted', 'InProgress', 'Finished'
 
 
+class SessionDriverFastestLap(SQLModel):
+    driver_id: int
+    driver_name: str
+    session_fastest_lap: Optional[float] = None
+
+
 class NextRaceSetup(SQLModel):
     race_id: int = 0
     race_number: int = 1
@@ -95,5 +101,8 @@ class NextRaceSetup(SQLModel):
     other_drivers: list[DriverWithLane] = []
     session_races_done: int = 0
     session_races_total: Optional[int] = None  # None for non-RacesPerDriver sessions
+    session_type: str = 'Points'
+    race_duration_seconds: Optional[int] = None  # seconds; set for time-limited races
+    session_drivers: list[SessionDriverFastestLap] = []  # FastestLap sessions only
 
 
