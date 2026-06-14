@@ -1,6 +1,6 @@
 import os
 import subprocess
-import time
+import time as time_module
 import logging
 import traceback
 from fastapi.middleware.cors import CORSMiddleware
@@ -244,18 +244,12 @@ def finish_race(race_id: int, dbsession: SessionDep):
             all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=session.id)
             eligible = [d for d in all_drivers if not d.sit_out_next_race and d.completed_races < quota]
             if not eligible:
+                # Auto-end the session (ending is automatic). Starting the NEXT
+                # session is a manual operator action from /racecontrol — it begins
+                # when the first race of that session is started — so we do NOT
+                # promote it here.
                 session.state = 'Finished'
                 dbsession.add(session)
-                next_session = dbsession.exec(
-                    select(RaceSession)
-                    .where(RaceSession.meeting_id == session.meeting_id,
-                           RaceSession.state == 'NotStarted',
-                           RaceSession.id > session.id)
-                    .order_by(RaceSession.id)
-                ).first()
-                if next_session:
-                    next_session.state = 'InProgress'
-                    dbsession.add(next_session)
                 dbsession.commit()
     return {"ok": True}
 
@@ -433,18 +427,8 @@ def finish_session(session_id: int, dbsession: SessionDep):
         raise HTTPException(status_code=404, detail="Session not found")
     race_session.state = 'Finished'
     dbsession.add(race_session)
-    next_session = dbsession.exec(
-        select(RaceSession)
-        .where(
-            RaceSession.meeting_id == race_session.meeting_id,
-            RaceSession.state == 'NotStarted',
-            RaceSession.id > session_id,
-        )
-        .order_by(RaceSession.id)
-    ).first()
-    if next_session:
-        next_session.state = 'InProgress'
-        dbsession.add(next_session)
+    # Next session is started manually from /racecontrol (by starting its first
+    # race), not auto-promoted here.
     dbsession.commit()
     return {"ok": True}
 
@@ -603,7 +587,7 @@ def get_session_results(session_id: int, dbsession: SessionDep):
 
 @app.get("/admin/clock")
 def get_clock():
-    return {"timestamp": time.time()}
+    return {"timestamp": time_module.time()}
 
 
 class SyncClockRequest(BaseModel):
@@ -619,7 +603,7 @@ def sync_clock(body: SyncClockRequest):
         subprocess.run(["date", "-s", f"@{ts:.3f}"], check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to set clock: {e.stderr.decode()}")
-    return {"ok": True, "timestamp": time.time()}
+    return {"ok": True, "timestamp": time_module.time()}
 
 
 # === Diagnostic Endpoints ===

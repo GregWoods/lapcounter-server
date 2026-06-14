@@ -359,35 +359,3 @@
     gap: 10px;
     justify-content: flex-end;
 }
-
-/* Clock sync */
-
-.admin-clock-row {
-    display: flex;
-    align-items: center;
-    gap: 32px;
-    flex-wrap: wrap;
-}
-
-.admin-clock-col {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.admin-clock-label {
-    color: #666;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.admin-clock-time {
-    color: #fff;
-    font-size: 1.1rem;
-    font-family: monospace;
-}
-
-.admin-clock-warn { color: #e84040; }
-.admin-clock-ok   { color: #5bc75b; }

@@ -6,6 +6,7 @@ import Results from './components/Results/Results.jsx'
 import Register from './components/Register/Register.jsx'
 import Admin from './components/Admin/Admin.jsx'
 import Drivers from './components/Drivers/Drivers.jsx'
+import RaceControl from './components/RaceControl/RaceControl.jsx'
 import PinPrompt from './components/PinPrompt/PinPrompt.jsx'
 import { useAdminAuth } from './contexts/AdminAuthContext.jsx'
 
@@ -89,6 +90,10 @@ const router = createBrowserRouter([
                 return [];
             }
         },
+    },
+    {
+        path: "racecontrol",
+        element: <RequireAdmin><RaceControl /></RequireAdmin>,
     },
     {
         path: "drivers",

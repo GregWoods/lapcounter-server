@@ -3,6 +3,8 @@
     flex-direction: column;
     position: fixed;
     inset: 0;
+    /* Above the FastestLapCounter driver bars (z-index up to 30) */
+    z-index: 1000;
 }
 
 .yellowflag {
@@ -59,6 +61,8 @@
     position: fixed;
     inset: 0;
     background-color: rgba(0, 0, 0, 0);
+    /* Above the FastestLapCounter driver bars (z-index up to 30) */
+    z-index: 1000;
 }
 
 #yellowflagcontent.yellow {

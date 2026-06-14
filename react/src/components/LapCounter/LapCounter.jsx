@@ -6,11 +6,11 @@ import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import FastestLapCounter from './FastestLapCounter.jsx';
 import Header from './Header.jsx';
-import StartRaceModal from './StartRaceModal.jsx';
 import StartLights from './StartLights.jsx';
+import YellowFlagRacePaused from './YellowFlagRacePaused.jsx';
 import { useState, useRef, useEffect } from 'react';
 import { useLoaderData } from 'react-router-dom';
-import { defaultConfig, defaultRace, getDriverDataDefault, getInitialDrivers } from '../../defaultConfig.js';
+import { defaultConfig, defaultRace, getInitialDrivers } from '../../defaultConfig.js';
 
 const DEBUG = true;
 
@@ -54,12 +54,12 @@ const LapCounter = () => {
     const [fastestLapRaceState, setFastestLapRaceState] = useState(null);
 
     const mqttClientRef = useRef(null);
-    const prevRaceStateRef = useRef(null);
 
-    // Seed driver names and raceId from pending race on page load
+    // Seed driver names, raceId, and sessionType from pending race on page load
     useEffect(() => {
         if (!pendingRace?.lane_assignments) return;
         if (pendingRace.race_id) setRaceId(pendingRace.race_id);
+        if (pendingRace.session_type) setSessionType(pendingRace.session_type);
         setDrivers(current =>
             current.map(driver => {
                 const a = pendingRace.lane_assignments.find(
@@ -70,10 +70,18 @@ const LapCounter = () => {
         );
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const [startRaceModalShown, setStartRaceModalShown] = useState(false);
+    // Ask lapdata for the current state on load — race_state is not retained on the broker.
+    useEffect(() => {
+        const t = setTimeout(() => {
+            mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'status' }));
+        }, 800);
+        return () => clearTimeout(t);
+    }, []);
+
+    const [racePhase, setRacePhase] = useState(pendingRace?.lane_assignments ? 'getready' : null);
     const [startLightsShown, setStartLightsShown] = useState(false);
     const [lightsOut, setLightsOut] = useState(false);
-    const [previewDriverCards, setPreviewDriverCards] = useState(false);
+    const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);
 
     const storeMqttHost = (newMqttHost) => {
         setConfig({...config, mqtturl: newMqttHost});
@@ -106,80 +114,6 @@ const LapCounter = () => {
     const openDriverNamesModal = (driverIdx) => {
         setDriverNamesModalDriverIdx(driverIdx);
         setDriverNamesModalShown(true);
-    }
-
-    // Green flag clicked: fetch lineup, reset driver stats, show Start popup
-    const handleGreenFlag = async () => {
-        const laps = race.type?.details.laps ?? defaultRace.type.details.laps;
-
-        let assignmentByLane = {};
-        try {
-            const res = await fetch(`${config.apiurl}/races/pending/`);
-            if (res.ok) {
-                const pendingRace = await res.json();
-                if (pendingRace.race_id) setRaceId(pendingRace.race_id);
-                if (pendingRace.race_number) setRaceNumber(pendingRace.race_number);
-                for (const a of pendingRace.lane_assignments ?? []) {
-                    if (a.id !== 0 && a.lane_enabled) {
-                        assignmentByLane[a.lane_number] = a;
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Failed to load pending race:', e);
-        }
-
-        setDrivers(currentDrivers => {
-            let nextPosition = 1;
-            return currentDrivers.map((driver, index) => {
-                const laneNumber = index + 1;
-                const a = assignmentByLane[laneNumber];
-                if (!a) return null;
-                return {
-                    ...(driver ?? { number: laneNumber }),
-                    ...getDriverDataDefault(laps),
-                    lapsRemaining: laps,
-                    p1LapsRemaining: laps,
-                    position: nextPosition++,
-                    name: a.driver_name,
-                    driverId: a.id,
-                    carImgUrl: carImageUrl(a.car_picture),
-                };
-            });
-        });
-
-        if (mqttClientRef.current) {
-            mqttClientRef.current.publish('race_control', JSON.stringify({
-                command: 'prepare',
-                race_id: raceIdRef.current,
-            }));
-        }
-
-        setPreviewDriverCards(true);
-        setStartRaceModalShown(true);
-    };
-
-    // Start button in popup: arm the race — lapdata controls the random delay and lights out
-    const handleRaceStart = () => {
-        setStartRaceModalShown(false);
-        setPreviewDriverCards(false);
-        setRace({ ...defaultRace, underStartersOrders: true, type: race.type });
-
-        const targetLaps = race.type?.details.laps ?? 20;
-        if (mqttClientRef.current && raceIdRef.current) {
-            mqttClientRef.current.publish('race_control', JSON.stringify({
-                command: 'arm',
-                race_id: raceIdRef.current,
-                target_laps: targetLaps,
-            }));
-        }
-    };
-
-    const handleRaceEnd = () => {
-        if (mqttClientRef.current) {
-            mqttClientRef.current.publish('race_control', JSON.stringify({ command: 'end' }));
-        }
-        setRace({...race, underStartersOrders: false, hasStarted: false, paused: false});
     }
 
     const openCarSelectorModal = (driverIdx) => {
@@ -219,16 +153,15 @@ const LapCounter = () => {
             setSessionType(raceState.session_type);
         }
 
-        // Fire-and-forget API calls to persist race state transitions
-        const prevState = prevRaceStateRef.current;
-        prevRaceStateRef.current = state;
-        if (raceIdRef.current) {
-            if (state === 'Running' && prevState !== 'Running') {
-                fetch(`${config.apiurl}/races/${raceIdRef.current}/start`, { method: 'POST' }).catch(() => {});
-            } else if (state === 'Finished' && prevState !== 'Finished') {
-                fetch(`${config.apiurl}/races/${raceIdRef.current}/finish`, { method: 'POST' }).catch(() => {});
-            }
-        }
+        // Header phase + (Points) staged-lineup preview, driven by the live state.
+        if (state === 'Finished') setRacePhase('results');
+        else if (state === 'NotStarted') setRacePhase('getready');
+        else setRacePhase('live');
+        if (state === 'NotStarted') setPreviewDriverCards(true);
+        else if (state === 'Running' || state === 'Finished') setPreviewDriverCards(false);
+
+        // Race/session state persistence is owned by lapdata (server-side), so the
+        // display no longer POSTs transitions — it is purely a viewer now.
 
         if (race_fastest_lap && race_fastest_lap < Number(statsRef.current.fastestLapToday)) {
             storeFastestLapToday(race_fastest_lap.toFixed(3));
@@ -316,29 +249,16 @@ const LapCounter = () => {
                 />
                 <Header
                     raceNumber={raceNumber}
+                    racePhase={racePhase}
                     mqttHost={config.mqtturl}
-                    setMqtthost={storeMqttHost}
-                    onGreenFlag={handleGreenFlag}
+                    setMqttHost={storeMqttHost}
                     fastestLapToday={statsRef.current.fastestLapToday}
-                    hasStarted={race.hasStarted}
-                    underStartersOrders={race.underStartersOrders || startRaceModalShown}
-                    onRaceEnd={handleRaceEnd}
-                    yellowFlagAdvantageDuration={3.8}
-                    onYellowFlagCountdown={() => { console.log('Lapcounter: Yellow Flag Countdown')}}
-                    onYellowFlag={() => {
-                        setRace({...race, paused: true});
-                        mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'pause' }));
-                    }}
-                    onEndYellowFlag={() => {
-                        setRace({...race, paused: false});
-                        mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'resume' }));
-                    }}
                     resetFastestLapToday={resetFastestLapToday}
                 />
-                <StartRaceModal
-                    showMe={startRaceModalShown}
-                    onStart={handleRaceStart}
-                    onClose={() => setStartRaceModalShown(false)}
+                <YellowFlagRacePaused
+                    showMe={race.paused}
+                    onRacePaused={() => {}}
+                    onEndYellowFlag={() => {}}
                 />
                 <StartLights
                     showMe={startLightsShown}

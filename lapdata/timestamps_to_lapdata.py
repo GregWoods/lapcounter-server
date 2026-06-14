@@ -26,6 +26,10 @@ race = RaceManager()
 pending_race_cache: dict | None = None
 _start_timer: threading.Timer | None = None
 _end_timer: threading.Timer | None = None
+# Last race state we POSTed to the API, so we fire /start and /finish exactly once
+# per transition. lapdata (the race authority) owns these DB side-effects server-side
+# so persistence is browser-independent — no client needs to be open.
+_last_posted_state: str | None = None
 
 # Hardware-level: last crossing time per lane (nanoseconds) for phantom-trigger filtering
 prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
@@ -66,8 +70,28 @@ def handle_car_timestamp(data: dict):
     }))
     logger.info(f"lap: lane={lane} t={crossing_time:.3f}")
 
+    # Capture lap count before processing so we can tell a real counted lap from a
+    # discarded start-line crossing (both make on_lap return True).
+    driver_before = race.drivers.get(lane)
+    prev_laps = driver_before.laps_completed if driver_before else 0
+
     if race.on_lap(lane, crossing_time):
         publish_race_state()
+
+        # Emit a context-rich event for the DB writer ONLY when a real lap was
+        # counted. This is the authoritative lap (race manager already ignores
+        # idle/non-running crossings and the discarded start crossing), so the DB
+        # writer persists it verbatim without re-deriving any race logic.
+        d = race.drivers.get(lane)
+        if d and d.laps_completed > prev_laps:
+            client.publish('driver_lap', json.dumps({
+                'race_id': race.race_id,
+                'driver_id': d.driver_id,
+                'lane': lane,
+                'lap_number': d.laps_completed,
+                'lap_time': d.lap_times[-1],
+            }))
+
         if race.state == 'Finished':
             logger.info("Race finished — waiting for next race_control start")
 
@@ -185,16 +209,30 @@ def handle_race_control(data: dict):
         pending_race_cache = fetch_pending_race()
 
     elif command == 'prepare':
-        # Refresh the lineup cache at green-flag time, before POST /races/N/start
-        # can advance the pending race to N+1. This fixes stale cache when lanes
-        # are changed after LapData's startup fetch.
+        # "Next Race" on the race-control page. Refresh the lineup cache, load it
+        # into the race manager, and publish a NotStarted race_state so every
+        # display (currentrace, nextrace) stages the new lineup — the same shape
+        # lapdata already broadcasts at startup, so this is not a new state.
         race_id = data.get('race_id')
         fresh = fetch_pending_race()
         if fresh:
             pending_race_cache = fresh
-            logger.info(f"Lineup cached for race {fresh.get('race_id')} on prepare (requested {race_id})")
+            race.load_lineup(
+                fresh['race_id'], fresh.get('race_number', 0), 20,
+                fresh['lane_assignments'], fresh.get('count_first_crossing', False),
+                session_type=fresh.get('session_type', 'Points'),
+                race_duration_seconds=fresh.get('race_duration_seconds'),
+                session_drivers=fresh.get('session_drivers', []),
+            )
+            publish_race_state()
+            logger.info(f"Staged race {fresh.get('race_id')} on prepare (requested {race_id})")
         else:
             logger.warning("prepare: failed to refresh lineup cache")
+
+    elif command == 'status':
+        # A client (e.g. the race-control page) asking for the current state,
+        # since race_state is not retained on the broker.
+        publish_race_state()
 
     elif command == 'pause':
         race.pause()
@@ -218,8 +256,32 @@ def handle_race_control(data: dict):
         logger.warning(f"Unknown race_control command: {command}")
 
 
+def _post_api(path: str):
+    """Fire-and-forget POST to the API in a daemon thread (never blocks MQTT)."""
+    def _do():
+        try:
+            req = urllib.request.Request(f"{api_url}{path}", method='POST')
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                resp.read()
+        except Exception as e:
+            logger.warning(f"API POST {path} failed: {e}")
+    threading.Thread(target=_do, daemon=True).start()
+
+
 def publish_race_state():
+    global _last_posted_state
     client.publish('race_state', json.dumps(race.to_dict()))
+
+    # Persist race-lifecycle transitions via the API (race Running/Finished, session
+    # InProgress, and the automatic session-end). Starting the next race/session stays
+    # a manual /racecontrol action, so we only POST start/finish — never advance.
+    state = race.state
+    if state != _last_posted_state:
+        if state == 'Running':
+            _post_api(f"/races/{race.race_id}/start")
+        elif state == 'Finished':
+            _post_api(f"/races/{race.race_id}/finish")
+        _last_posted_state = state
 
 
 def on_message(_client, _userdata, msg):

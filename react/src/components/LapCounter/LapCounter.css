@@ -115,6 +115,9 @@ html:has(#lapcounter) body {
 .ReactModalOverlay {
     position: fixed;
     inset: 0;
+    /* Above the FastestLapCounter driver bars (z-index up to 30) so start lights
+       and other modals always paint over the leaderboard. */
+    z-index: 1000;
     display: flex;
     justify-content: center;
     align-items: center;

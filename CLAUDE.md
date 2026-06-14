@@ -23,7 +23,7 @@ DB Writer service    React apps        Any client
 - **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order.
 - **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
 - **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
-- **dbwriter/** *(planned)* - Small service: subscribes to `lap`, persists to DB via API
+- **dbwriter/** - Small service: subscribes to `driver_lap` (counted laps) and `race_state`. Writes `driver_laps` rows + `driver_races` aggregates **directly to PostgreSQL** (psycopg2, raw SQL — *not* via the API), and keeps `races`/`sessions` state in step with lapdata so persistence is browser-independent.
 
 ### Core design principles
 
@@ -38,9 +38,10 @@ DB Writer service    React apps        Any client
 | Topic | Publisher | Subscribers | Description |
 |---|---|---|---|
 | `car_timestamp` | GPIO/Layer 1 | LapData only | Raw hardware event — internal, do not subscribe elsewhere |
-| `lap` | LapData | DB Writer, React (optional) | Normalised lap crossing — the stable public interface |
-| `race_state` | LapData | React apps | Full computed state after every crossing (positions, lap counts, fastest laps) |
-| `race_control` | Any client | LapData | Commands: `start`, `pause`, `resume`, `end` |
+| `lap` | LapData | React (optional) | Raw normalised crossing — published for **every** crossing (incl. idle, non-running, and the discarded start-line crossing), with no race context. **Not** used for DB persistence. |
+| `driver_lap` | LapData | DB Writer | Authoritative **counted** lap with full context — emitted only when the race manager actually counts a real lap. This is the DB-persistence contract. |
+| `race_state` | LapData | React apps, DB Writer | Full computed state after every crossing (positions, lap counts, fastest laps) |
+| `race_control` | Any client | LapData | Commands: `prepare`, `arm`, `start`, `status`, `pause`, `resume`, `end` |
 
 **`race_control`:** `{"command": "start", "race_id": 5}`
 
@@ -59,7 +60,12 @@ DB Writer service    React apps        Any client
 ```
 
 **`lap`:** `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>}`  
-`car` is 1-based lane number. `lapTime` filtered by `MINIMUM_LAP_TIME` env var.
+`car` is 1-based lane number. `lapTime` filtered by `MINIMUM_LAP_TIME` env var. Published for every crossing — does **not** mean a lap was counted.
+
+**`driver_lap`:** `{"race_id":<id>,"driver_id":<id>,"lane":<1-6>,"lap_number":<n>,"lap_time":<seconds>}`  
+Emitted by lapdata only when `race_manager.on_lap` counts a real lap (so idle/non-running crossings and the discarded start-line crossing never produce one). The DB writer persists these verbatim — it re-derives no race logic.
+
+**Discarded first crossing** is controlled by the **meeting**-level `meetings.count_first_crossing` flag (set in the Admin *meeting* form, not the session). It flows `meeting → /races/pending/ payload → lapdata load_lineup → race_manager.on_lap`: when false, each driver's first crossing is discarded (not counted, no `driver_lap`).
 
 ## Development Commands
 
@@ -140,7 +146,7 @@ Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gr
 
 React subscribes to `race_state` via MQTT and renders it. It contains no race logic. `lapUtils.js` (`calculateLapTime`, `modifyDriversViewModel`, `checkEndOfRace`) is being deleted as part of the LapData race manager refactor.
 
-React publishes `race_control` directly to MQTT (not via API) for speed and so non-browser clients work the same way. It also fires `POST /races/{id}/start` and `POST /races/{id}/finish` to the API as fire-and-forget for DB state, triggered by detecting `race_state.state` transitions (`prevRaceStateRef` tracks the previous state to avoid duplicate calls).
+React publishes `race_control` directly to MQTT (not via API) for speed and so non-browser clients work the same way. **It no longer persists race state** — that is owned by lapdata server-side (see below), so the display is a pure viewer and persistence works with no browser open.
 
 Planned routes: `/` (leaderboard), `/nextrace` (lineup), `/tv` (full-screen display), `/driver/N` (per-driver view).
 
@@ -202,8 +208,10 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 - PostgreSQL + SQLModel ORM: 15 table models in `api/app/model.py`
 - Full driver CRUD, meetings, sessions endpoints
 - `GET /races/pending/` — loads or creates a pending race; filters eligible drivers by quota when `end_condition == 'RacesPerDriver'`; returns 409 when no eligible drivers remain
-- `POST /races/{id}/start` — sets race Running, promotes session to InProgress if still NotStarted; called fire-and-forget from React on `race_state.state === 'Running'` transition
-- `POST /races/{id}/finish` — sets race Finished; for RacesPerDriver sessions auto-ends session and promotes next NotStarted session when all eligible drivers reach quota; called fire-and-forget from React on `race_state.state === 'Finished'` transition
+- `POST /races/{id}/start` — sets race Running, promotes session to InProgress if still NotStarted; **POSTed server-side by lapdata** in `publish_race_state()` on the `Running` transition (browser-independent). Starting a race is the manual `/racecontrol` action that promotes its session.
+- `POST /races/{id}/finish` — sets race Finished; for RacesPerDriver sessions **auto-ends** the session when all eligible drivers reach quota. **Does NOT start the next session** — that is a manual `/racecontrol` action (start the first race of the next session). POSTed server-side by lapdata on the `Finished` transition.
+
+> **Lifecycle pattern: ending is automatic, starting is manual.** A race ends automatically (target laps / time expiry); the operator manually stages + starts the next (`/racecontrol`: Next Race → Start Race). A session ends automatically (RacesPerDriver quota); the operator starts the next session by starting its first race. lapdata owns the *automatic* side (it POSTs start/finish to the API on transitions); `/racecontrol` owns the *manual* side. `POST /sessions/{id}/finish` likewise ends a session without promoting the next.
 - `POST /sessions/{id}/finish` — ends session, promotes next NotStarted session to InProgress
 - `PATCH /lanes/{lane_number}` — enable/disable a lane, updates pending race lineup
 - Lane assignment algorithm (`next_race.py`) with 8 pytest unit tests
@@ -217,8 +225,8 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 - LapData to own all race state (positions, lap counts, fastest laps, race end)
 - LapData to publish `race_state` MQTT topic after every lap crossing
 - React to subscribe to `race_state` and delete all race logic (`lapUtils.js`)
-- New DB Writer service to subscribe to `lap` and persist to DB
-- `race_control` MQTT topic for race start/pause/end from any client
+- ✅ DB Writer service implemented (`dbwriter/`) — subscribes to `driver_lap` + `race_state`, writes `driver_laps`/`driver_races` straight to PostgreSQL
+- ✅ `race_control` MQTT topic for race prepare/arm/start/pause/resume/end/status from any client (used by the `/racecontrol` page)
 
 **Still needed:**
 - "Load Next Race" button in LapCounter after a race finishes

@@ -19,11 +19,6 @@ log = logging.getLogger(__name__)
 
 _conn = None
 
-# Per-race settings cached from race_state: {race_id: count_first_crossing}
-_count_first_crossing: dict = {}
-# Tracks which (race_id, lane) pairs have had their start-line crossing discarded
-_start_crossing_done: set = set()
-
 
 def get_conn():
     global _conn
@@ -58,81 +53,28 @@ def _reset_conn():
     _conn = None
 
 
-def on_race_state(payload: dict):
-    global _count_first_crossing, _start_crossing_done
+def on_driver_lap(payload: dict):
+    """Persist one authoritative counted lap published by lapdata. The race manager
+    has already filtered idle/non-running crossings and the discarded start-line
+    crossing, so we record this verbatim — no race logic is re-derived here."""
     race_id = payload.get('race_id')
-    state = payload.get('state')
-    if not race_id or state not in ('Running', 'Finished'):
-        return
-
-    if state == 'Running':
-        _count_first_crossing[race_id] = payload.get('count_first_crossing', True)
-
-    try:
-        conn = get_conn()
-        with conn.cursor() as cur:
-            if state == 'Running':
-                cur.execute(
-                    "UPDATE races SET state='Running' WHERE id=%s AND state='NotStarted'",
-                    (race_id,)
-                )
-                changed = cur.rowcount
-                # Transition parent session to InProgress on the first Running race
-                cur.execute("""
-                    UPDATE sessions SET state='InProgress'
-                    WHERE id=(SELECT session_id FROM races WHERE id=%s)
-                    AND state='NotStarted'
-                """, (race_id,))
-            elif state == 'Finished':
-                cur.execute(
-                    "UPDATE races SET state='Finished' WHERE id=%s AND state IN ('NotStarted','Running')",
-                    (race_id,)
-                )
-                changed = cur.rowcount
-                # Clean up per-race caches
-                _count_first_crossing.pop(race_id, None)
-                _start_crossing_done = {k for k in _start_crossing_done if k[0] != race_id}
-        conn.commit()
-        if changed:
-            log.info("Race %d → %s", race_id, state)
-    except Exception as e:
-        log.error("Error updating race state: %s", e)
-        _reset_conn()
-
-
-def on_lap(payload: dict):
-    lane = payload.get('car')
-    lap_time = payload.get('lapTime')
-    if lane is None or lap_time is None:
-        log.warning("Ignoring lap with missing car or lapTime: %s", payload)
+    driver_id = payload.get('driver_id')
+    lap_number = payload.get('lap_number')
+    lap_time = payload.get('lap_time')
+    if race_id is None or driver_id is None or lap_time is None:
+        log.warning("Ignoring driver_lap with missing fields: %s", payload)
         return
 
     try:
         conn = get_conn()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id FROM races WHERE state = 'Running' ORDER BY id DESC LIMIT 1")
-            race = cur.fetchone()
-            if not race:
-                log.debug("No running race, ignoring lap for lane %d", lane)
-                return
-
-            race_id = race['id']
-
-            # Discard the start-line crossing when count_first_crossing is False
-            if not _count_first_crossing.get(race_id, True):
-                key = (race_id, lane)
-                if key not in _start_crossing_done:
-                    _start_crossing_done.add(key)
-                    log.debug("Race %d lane %d: start-line crossing discarded", race_id, lane)
-                    return
-
             cur.execute(
-                "SELECT id, laps_completed, fastest_lap_time FROM driver_races WHERE race_id = %s AND lane = %s",
-                (race_id, lane)
+                "SELECT id, fastest_lap_time FROM driver_races WHERE race_id=%s AND driver_id=%s",
+                (race_id, driver_id)
             )
             dr = cur.fetchone()
             if not dr:
-                log.warning("No driver_race for race %d lane %d", race_id, lane)
+                log.warning("No driver_race for race %s driver %s", race_id, driver_id)
                 return
 
             cur.execute(
@@ -140,21 +82,17 @@ def on_lap(payload: dict):
                 (dr['id'], lap_time)
             )
 
-            new_laps = (dr['laps_completed'] or 0) + 1
             current_fastest = dr['fastest_lap_time']
             new_fastest = (
                 lap_time if (current_fastest is None or lap_time < float(current_fastest))
                 else current_fastest
             )
-
             cur.execute(
-                "UPDATE driver_races SET laps_completed = %s, fastest_lap_time = %s WHERE id = %s",
-                (new_laps, new_fastest, dr['id'])
+                "UPDATE driver_races SET laps_completed=%s, last_lap_time=%s, fastest_lap_time=%s WHERE id=%s",
+                (lap_number, lap_time, new_fastest, dr['id'])
             )
-
         conn.commit()
-        log.info("Race %d lane %d: lap %d in %.3fs", race_id, lane, new_laps, lap_time)
-
+        log.info("Race %s driver %s: lap %s in %.3fs", race_id, driver_id, lap_number, lap_time)
     except Exception as e:
         log.error("Error persisting lap: %s", e)
         _reset_conn()
@@ -163,10 +101,8 @@ def on_lap(payload: dict):
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
-        if msg.topic == 'lap':
-            on_lap(payload)
-        elif msg.topic == 'race_state':
-            on_race_state(payload)
+        if msg.topic == 'driver_lap':
+            on_driver_lap(payload)
     except json.JSONDecodeError:
         log.warning("Could not parse MQTT message: %s", msg.payload)
     except Exception as e:
@@ -175,9 +111,8 @@ def on_message(client, userdata, msg):
 
 def on_connect(client, userdata, flags, reason_code, properties):
     log.info("Connected to MQTT broker (rc=%s)", reason_code)
-    client.subscribe('lap')
-    client.subscribe('race_state')
-    log.info("Subscribed to 'lap', 'race_state'")
+    client.subscribe('driver_lap')
+    log.info("Subscribed to 'driver_lap'")
 
 
 def main():

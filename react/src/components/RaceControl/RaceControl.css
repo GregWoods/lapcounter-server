@@ -1,0 +1,144 @@
+/*
+ * Mobile-first, portrait race-control surface.
+ *
+ * The global stylesheet sets html { font-size: 1.666vw } for the 1920px TV
+ * display, which makes `rem` collapse to ~6px on a phone. So this page anchors
+ * its own base size with clamp() and sizes everything in `em`, independent of
+ * that TV root. Desktop just needs to be usable, hence the modest cap + column.
+ */
+
+.rc-page {
+    font-size: clamp(16px, 4.6vw, 22px);
+    min-height: 100vh;
+    width: 100%;
+    max-width: 540px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 0.9em;
+    background: #15171a;
+    color: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    font-family: system-ui, sans-serif;
+}
+
+.rc-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    margin-bottom: 0.8em;
+}
+
+.rc-home {
+    color: #aaa;
+    display: flex;
+    align-items: center;
+}
+
+.rc-home svg { width: 1.4em; height: 1.4em; }
+
+.rc-header h1 {
+    font-size: 1.5em;
+    margin: 0;
+}
+
+/* ── Session / race readout ──────────────────────────────────────── */
+
+.rc-info {
+    background: #1e2228;
+    border-radius: 0.7em;
+    padding: 1.1em 0.9em;
+    text-align: center;
+    margin-bottom: 1.2em;
+}
+
+.rc-meeting {
+    font-size: 1.1em;
+    color: #9aa4b2;
+}
+
+.rc-session {
+    font-size: 1.4em;
+    font-weight: 600;
+    margin-top: 0.15em;
+}
+
+.rc-racenum {
+    font-size: 2.6em;
+    font-weight: 800;
+    margin: 0.3em 0 0.4em;
+    line-height: 1.05;
+}
+
+.rc-state {
+    display: inline-block;
+    padding: 0.35em 1em;
+    border-radius: 2em;
+    font-size: 1em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #2c3138;
+    color: #cfd6df;
+}
+
+.rc-state--running { background: #14361c; color: #5be07a; }
+.rc-state--paused { background: #4a3c0a; color: #ffd23f; }
+.rc-state--finished { background: #2a2a2a; color: #d0d0d0; }
+.rc-state--notstarted { background: #14233a; color: #6fb0ff; }
+.rc-state--armedforstart { background: #14233a; color: #6fb0ff; }
+
+/* ── Action buttons ──────────────────────────────────────────────── */
+
+.rc-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9em;
+    flex: 1;
+}
+
+.rc-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5em;
+    width: 100%;
+    padding: 1.1em 0.8em;
+    border: none;
+    border-radius: 0.7em;
+    font-size: 1.5em;
+    font-weight: 700;
+    color: #fff;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: filter 0.1s ease;
+}
+
+/* Scale every button icon (lucide + inline flag SVGs) with the label text */
+.rc-btn svg {
+    width: 1.4em;
+    height: 1.4em;
+    flex-shrink: 0;
+}
+
+.rc-btn:active { filter: brightness(0.85); }
+
+.rc-btn--start { background: #128a2b; }
+.rc-btn--next { background: #1f6feb; }
+.rc-btn--yellow { background: #d9a400; color: #1a1a1a; }
+.rc-btn--end { background: #b3261e; }
+
+.rc-btn--ghost {
+    background: transparent;
+    border: 0.1em solid #3a4049;
+    color: #aab2bd;
+    font-size: 1.1em;
+    padding: 0.8em;
+}
+
+.rc-connecting {
+    text-align: center;
+    color: #8a93a0;
+    font-size: 1.2em;
+    margin-top: 1.5em;
+}

@@ -64,6 +64,8 @@ services:
 
   api:
     container_name: api
+    cap_add:
+      - SYS_TIME
     environment:
       - API_URL=http://localhost:8000   # as seen by external users including the react app
       - REACT_URL=http://localhost:8088

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
 import { House, LogOut } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
@@ -17,7 +17,7 @@ const SCORING_METHOD_LABELS = {
     LapPoints: 'Lap Points',
     PositionPoints: 'Position Points',
     FastestLap: 'Personal best',
-    AverageFastestLap: 'Average best per race',
+    AverageFastestLap: 'Average best per race (not impl)',
 };
 
 const DEFAULT_SESSION = {
@@ -111,6 +111,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
 
     const isFastestLapSession = form.session_type === 'FastestLap';
     const availableScoringMethods = isFastestLapSession ? FASTEST_LAP_SCORING_METHODS : POINTS_SCORING_METHODS;
+    const availableEndConditions = isFastestLapSession ? ['Time'] : END_CONDITIONS;
 
     const handleSessionTypeChange = (newType) => {
         const isFl = newType === 'FastestLap';
@@ -119,6 +120,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
             ...f,
             session_type: newType,
             scoring_method: validMethods.includes(f.scoring_method) ? f.scoring_method : validMethods[0],
+            end_condition: isFl ? 'Time' : f.end_condition,
         }));
     };
 
@@ -151,7 +153,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
             <div className="admin-form-row">
                 <label>End condition</label>
                 <select value={form.end_condition} onChange={e => set('end_condition', e.target.value)}>
-                    {END_CONDITIONS.map(c => <option key={c} value={c}>{END_CONDITION_LABELS[c] || c}</option>)}
+                    {availableEndConditions.map(c => <option key={c} value={c}>{END_CONDITION_LABELS[c] || c}</option>)}
                 </select>
             </div>
             <div className="admin-form-row">
@@ -196,87 +198,6 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
     );
 }
 
-function formatDiff(seconds) {
-    if (seconds < 5)    return 'In sync';
-    if (seconds < 60)   return `${seconds}s off`;
-    if (seconds < 3600) return `${Math.round(seconds / 60)}m off`;
-    return `${Math.round(seconds / 3600)}h off`;
-}
-
-function ClockSync() {
-    const [piTs, setPiTs] = useState(null);
-    const [fetchedAt, setFetchedAt] = useState(null);
-    const [syncing, setSyncing] = useState(false);
-    const [synced, setSynced] = useState(false);
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        fetch(`${API_URL}/admin/clock`)
-            .then(r => r.ok ? r.json() : null)
-            .then(data => { if (data) { setPiTs(data.timestamp); setFetchedAt(Date.now()); } })
-            .catch(() => {});
-    }, []);
-
-    if (!piTs) return null;
-
-    const estimatedPiNow = piTs + (Date.now() - fetchedAt) / 1000;
-    const absDiff = Math.round(Math.abs(Date.now() / 1000 - estimatedPiNow));
-    const inSync = absDiff < 5;
-
-    const handleSync = async () => {
-        setSyncing(true);
-        setError(null);
-        try {
-            const now = Date.now() / 1000;
-            const res = await fetch(`${API_URL}/admin/sync-clock`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ timestamp: now }),
-            });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body.detail || 'Sync failed');
-            }
-            setPiTs(now);
-            setFetchedAt(Date.now());
-            setSynced(true);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setSyncing(false);
-        }
-    };
-
-    return (
-        <div className="admin-card">
-            <h2 className="admin-card-title">System Clock</h2>
-            <div className="admin-clock-row">
-                <div className="admin-clock-col">
-                    <span className="admin-clock-label">Pi</span>
-                    <span className="admin-clock-time">{new Date(estimatedPiNow * 1000).toLocaleTimeString()}</span>
-                </div>
-                <div className="admin-clock-col">
-                    <span className="admin-clock-label">This device</span>
-                    <span className="admin-clock-time">{new Date().toLocaleTimeString()}</span>
-                </div>
-                <div className="admin-clock-col">
-                    <span className="admin-clock-label">Difference</span>
-                    <span className={`admin-clock-time ${inSync ? 'admin-clock-ok' : 'admin-clock-warn'}`}>
-                        {formatDiff(absDiff)}
-                    </span>
-                </div>
-                <button
-                    className={synced ? 'admin-btn-ghost' : 'admin-btn-primary'}
-                    onClick={handleSync}
-                    disabled={syncing || synced || inSync}
-                >
-                    {syncing ? 'Syncing…' : synced ? 'Synced ✓' : 'Sync to this device'}
-                </button>
-            </div>
-            {error && <p className="admin-error" style={{ marginTop: '12px' }}>{error}</p>}
-        </div>
-    );
-}
 
 const Admin = () => {
     const { logout } = useAdminAuth();
@@ -386,8 +307,6 @@ const Admin = () => {
                     </button>
                 </div>
             </div>
-
-            <ClockSync />
 
             {newMeetingOpen && (
                 <div className="admin-card">
