@@ -1,9 +1,9 @@
 import './NextRace.css';
 import { useState, useRef } from 'react';
-import { useLoaderData, Link } from 'react-router-dom';
-import { House } from 'lucide-react';
+import { useLoaderData } from 'react-router-dom';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
 import MqttSubscriber from '../MqttSubscriber';
+import PageHeader from '../PageHeader/PageHeader';
 
 
 function NextRace() {
@@ -102,10 +102,7 @@ function NextRace() {
                 onRaceStateMessage={handleRaceState}
                 onRaceControlMessage={handleRaceControl}
             />
-            <div className="nr-title-row">
-                <Link to="/" className="home-icon-link"><House /></Link>
-                <h1>Next - Race {raceNumber}{sessionRacesTotal != null ? ` of ${sessionRacesTotal}` : ''}</h1>
-            </div>
+            <PageHeader title={`Next - Race ${raceNumber}${sessionRacesTotal != null ? ` of ${sessionRacesTotal}` : ''}`} />
             <div className="nr-columns">
 
                 <div className="nr-col nr-col-assigned">

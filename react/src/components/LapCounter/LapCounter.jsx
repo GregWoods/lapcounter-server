@@ -17,7 +17,7 @@ const DEBUG = true;
 const LapCounter = () => {
     const pendingRace = useLoaderData();
 
-    const [config, setConfig] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
+    const [config] = useLocalStorageState('config', {defaultValue: {...defaultConfig}});
     console.log('config', config);
 
     const [race, setRace] = useState(defaultRace);
@@ -82,10 +82,6 @@ const LapCounter = () => {
     const [startLightsShown, setStartLightsShown] = useState(false);
     const [lightsOut, setLightsOut] = useState(false);
     const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);
-
-    const storeMqttHost = (newMqttHost) => {
-        setConfig({...config, mqtturl: newMqttHost});
-    }
 
     const storeFastestLapToday = (lapTime) => {
         setStats({...statsRef.current,
@@ -250,10 +246,6 @@ const LapCounter = () => {
                 <Header
                     raceNumber={raceNumber}
                     racePhase={racePhase}
-                    mqttHost={config.mqtturl}
-                    setMqttHost={storeMqttHost}
-                    fastestLapToday={statsRef.current.fastestLapToday}
-                    resetFastestLapToday={resetFastestLapToday}
                 />
                 <YellowFlagRacePaused
                     showMe={race.paused}
