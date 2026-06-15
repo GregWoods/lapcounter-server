@@ -8,17 +8,13 @@ def calculate_race_points(
     position: Optional[int],
     laps_completed: Optional[int],
 ) -> int:
-    if not scoring_method:
+    # Finishing Position races always score by position ('PositionPoints').
+    # (The old 'LapPoints' concept has been removed.)
+    if scoring_method != 'PositionPoints':
         return 0
 
-    if scoring_method == 'PositionPoints':
-        if position is None or not scoring_points_json:
-            return 0
-        table = json.loads(scoring_points_json)
-        idx = position - 1
-        return table[idx] if 0 <= idx < len(table) else 0
-
-    if scoring_method == 'LapPoints':
-        return laps_completed or 0
-
-    return 0
+    if position is None or not scoring_points_json:
+        return 0
+    table = json.loads(scoring_points_json)
+    idx = position - 1
+    return table[idx] if 0 <= idx < len(table) else 0

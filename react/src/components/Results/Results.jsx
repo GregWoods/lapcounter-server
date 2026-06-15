@@ -14,7 +14,11 @@ function posClass(pos) {
 
 function fmtLap(t) {
     if (t == null) return '–';
-    return Number(t).toFixed(3) + 's';
+    const s = Number(t).toFixed(3);          // e.g. "4.523" or "12.523"
+    const intLen = s.indexOf('.');
+    // Pad single-digit seconds with a figure space (digit-width) so columns of
+    // single- and double-digit lap times line up on the decimal point.
+    return intLen < 2 ? ' '.repeat(2 - intLen) + s : s;
 }
 
 function ResultsTable({ drivers, races, scrollRef }) {
@@ -72,12 +76,12 @@ function FastestLapResultsTable({ drivers, races, scrollRef, scoringMethod }) {
                     {drivers.map(d => (
                         <tr key={d.driver_id}>
                             <td className="driver-name-cell">{d.driver_name}</td>
-                            <td className="total-cell">{fmtLap(d.total_lap_time)}</td>
+                            <td className="total-cell fl-lap">{fmtLap(d.total_lap_time)}</td>
                             <td className="raced-cell">{d.races_entered}</td>
                             {[...races].reverse().map(r => {
                                 const t = d.lap_times?.[String(r.race_id)];
                                 return (
-                                    <td key={r.race_id} className="position-cell pos-other">
+                                    <td key={r.race_id} className="position-cell pos-other fl-lap">
                                         {fmtLap(t)}
                                     </td>
                                 );

@@ -110,6 +110,7 @@ CREATE TABLE sessions (
     session_type VARCHAR(255) CHECK (session_type IN ('Points', 'FastestLap', 'Championship')),
     end_condition VARCHAR(255) CHECK (end_condition IN ('Laps', 'Time')),
     end_condition_info INT,
+    races_per_driver INT NULL,
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,

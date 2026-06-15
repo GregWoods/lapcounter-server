@@ -249,6 +249,14 @@
     text-align: right !important;
 }
 
+/* Lap-time cells (Fastest Lap results): lighter weight, slightly smaller, and
+   tabular figures so the figure-space-padded times align on the decimal point. */
+.results-table td.fl-lap {
+    font-weight: 400;
+    font-size: 1.0rem;
+    font-variant-numeric: tabular-nums;
+}
+
 .pos-first  { color: #ffd700; }
 .pos-second { color: #c0c0c0; }
 .pos-third  { color: #cd7f32; }

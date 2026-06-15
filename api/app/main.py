@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, find_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, find_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers
 from points import calculate_race_points
 
 settings = Settings()
@@ -205,11 +205,10 @@ def get_pending_race(dbsession: SessionDep):
     active_session = get_active_session(dbsession)
     lanes = get_lanes(dbsession)
     drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=active_session.id)
-    if active_session.end_condition == 'RacesPerDriver':
-        quota = active_session.end_condition_info or 0
-        drivers = [d for d in drivers if d.completed_races < quota]
-        if not drivers:
-            raise HTTPException(status_code=409, detail="Session complete — all drivers reached race quota")
+    if active_session.races_per_driver:
+        drivers, complete = select_balanced_race_drivers(active_session, drivers, lanes)
+        if complete:
+            raise HTTPException(status_code=409, detail="Session complete — all drivers reached race target")
     setup = assign_drivers_to_lanes(drivers, lanes)
     return save_pending_race(dbsession, setup, active_session)
 
@@ -238,11 +237,11 @@ def finish_race(race_id: int, dbsession: SessionDep):
     dbsession.add(race)
     dbsession.commit()
     session = dbsession.get(RaceSession, race.session_id)
-    if session and session.end_condition == 'RacesPerDriver':
-        quota = session.end_condition_info or 0
-        if quota:
+    if session and session.races_per_driver:
+        target = session.races_per_driver
+        if target:
             all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=session.id)
-            eligible = [d for d in all_drivers if not d.sit_out_next_race and d.completed_races < quota]
+            eligible = [d for d in all_drivers if not d.sit_out_next_race and d.completed_races < target]
             if not eligible:
                 # Auto-end the session (ending is automatic). Starting the NEXT
                 # session is a manual operator action from /racecontrol — it begins

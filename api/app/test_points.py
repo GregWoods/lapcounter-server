@@ -41,22 +41,12 @@ class TestPositionPoints:
         assert calculate_race_points('PositionPoints', CLUB, 7, 20) == 0
 
 
-class TestLapPoints:
-    def test_laps_completed(self):
-        assert calculate_race_points('LapPoints', None, 1, 15) == 15
-
-    def test_zero_laps(self):
-        assert calculate_race_points('LapPoints', None, 1, 0) == 0
-
-    def test_dns_scores_zero(self):
-        assert calculate_race_points('LapPoints', None, None, None) == 0
-
-    def test_ignores_points_table(self):
-        assert calculate_race_points('LapPoints', F1, 1, 12) == 12
-
-
 class TestUnknownMethod:
-    def test_unknown_method_scores_zero(self):
+    def test_removed_lappoints_scores_zero(self):
+        # 'LapPoints' was removed — only 'PositionPoints' scores now.
+        assert calculate_race_points('LapPoints', None, 1, 15) == 0
+
+    def test_fastestlap_method_scores_zero(self):
         assert calculate_race_points('FastestLap', F1, 1, 20) == 0
 
     def test_none_method_scores_zero(self):

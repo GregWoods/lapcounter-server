@@ -80,6 +80,7 @@ class RaceSessionWithState(SQLModel):
     session_type: str
     end_condition: str
     end_condition_info: Optional[int]
+    races_per_driver: Optional[int] = None
     scoring_method: str
     scoring_points: Optional[str]
     start_time: Optional[time]

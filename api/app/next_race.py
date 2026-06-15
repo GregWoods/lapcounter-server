@@ -183,10 +183,9 @@ def get_session_fastest_laps(dbsession, session_id: int) -> list:
 
 
 def compute_session_progress(race_session, all_drivers, dbsession):
-    """For RacesPerDriver sessions, return (races_done, projected_total). Else (0, None)."""
-    if race_session.end_condition != 'RacesPerDriver':
-        return 0, None
-    R = race_session.end_condition_info or 0
+    """For sessions with a races_per_driver target, return (races_done, projected_total).
+    Else (0, None)."""
+    R = race_session.races_per_driver or 0
     if not R:
         return 0, None
     enabled_lanes = dbsession.exec(select(Lane).where(Lane.enabled == True)).all()
@@ -199,6 +198,34 @@ def compute_session_progress(race_session, all_drivers, dbsession):
     effective_L = min(len(active), L)
     races_remaining = math.ceil(remaining_slots / effective_L) if remaining_slots > 0 and effective_L > 0 else 0
     return races_done, races_done + races_remaining
+
+
+def select_balanced_race_drivers(race_session, drivers, lanes):
+    """Pick the drivers for the next race so the session ends with every driver having
+    raced exactly ``races_per_driver`` times, without a tiny final race.
+
+    Returns ``(selected_drivers, session_complete)``. When ``session_complete`` is True
+    every active driver has reached the target and no race should be staged.
+
+    Strategy "balance race sizes": spread the remaining driver-slots over the fewest
+    races (``ceil(slots / lanes)``) and make each remaining race as equal as possible,
+    so later races shrink evenly instead of draining down to one or two stragglers.
+    Drivers are taken fewest-raced first (``drivers`` arrives pre-sorted from SQL).
+    """
+    R = race_session.races_per_driver or 0
+    if not R:
+        return drivers, False
+
+    active_under = [d for d in drivers if not d.sit_out_next_race and d.completed_races < R]
+    if not active_under:
+        return [], True
+
+    L = max(1, len([l for l in lanes if l.enabled]))
+    remaining_slots = sum(R - d.completed_races for d in active_under)
+    remaining_races = math.ceil(remaining_slots / L)
+    size = math.ceil(remaining_slots / remaining_races)
+    size = min(size, len(active_under), L)
+    return active_under[:size], False
 
 
 def get_active_meeting(dbsession):
@@ -460,7 +487,7 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
         ).all()
         assigned_ids = {dr.driver_id for dr in existing}
         race_session = dbsession.get(RaceSession, pending_race.session_id)
-        quota = race_session.end_condition_info if race_session and race_session.end_condition == 'RacesPerDriver' else None
+        quota = race_session.races_per_driver if race_session else None
 
         all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=pending_race.session_id)
         next_driver = next(

@@ -1,34 +1,20 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
-import { House, LogOut } from 'lucide-react';
+import { House, LogOut, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import './Admin.css';
 
 const API_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
-const SESSION_TYPES = ['Points', 'FastestLap', 'Championship'];
-const END_CONDITIONS = ['Laps', 'Time', 'RacesPerDriver'];
-const END_CONDITION_LABELS = { Laps: 'Laps', Time: 'Time', RacesPerDriver: 'Races per driver' };
-const POINTS_SCORING_METHODS = ['LapPoints', 'PositionPoints'];
-const FASTEST_LAP_SCORING_METHODS = ['FastestLap', 'AverageFastestLap'];
+// Race types offered in the session form. 'Points' = Finishing Position (race ends on
+// laps, scored by position); 'FastestLap' = Fastest Lap (race ends on time, personal best).
+const RACE_TYPES = ['Points', 'FastestLap'];
+const SESSION_TYPE_LABELS = { Points: 'Finishing Position', FastestLap: 'Fastest Lap', Championship: 'Championship' };
 
-const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
-const SCORING_METHOD_LABELS = {
-    LapPoints: 'Lap Points',
-    PositionPoints: 'Position Points',
-    FastestLap: 'Personal best',
-    AverageFastestLap: 'Average best per race (not impl)',
-};
-
-const DEFAULT_SESSION = {
-    session_type: 'Points',
-    end_condition: 'Laps',
-    end_condition_info: 20,
-    scoring_method: 'PositionPoints',
-    scoring_points: '10, 8, 6, 4, 3, 2, 1',
-    start_time: '',
-    end_time: '',
-};
+const DEFAULT_LAPS = 20;
+const DEFAULT_MINUTES = 5;
+const DEFAULT_RACES_PER_DRIVER = 3;
+const DEFAULT_POINTS = '10, 8, 6, 4, 3, 2';
 
 function parsePoints(str) {
     if (!str) return '';
@@ -95,32 +81,23 @@ function MeetingForm({ initial, onSave, onCancel }) {
 
 function SessionForm({ initial, meetingId, onSave, onCancel }) {
     const [form, setForm] = useState(() => ({
-        ...DEFAULT_SESSION,
-        ...(initial ? {
-            ...initial,
-            scoring_points: parsePoints(initial.scoring_points),
-            start_time: initial.start_time ? initial.start_time.slice(0, 5) : '',
-            end_time: initial.end_time ? initial.end_time.slice(0, 5) : '',
-        } : {}),
-        meeting_id: meetingId,
+        session_type: initial?.session_type ?? 'Points',
+        end_condition_info: initial?.end_condition_info ?? DEFAULT_LAPS,
+        races_per_driver: initial?.races_per_driver ?? DEFAULT_RACES_PER_DRIVER,
+        scoring_points: initial ? parsePoints(initial.scoring_points) : DEFAULT_POINTS,
     }));
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
     const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
-    const isFastestLapSession = form.session_type === 'FastestLap';
-    const availableScoringMethods = isFastestLapSession ? FASTEST_LAP_SCORING_METHODS : POINTS_SCORING_METHODS;
-    const availableEndConditions = isFastestLapSession ? ['Time'] : END_CONDITIONS;
+    const isFastestLap = form.session_type === 'FastestLap';
 
     const handleSessionTypeChange = (newType) => {
-        const isFl = newType === 'FastestLap';
-        const validMethods = isFl ? FASTEST_LAP_SCORING_METHODS : POINTS_SCORING_METHODS;
         setForm(f => ({
             ...f,
             session_type: newType,
-            scoring_method: validMethods.includes(f.scoring_method) ? f.scoring_method : validMethods[0],
-            end_condition: isFl ? 'Time' : f.end_condition,
+            end_condition_info: newType === 'FastestLap' ? DEFAULT_MINUTES : DEFAULT_LAPS,
         }));
     };
 
@@ -129,10 +106,14 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
         setSaving(true);
         setError(null);
         const payload = {
-            ...form,
-            scoring_points: form.scoring_method === 'PositionPoints' ? serializePoints(form.scoring_points) : null,
-            start_time: form.start_time || null,
-            end_time: form.end_time || null,
+            meeting_id: meetingId,
+            session_type: form.session_type,
+            // 'Laps' for Finishing Position races, 'Time' for Fastest Lap races.
+            end_condition: isFastestLap ? 'Time' : 'Laps',
+            end_condition_info: form.end_condition_info || null,
+            races_per_driver: form.races_per_driver || null,
+            scoring_method: isFastestLap ? 'FastestLap' : 'PositionPoints',
+            scoring_points: isFastestLap ? null : serializePoints(form.scoring_points),
         };
         try {
             await onSave(payload);
@@ -145,19 +126,13 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
     return (
         <form className="admin-form admin-session-form" onSubmit={handleSubmit}>
             <div className="admin-form-row">
-                <label>Type</label>
+                <label>Race Type</label>
                 <select value={form.session_type} onChange={e => handleSessionTypeChange(e.target.value)}>
-                    {SESSION_TYPES.map(t => <option key={t} value={t}>{SESSION_TYPE_LABELS[t]}</option>)}
+                    {RACE_TYPES.map(t => <option key={t} value={t}>{SESSION_TYPE_LABELS[t]}</option>)}
                 </select>
             </div>
             <div className="admin-form-row">
-                <label>End condition</label>
-                <select value={form.end_condition} onChange={e => set('end_condition', e.target.value)}>
-                    {availableEndConditions.map(c => <option key={c} value={c}>{END_CONDITION_LABELS[c] || c}</option>)}
-                </select>
-            </div>
-            <div className="admin-form-row">
-                <label>{form.end_condition === 'Laps' ? 'Laps' : form.end_condition === 'Time' ? 'Minutes' : 'Races per driver'}</label>
+                <label>{isFastestLap ? 'Race Time (minutes)' : 'Race Laps'}</label>
                 <input
                     type="number"
                     value={form.end_condition_info || ''}
@@ -165,29 +140,28 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
                     min="1"
                 />
             </div>
-            <div className="admin-form-row">
-                <label>{isFastestLapSession ? 'Ranking' : 'Scoring method'}</label>
-                <select value={form.scoring_method} onChange={e => set('scoring_method', e.target.value)}>
-                    {availableScoringMethods.map(m => <option key={m} value={m}>{SCORING_METHOD_LABELS[m]}</option>)}
-                </select>
-            </div>
-            {form.scoring_method === 'PositionPoints' && (
+            {!isFastestLap && (
                 <div className="admin-form-row">
-                    <label>Points per position</label>
+                    <label>Points scoring</label>
                     <input
                         value={form.scoring_points || ''}
                         onChange={e => set('scoring_points', e.target.value)}
-                        placeholder="10, 8, 6, 4, 3, 2, 1"
+                        placeholder={DEFAULT_POINTS}
                     />
                 </div>
             )}
             <div className="admin-form-row">
-                <label>Start time</label>
-                <input type="time" value={form.start_time || ''} onChange={e => set('start_time', e.target.value)} />
-            </div>
-            <div className="admin-form-row">
-                <label>End time</label>
-                <input type="time" value={form.end_time || ''} onChange={e => set('end_time', e.target.value)} />
+                <label>Session ends after</label>
+                <div className="admin-form-inline">
+                    <input
+                        className="admin-input-narrow"
+                        type="number"
+                        value={form.races_per_driver || ''}
+                        onChange={e => set('races_per_driver', parseInt(e.target.value) || null)}
+                        min="1"
+                    />
+                    <span className="admin-form-suffix">races per driver</span>
+                </div>
             </div>
             {error && <p className="admin-error">{error}</p>}
             <div className="admin-form-actions">
@@ -211,6 +185,19 @@ const Admin = () => {
     const [endingSessionId, setEndingSessionId] = useState(null);
     const [endingLoading, setEndingLoading] = useState(false);
     const [endingError, setEndingError] = useState(null);
+    // undefined = follow default (expand the in-progress meeting, else the latest);
+    // a meeting id pins that one open; null collapses everything.
+    const [expandedMeetingId, setExpandedMeetingId] = useState(undefined);
+
+    const meetingsSorted = [...meetings].sort((a, b) => b.date.localeCompare(a.date));
+    const inProgressMeeting = meetingsSorted.find(m => (m.sessions || []).some(s => s.state === 'InProgress'));
+    const defaultExpandedId = inProgressMeeting?.id ?? meetingsSorted[0]?.id ?? null;
+    const effectiveExpandedId = expandedMeetingId === undefined ? defaultExpandedId : expandedMeetingId;
+    const toggleMeeting = (id) =>
+        setExpandedMeetingId(prev => {
+            const current = prev === undefined ? defaultExpandedId : prev;
+            return current === id ? null : id;
+        });
 
     const reloadAll = async () => {
         const res = await fetch(`${API_URL}/meetings`);
@@ -319,9 +306,12 @@ const Admin = () => {
                 <p className="admin-empty">No meetings yet. Create one above.</p>
             )}
 
-            {[...meetings].sort((a, b) => b.date.localeCompare(a.date)).map(meeting => (
+            {meetingsSorted.map(meeting => {
+                const isExpanded = effectiveExpandedId === meeting.id;
+                const isEditing = editingMeetingId === meeting.id;
+                return (
                 <div key={meeting.id} className="admin-card">
-                    {editingMeetingId === meeting.id ? (
+                    {isEditing ? (
                         <>
                             <h2 className="admin-card-title">Edit Meeting</h2>
                             <MeetingForm
@@ -331,7 +321,13 @@ const Admin = () => {
                             />
                         </>
                     ) : (
-                        <div className="admin-meeting-header">
+                        <div
+                            className="admin-meeting-header admin-meeting-header--toggle"
+                            onClick={() => toggleMeeting(meeting.id)}
+                        >
+                            <span className="admin-collapse-chevron">
+                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            </span>
                             <div className="admin-meeting-info">
                                 <span className="admin-meeting-name">
                                     {meeting.name}
@@ -345,13 +341,14 @@ const Admin = () => {
                             </div>
                             <button
                                 className="admin-btn-ghost admin-btn-sm"
-                                onClick={() => { setEditingMeetingId(meeting.id); setNewMeetingOpen(false); }}
+                                onClick={(e) => { e.stopPropagation(); setEditingMeetingId(meeting.id); setNewMeetingOpen(false); }}
                             >
                                 Edit
                             </button>
                         </div>
                     )}
 
+                    {(isExpanded || isEditing) && (
                     <div className="admin-sessions">
                         <h3 className="admin-sessions-title">Sessions</h3>
 
@@ -371,40 +368,38 @@ const Admin = () => {
                                 ) : (
                                     <div className="admin-session-display">
                                         <span className="admin-session-type">{SESSION_TYPE_LABELS[session.session_type] || session.session_type}</span>
+                                        {session.state === 'InProgress' && (
+                                            <span className="admin-session-badge">In Progress</span>
+                                        )}
                                         <span className="admin-session-detail">
-                                            {session.end_condition_info}&nbsp;{session.end_condition === 'Laps' ? 'laps' : session.end_condition === 'Time' ? 'min' : 'races/driver'}
+                                            {session.end_condition_info}&nbsp;{session.end_condition === 'Time' ? 'min' : 'laps'}
                                         </span>
-                                        <span className="admin-session-detail">
-                                            {SCORING_METHOD_LABELS[session.scoring_method] || session.scoring_method || '—'}
-                                        </span>
-                                        {session.start_time && (
-                                            <span className="admin-session-detail">{session.start_time.slice(0, 5)}</span>
+                                        {session.races_per_driver != null && (
+                                            <span className="admin-session-detail">{session.races_per_driver} races/driver</span>
                                         )}
-                                        {session.state === 'InProgress' ? (
-                                            <button
-                                                className="admin-session-state admin-session-state--inprogress admin-session-state--end-btn"
-                                                onClick={() => { setEndingSessionId(session.id); setEndingError(null); }}
-                                                title="End this session"
-                                            >
-                                                In Progress
-                                            </button>
-                                        ) : (
-                                            <span className={`admin-session-state admin-session-state--${(session.state || 'notstarted').toLowerCase().replace(' ', '')}`}>
-                                                {session.state || 'NotStarted'}
-                                            </span>
-                                        )}
-                                        {['Finished', 'InProgress'].includes(session.state) ? (
-                                            <Link to={`/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
-                                                Results
-                                            </Link>
-                                        ) : (
-                                            <button
-                                                className="admin-btn-ghost admin-btn-sm"
-                                                onClick={() => { setEditingSessionId(session.id); setAddingSessionTo(null); }}
-                                            >
-                                                Edit
-                                            </button>
-                                        )}
+                                        <div className="admin-session-actions">
+                                            {session.state === 'InProgress' && (
+                                                <button
+                                                    className="admin-btn-ghost admin-btn-sm admin-end-session-btn"
+                                                    onClick={() => { setEndingSessionId(session.id); setEndingError(null); }}
+                                                    title="End this session"
+                                                >
+                                                    End Session
+                                                </button>
+                                            )}
+                                            {['Finished', 'InProgress'].includes(session.state) ? (
+                                                <Link to={`/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
+                                                    Results
+                                                </Link>
+                                            ) : (
+                                                <button
+                                                    className="admin-btn-ghost admin-btn-sm"
+                                                    onClick={() => { setEditingSessionId(session.id); setAddingSessionTo(null); }}
+                                                >
+                                                    Edit
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -427,8 +422,10 @@ const Admin = () => {
                             </button>
                         )}
                     </div>
+                    )}
                 </div>
-            ))}
+                );
+            })}
 
             {endingSessionId && (
                 <div className="admin-modal-overlay" onClick={() => setEndingSessionId(null)}>

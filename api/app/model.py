@@ -97,10 +97,11 @@ class RaceSession(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id")
     session_type: str               # 'Points', 'FastestLap', 'Championship'
-    end_condition: str              # 'Laps', 'Time'
+    end_condition: str              # per-race end: 'Laps' (Finishing Position) or 'Time' (Fastest Lap)
     end_condition_info: Optional[int]   #number of laps or time  in minutes
-    scoring_method: str             # 'LapPoints', 'PositionPoints', 'FastestLap'
-    scoring_points: Optional[str]   # JSON string with points array used for PositionPoints (and FastestLap points?)
+    races_per_driver: Optional[int] = Field(default=None)  # automatic session end: each driver races this many times (None = manual end)
+    scoring_method: str             # 'PositionPoints' (Finishing Position) or 'FastestLap' (personal best)
+    scoring_points: Optional[str]   # JSON string with points array used for PositionPoints
     start_time: Optional[time]
     end_time: Optional[time]
     state: str = Field(default='NotStarted')  # 'NotStarted', 'InProgress', 'Finished'
@@ -166,6 +167,7 @@ class RaceSessionUpdate(SQLModel):
     session_type: Optional[str] = None
     end_condition: Optional[str] = None
     end_condition_info: Optional[int] = None
+    races_per_driver: Optional[int] = None
     scoring_method: Optional[str] = None
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None
@@ -191,6 +193,7 @@ class RaceSessionCreate(SQLModel):
     session_type: str
     end_condition: str
     end_condition_info: Optional[int] = None
+    races_per_driver: Optional[int] = None
     scoring_method: str
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None

@@ -83,7 +83,7 @@ All models use SQLModel (SQLAlchemy + Pydantic). No SQLModel relationships are d
 
 **Core race management:**
 - `Meeting` — a race event (name, date, venue)
-- `RaceSession` — a session within a meeting (session_type: Points/FastestLap/Championship, end_condition: Laps/Time, scoring_method)
+- `RaceSession` — a session within a meeting. Two independent end axes: `end_condition` (per-race: `Laps` for Finishing Position, `Time` for Fastest Lap) + `end_condition_info`, and `races_per_driver` (per-session automatic end; nullable, `None` = manual end). `scoring_method` is `PositionPoints` (Finishing Position) or `FastestLap` (personal best)
 - `Race` — individual race (state: NotStarted/Running/Finished)
 - `DriverRace` — links a driver + car + lane for one race (unique constraint on driver_id + race_id)
 - `DriverLap` — individual lap time record

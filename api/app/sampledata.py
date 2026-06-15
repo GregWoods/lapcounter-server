@@ -165,14 +165,16 @@ def add_meeting_cars(session: Session):
 
 def add_sessions(session: Session):
     session.add_all([
-        RaceSession(id=1, meeting_id=3, session_type='FastestLap', 
-                   end_condition='Laps', end_condition_info=3, 
+        RaceSession(id=1, meeting_id=3, session_type='FastestLap',
+                   end_condition='Time', end_condition_info=3,
+                   races_per_driver=2,
                    scoring_method='FastestLap', scoring_points=None,
-                   start_time=time(14, 30, 0), end_time=time(15, 0, 0)),
-        RaceSession(id=2, meeting_id=3, session_type='Points', 
-                   end_condition='Laps', end_condition_info=20, 
-                   scoring_method='PositionPoints', scoring_points=None,
-                   start_time=time(15, 0, 0), end_time=None)
+                   start_time=None, end_time=None),
+        RaceSession(id=2, meeting_id=3, session_type='Points',
+                   end_condition='Laps', end_condition_info=20,
+                   races_per_driver=3,
+                   scoring_method='PositionPoints', scoring_points='[10, 8, 6, 4, 3, 2]',
+                   start_time=None, end_time=None)
     ])
     session.commit()
 

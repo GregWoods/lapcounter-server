@@ -63,10 +63,28 @@
     margin-bottom: 20px;
 }
 
+.admin-meeting-header--toggle {
+    align-items: center;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.admin-meeting-header--toggle:hover .admin-meeting-name {
+    color: #fff;
+}
+
+.admin-collapse-chevron {
+    display: flex;
+    align-items: center;
+    color: #888;
+    flex-shrink: 0;
+}
+
 .admin-meeting-info {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    flex: 1;
 }
 
 .admin-meeting-name {
@@ -157,6 +175,43 @@
 .admin-session-state--notstarted { background: #2a2a2a; color: #666; }
 .admin-session-state--inprogress { background: #1a3a1a; color: #5bc75b; }
 .admin-session-state--finished   { background: #222; color: #555; }
+
+/* Non-clickable "In Progress" badge shown right after the session type */
+.admin-session-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 5px;
+    letter-spacing: 0.03em;
+    background: #1a3a1a;
+    color: #5bc75b;
+    border: 1px solid #2d5e2d;
+    white-space: nowrap;
+}
+
+/* Right-aligned action group (End Session + Results/Edit) */
+.admin-session-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-end-session-btn {
+    border-color: #5a2d2d;
+    color: #d98b8b;
+}
+
+.admin-end-session-btn:hover {
+    border-color: #9b4040;
+    color: #f0a8a8;
+}
+
+.admin-form-suffix {
+    color: #999;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
 
 /* Add session button */
 
