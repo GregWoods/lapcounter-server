@@ -243,6 +243,48 @@ Against that, the porting cost is real:
 is more than three times what dropping Postgres would yield, for a fraction of
 the risk. Re-measure before considering a database change.
 
+## What is inside the `api` container? — measured, nothing to trim cheaply
+
+`api` became the largest single consumer after the React fix, so it was worth
+opening up. Measured by importing each library in turn inside the real image
+(`docker run --rm --entrypoint python <api-image>`), reading `/proc/self/statm`
+between imports:
+
+| | Cost | Share |
+|---|---:|---:|
+| bare interpreter | 5.8 MB | 13% |
+| `+ pydantic` | 4.8 MB | 11% |
+| **`+ sqlalchemy`** | **13.3 MB** | **29%** |
+| **`+ sqlmodel`** | **9.5 MB** | **21%** |
+| `+ fastapi` | 7.9 MB | 18% |
+| `+ psycopg2` | 2.2 MB | 5% |
+| `+ uvicorn` | 1.5 MB | 3% |
+| `+ starlette` | 0 MB | already pulled in by fastapi |
+| **Total after imports** | **45.1 MB** | |
+
+The running container's cgroup reports **45.6 MB** resident, so **the imports are
+essentially the entire footprint** — application code and runtime data are a
+rounding error on top of the libraries. It runs as a **single process**
+(`fastapi run`, no worker multiplication), and the cgroup split is ~26.7 MB anon
+(Python heap) against ~16.3 MB file-backed page cache.
+
+**There is no silly waste here.** This is simply what `import fastapi` +
+`import sqlmodel` costs on armv7.
+
+The ORM stack is half of it — SQLAlchemy + SQLModel together are **22.8 MB**:
+
+- Dropping **SQLModel** while keeping SQLAlchemy saves ~9.5 MB. Superficially
+  attractive since no relationships are defined and complex queries already use
+  raw SQL — but it is threaded through `model.py`, `responsemodel.py` and every
+  endpoint.
+- Dropping **SQLAlchemy** for raw psycopg2 (as `dbwriter` already does) saves
+  ~23 MB and is a rewrite of the data layer.
+- FastAPI + pydantic (12.7 MB) are unavoidable while this API exists.
+
+**Conclusion: don't.** Every option is a substantial refactor for 10–23 MB,
+against Podman's ~75–85 MB for a mechanical migration (below). If headroom is
+ever needed, Podman first, the ORM a distant second.
+
 ## Is it worth ditching Docker in production?
 
 Asked because Docker's runtime is the largest single line in the budget. Short
@@ -296,13 +338,33 @@ dies.
 
 ### Recommended order
 
-1. **Nothing yet.** 169 MB available and swap down to 77 MB after the React fix.
-   Don't spend a weekend reclaiming memory you aren't short of.
-2. **Investigate `api` first** — at 53.6 MB it is now the largest single
-   consumer, having overtaken everything else. FastAPI + SQLModel + uvicorn is
-   heavy; trimming one process is far cheaper than re-architecting deployment.
-3. **Podman**, if real headroom is needed.
+1. **Nothing.** ~199 MB available, `si`/`so` at zero, zram *saving* ~56 MB. There
+   is no pressure to relieve, and the Zero 2 W target is already met. Don't spend
+   a weekend reclaiming memory you aren't short of.
+2. **Podman**, if real headroom is ever needed — ~75–85 MB for a mechanical
+   migration that keeps the image as the shared artifact.
+3. **The ORM stack**, a distant third: ~9.5 MB to drop SQLModel, ~23 MB to drop
+   SQLAlchemy entirely, both substantial refactors (see the `api` section above).
 4. **Native**, only if 2 and 3 are insufficient — and then go native in dev too.
+
+> An earlier revision of this list ranked "investigate `api`" *above* Podman on
+> the grounds that trimming one process is cheaper than changing deployment.
+> That was wrong twice over. The investigation has now been done and found
+> nothing cheap to trim — the footprint is library imports, not waste — and
+> Podman was always the larger, more mechanical win. Recorded because the
+> reasoning error is more instructive than the conclusion.
+
+### Before migrating to Podman, note
+
+Podman is daemonless, so **nothing restarts containers on boot** — that duty
+moves to systemd (`podman-restart.service` or Quadlet units). Given that
+unattended recovery after a power cut is a hard requirement here (see
+`race-network-setup.md`), a real reboot test is the acceptance criterion, not an
+afterthought. Also expect to handle: named volumes do not transfer from Docker
+(`postgres_data` needs migrating or re-seeding), `privileged: true` GPIO access
+wants rootful Podman rather than rootless, and compose fidelity varies between
+`podman compose` and `podman-compose`. Docker and Podman can coexist, so a trial
+is reversible — but not on the eve of a meet.
 
 ## Pi Zero 2 W feasibility
 
