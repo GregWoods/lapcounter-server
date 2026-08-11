@@ -15,16 +15,18 @@ logger = logging.getLogger(__name__)
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 api_url = os.getenv('API_URL', 'http://api:8000')
 min_lap_time_ns = int(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000
-# Delay range from arm command to lights out. All clients (browser, hardware) start
-# their visual countdown on ArmedForStart; lapdata fires lights out at a random moment
-# within this window. Default: 7–10s (lights animated 1..5 at T+2..6s; min 7 ensures
-# all 5 are on before lights out).
-lights_out_min = float(os.getenv('LIGHTS_OUT_MIN_DELAY', '7.0'))
-lights_out_max = float(os.getenv('LIGHTS_OUT_MAX_DELAY', '10.0'))
+# lapdata owns the whole start-light sequence: the 5 lights come on at
+# START_LIGHT_INTERVAL spacing, then after a random hold all lights go out (race
+# goes). The lit-count is published in race_state.start_lights so every client
+# (browser, future hardware light bar) renders identical, in-sync lights — no
+# client runs its own countdown clock.
+light_interval = float(os.getenv('START_LIGHT_INTERVAL', '1.0'))
+lights_out_hold_min = float(os.getenv('LIGHTS_OUT_HOLD_MIN', '0.5'))
+lights_out_hold_max = float(os.getenv('LIGHTS_OUT_HOLD_MAX', '3.0'))
 
 race = RaceManager()
 pending_race_cache: dict | None = None
-_start_timer: threading.Timer | None = None
+_light_timers: list = []  # the start-light sequence timers (5 lights + lights-out)
 _end_timer: threading.Timer | None = None
 # Last race state we POSTed to the API, so we fire /start and /finish exactly once
 # per transition. lapdata (the race authority) owns these DB side-effects server-side
@@ -36,7 +38,9 @@ prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
 
 
 def fetch_pending_race() -> dict | None:
-    """Fetch pending race lineup from the API. Returns parsed JSON or None on failure."""
+    """Read the next queued race (head of the session's pre-populated queue) from the
+    API. Returns parsed JSON, or None when there is none (404 between sessions / before
+    one is started) or on failure. Read-only — never creates a race."""
     try:
         url = f"{api_url}/races/pending/"
         with urllib.request.urlopen(url, timeout=5) as resp:
@@ -131,9 +135,50 @@ def _do_lights_out():
     pending_race_cache = fetch_pending_race()
 
 
+def _cancel_start_timers():
+    """Cancel any pending start-light/lights-out timers."""
+    global _light_timers
+    for t in _light_timers:
+        if t.is_alive():
+            t.cancel()
+    _light_timers = []
+
+
+def _set_start_lights(n):
+    """Return a timer callback that lights the Nth start light and publishes state."""
+    def _cb():
+        race.start_lights = n
+        publish_race_state()
+    return _cb
+
+
+def _schedule_start_sequence():
+    """Light the 5 start lights at fixed intervals, then lights out → Running.
+
+    lapdata owns the whole sequence and publishes start_lights in race_state, so
+    every client renders the same lights at the same moment (no per-client clock).
+    """
+    global _light_timers
+    _cancel_start_timers()
+    timers = [
+        threading.Timer(light_interval * i, _set_start_lights(i)) for i in range(1, 6)
+    ]
+    hold = random.uniform(lights_out_hold_min, lights_out_hold_max)
+    lights_out_at = light_interval * 5 + hold
+    timers.append(threading.Timer(lights_out_at, _do_lights_out))
+    for t in timers:
+        t.daemon = True
+        t.start()
+    _light_timers = timers
+    logger.info(
+        f"Race {race.race_id} armed — 5 lights at {light_interval:.1f}s spacing, "
+        f"lights out at t+{lights_out_at:.1f}s"
+    )
+
+
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
-    global pending_race_cache, prev_crossing_ns, _start_timer, _end_timer
+    global pending_race_cache, prev_crossing_ns, _end_timer
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
@@ -141,8 +186,7 @@ def handle_race_control(data: dict):
         race_id = data.get('race_id')
         target_laps = data.get('target_laps', 20)
 
-        if _start_timer and _start_timer.is_alive():
-            _start_timer.cancel()
+        _cancel_start_timers()
         if _end_timer and _end_timer.is_alive():
             _end_timer.cancel()
             _end_timer = None
@@ -166,11 +210,7 @@ def handle_race_control(data: dict):
         race.arm()
         publish_race_state()
 
-        delay = random.uniform(lights_out_min, lights_out_max)
-        logger.info(f"Race {race.race_id} armed — lights out in {delay:.1f}s")
-        _start_timer = threading.Timer(delay, _do_lights_out)
-        _start_timer.daemon = True
-        _start_timer.start()
+        _schedule_start_sequence()
 
     elif command == 'start':
         race_id = data.get('race_id')
@@ -205,14 +245,16 @@ def handle_race_control(data: dict):
         _schedule_end_timer()
         publish_race_state()
 
-        # Pre-fetch the next pending race (creates it in DB if needed)
+        # Cache the next queued race (the new head, now this one is Running). The
+        # whole session is pre-populated, so this only reads — it never creates.
         pending_race_cache = fetch_pending_race()
 
     elif command == 'prepare':
-        # "Next Race" on the race-control page. Refresh the lineup cache, load it
-        # into the race manager, and publish a NotStarted race_state so every
-        # display (currentrace, nextrace) stages the new lineup — the same shape
-        # lapdata already broadcasts at startup, so this is not a new state.
+        # "Next Race" on the race-control page. Read the head of the session's race
+        # queue (already pre-populated — no generation here), load it into the race
+        # manager, and publish a NotStarted race_state so every display (currentrace,
+        # nextrace) stages the new lineup — the same shape lapdata broadcasts at
+        # startup, so this is not a new state.
         race_id = data.get('race_id')
         fresh = fetch_pending_race()
         if fresh:
@@ -227,7 +269,9 @@ def handle_race_control(data: dict):
             publish_race_state()
             logger.info(f"Staged race {fresh.get('race_id')} on prepare (requested {race_id})")
         else:
-            logger.warning("prepare: failed to refresh lineup cache")
+            # No queued race (e.g. session just ended / not started yet). Nothing to
+            # stage — the operator starts the next session before the next race exists.
+            logger.info("prepare: no queued race to stage (start a session first)")
 
     elif command == 'status':
         # A client (e.g. the race-control page) asking for the current state,
@@ -243,9 +287,7 @@ def handle_race_control(data: dict):
         publish_race_state()
 
     elif command == 'end':
-        if _start_timer and _start_timer.is_alive():
-            _start_timer.cancel()
-            _start_timer = None
+        _cancel_start_timers()
         if _end_timer and _end_timer.is_alive():
             _end_timer.cancel()
             _end_timer = None

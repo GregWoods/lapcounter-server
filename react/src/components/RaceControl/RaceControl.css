@@ -66,7 +66,7 @@
 .rc-racenum {
     font-size: 2.6em;
     font-weight: 800;
-    margin: 0.3em 0 0.4em;
+    margin: 0.1em 0 0.4em;
     line-height: 1.05;
 }
 
@@ -87,6 +87,37 @@
 .rc-state--finished { background: #2a2a2a; color: #d0d0d0; }
 .rc-state--notstarted { background: #14233a; color: #6fb0ff; }
 .rc-state--armedforstart { background: #14233a; color: #6fb0ff; }
+
+/* ── Roster-changed prompt (regenerate upcoming races) ───────────── */
+
+.rc-regen-banner {
+    background: #3a2e0a;
+    border: 0.1em solid #6b5410;
+    border-radius: 0.7em;
+    padding: 0.9em;
+    margin-bottom: 1.1em;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7em;
+    color: #ffd98a;
+    font-size: 1em;
+    line-height: 1.4;
+}
+
+/* A driver has sat out too many races — offer to disqualify. Redder than the amber
+   regenerate banner so it reads as a stronger, more final action. */
+.rc-sitout-banner {
+    background: #3a160a;
+    border-color: #6b2810;
+    color: #ffb08a;
+}
+
+.rc-btn--regen {
+    background: #d9a400;
+    color: #1a1a1a;
+    font-size: 1.2em;
+    padding: 0.7em;
+}
 
 /* ── Action buttons ──────────────────────────────────────────────── */
 
@@ -141,4 +172,12 @@
     color: #8a93a0;
     font-size: 1.2em;
     margin-top: 1.5em;
+}
+
+.rc-session-complete {
+    text-align: center;
+    color: #8a93a0;
+    font-size: 1.2em;
+    margin-top: 1.5em;
+    line-height: 1.5;
 }

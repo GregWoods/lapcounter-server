@@ -39,6 +39,7 @@ class RaceManager:
         self.target_laps: int = 0
         self.count_first_crossing: bool = False
         self.state: str = 'NotStarted'
+        self.start_lights: int = 0  # 0-5 start lights lit during the ArmedForStart countdown
         self.race_start_time: Optional[float] = None
         self.race_fastest_lap: float = 999.999
         self.drivers: Dict[int, DriverState] = {}  # keyed by lane number
@@ -56,6 +57,7 @@ class RaceManager:
         self.race_number = race_number
         self.count_first_crossing = count_first_crossing
         self.state = 'NotStarted'
+        self.start_lights = 0
         self.race_start_time = None
         self.race_end_time = None
         self.race_fastest_lap = 999.999
@@ -123,10 +125,12 @@ class RaceManager:
 
     def arm(self):
         self.state = 'ArmedForStart'
+        self.start_lights = 0
         logger.info(f"Race {self.race_id} armed — awaiting lights-out timer")
 
     def start(self):
         self.state = 'Running'
+        self.start_lights = 0  # lights out
         self.race_start_time = time.time()
         if self.race_duration_seconds:
             self.race_end_time = self.race_start_time + self.race_duration_seconds
@@ -269,6 +273,7 @@ class RaceManager:
             'race_id': self.race_id,
             'race_number': self.race_number,
             'state': self.state,
+            'start_lights': self.start_lights,
             'session_type': self.session_type,
             'target_laps': self.target_laps,
             'count_first_crossing': self.count_first_crossing,
@@ -315,6 +320,7 @@ class RaceManager:
             'race_id': self.race_id,
             'race_number': self.race_number,
             'state': self.state,
+            'start_lights': self.start_lights,
             'session_type': 'FastestLap',
             'race_start_time': self.race_start_time,
             'race_end_time': self.race_end_time,

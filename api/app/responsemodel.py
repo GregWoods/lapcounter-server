@@ -8,6 +8,7 @@ class DriverWithLane(SQLModel):
     driver_name: str = ""
     completed_races: int = 0
     sit_out_next_race: bool = False
+    disqualified: bool = False   # removed from the rest of this session (per-session, not the global sit_out flag)
     lane1_count: int = 0
     lane2_count: int = 0
     lane3_count: int = 0
@@ -33,8 +34,8 @@ class DriverWithLane(SQLModel):
 
         if driver is not None:
             driver_attrs = [
-                'id', 'driver_name', 'completed_races', 
-                'sit_out_next_race', 'lane1_count', 'lane2_count', 
+                'id', 'driver_name', 'completed_races',
+                'sit_out_next_race', 'disqualified', 'lane1_count', 'lane2_count',
                 'lane3_count', 'lane4_count', 'lane5_count', 'lane6_count',
                 'random_value'
             ]
@@ -65,8 +66,8 @@ class DriverWithLane(SQLModel):
 
     def add_driver_to_lane(self, driver):
         driver_attrs = [
-            'id', 'driver_name', 'completed_races', 
-            'sit_out_next_race', 'lane1_count', 'lane2_count', 
+            'id', 'driver_name', 'completed_races',
+            'sit_out_next_race', 'disqualified', 'lane1_count', 'lane2_count',
             'lane3_count', 'lane4_count', 'lane5_count', 'lane6_count',
             'random_value'
         ]
@@ -81,11 +82,18 @@ class RaceSessionWithState(SQLModel):
     end_condition: str
     end_condition_info: Optional[int]
     races_per_driver: Optional[int] = None
+    max_sit_outs: Optional[int] = None
     scoring_method: str
     scoring_points: Optional[str]
     start_time: Optional[time]
     end_time: Optional[time]
     state: str  # 'NotStarted', 'InProgress', 'Finished'
+
+
+class RaceSessionSummary(RaceSessionWithState):
+    # Projected total races for the session ("X races"); None for sessions with no
+    # races_per_driver target (total is open-ended / operator-ended).
+    races_total: Optional[int] = None
 
 
 class SessionDriverFastestLap(SQLModel):
@@ -97,6 +105,7 @@ class SessionDriverFastestLap(SQLModel):
 class NextRaceSetup(SQLModel):
     race_id: int = 0
     race_number: int = 1
+    session_number: Optional[int] = None  # 1-based ordinal of the session within its meeting
     count_first_crossing: bool = False
     lane_assignments: list[DriverWithLane] = []
     other_drivers: list[DriverWithLane] = []

@@ -147,11 +147,33 @@
 .results-table tbody td.raced-cell,
 .results-table tbody td.position-cell { text-align: right; }
 
-.driver-col {
-    width: 90px;
-    padding-right: 8px !important;
+.posn-col {
+    width: 40px;
+    padding: 6px 6px !important;
+    text-align: center !important;
+    color: #888;
     position: sticky;
     left: 0;
+    z-index: 1;
+    background: #111;
+}
+
+.posn-cell {
+    font-size: 1.2rem;   /* a summary column, sized like Best Lap / Pts */
+    color: #666;
+    padding: 8px 6px !important;
+    text-align: center !important;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #111;
+}
+
+.driver-col {
+    width: 100px;
+    padding-right: 8px !important;
+    position: sticky;
+    left: 52px;
     z-index: 1;
     background: #111;
 }
@@ -179,7 +201,7 @@
     text-overflow: ellipsis;
     padding-right: 8px !important;
     position: sticky;
-    left: 0;
+    left: 52px;
     z-index: 1;
     background: #111;
 }
@@ -191,7 +213,7 @@
     color: #fff;
     text-align: right !important;
     position: sticky;
-    left: 90px;
+    left: 160px;
     z-index: 1;
     background: #111;
 }
@@ -205,7 +227,7 @@
     text-align: right !important;
     white-space: nowrap;
     position: sticky;
-    left: 90px;
+    left: 160px;
     z-index: 1;
     background: #111;
 }
@@ -218,7 +240,7 @@
     color: #888;
     border-right: 1px solid #444;
     position: sticky;
-    left: 150px;
+    left: 232px;
     z-index: 1;
     background: #111;
 }
@@ -231,16 +253,41 @@
     color: #666;
     border-right: 1px solid #444;
     position: sticky;
-    left: 150px;
+    left: 232px;
     z-index: 1;
     background: #111;
 }
 
+/* Points results: tighter driver column (-15%) and a narrow "Pts" total column.
+   Sticky left offsets account for each frozen column's width + padding so the
+   columns don't overlap (which made Best Lap appear to shrink on scroll). */
+.results-table--points .driver-col { width: 85px; }
+.results-table--points .total-col  { width: 45px; left: 145px; }
+.results-table--points .total-cell { left: 145px; }
+.results-table--points .raced-col  { left: 202px; }
+.results-table--points .raced-cell { left: 202px; }
+
 .race-col {
     width: 42px;
     padding-left: 0.75rem !important;
-    text-align: right !important;
+    text-align: center !important;
 }
+
+/* Fastest Lap: lap-time columns are as narrow as a "99.999" time plus a small
+   gap. The base td has 12px right padding which is wasted space under the
+   right-aligned times, so trim both sides. */
+.results-table--fastestlap .race-col {
+    width: 40px;
+    padding-left: 0.15rem !important;
+    padding-right: 0.15rem !important;
+}
+.results-table--fastestlap td.position-cell.fl-lap {
+    font-size: 0.85rem;   /* -15%; the Best Lap total column stays at 1.0rem */
+    padding-left: 0.15rem !important;
+    padding-right: 0.15rem !important;
+}
+/* Centre the "didn't race" dash rather than right-aligning it like a lap time. */
+.results-table--fastestlap td.fl-lap.fl-empty { text-align: center !important; }
 
 .position-cell {
     font-size: 1.12rem;
@@ -253,8 +300,9 @@
    tabular figures so the figure-space-padded times align on the decimal point. */
 .results-table td.fl-lap {
     font-weight: 400;
-    font-size: 1.0rem;
+    font-size: 1.2rem;
     font-variant-numeric: tabular-nums;
+    vertical-align: middle;
 }
 
 .pos-first  { color: #ffd700; }
@@ -262,6 +310,16 @@
 .pos-third  { color: #cd7f32; }
 .pos-other  { color: #ddd; }
 .pos-dns    { color: #555; }
+
+/* Per-race result cells, shared by both tables (Points positions and Fastest Lap
+   times — both use .position-cell): mute the non-podium cells so the
+   gold/silver/bronze podium stands out, and give the medals extra weight. Without
+   the muting, silver (a light grey) is indistinguishable from the near-white
+   default cells. */
+.results-table td.position-cell.pos-other { color: #7d7d7d; font-weight: 400; }
+.results-table td.position-cell.pos-first,
+.results-table td.position-cell.pos-second,
+.results-table td.position-cell.pos-third { font-weight: 600; }
 
 .results-table tbody tr:hover .driver-name-cell,
 .results-table tbody tr:hover .total-cell,

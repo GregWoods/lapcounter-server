@@ -12,8 +12,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from settings import Settings
 from model import *
-from responsemodel import RaceSessionWithState
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, save_pending_race, find_pending_race, get_active_meeting, get_active_session, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers
+from responsemodel import RaceSessionWithState, RaceSessionSummary
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals
 from points import calculate_race_points
 
 settings = Settings()
@@ -128,22 +128,29 @@ def update_meeting(meeting_id: int, update: MeetingUpdate, dbsession: SessionDep
     return meeting
 
 
-@app.get("/sessions", 
+@app.get("/sessions",
          summary="Get race sessions",
          description="Retrieve all race sessions, or filter by meeting ID",
-         response_model=list[RaceSession])
+         response_model=list[RaceSessionSummary])
 def get_sessions_by_meeting_id(
-    dbsession: SessionDep, 
-    meeting_id: int = Query(None, 
+    dbsession: SessionDep,
+    meeting_id: int = Query(None,
         description="Filter sessions by meeting ID",
     )
 ):
     try:
+        query = select(RaceSession).order_by(RaceSession.id)
         if meeting_id is not None:
-            race_sessions = dbsession.exec(select(RaceSession).where(RaceSession.meeting_id == meeting_id)).all()
-        else:
-            race_sessions = dbsession.exec(select(RaceSession)).all()
-        return race_sessions
+            query = query.where(RaceSession.meeting_id == meeting_id)
+        race_sessions = dbsession.exec(query).all()
+        result = []
+        for s in race_sessions:
+            races_total = None
+            if s.races_per_driver:
+                all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=s.id)
+                _done, races_total = compute_session_progress(s, all_drivers, dbsession)
+            result.append(RaceSessionSummary(**s.model_dump(), races_total=races_total))
+        return result
     except Exception as e:
         logger.error(f"Error retrieving sessions: {str(e)}")
         logger.error(traceback.format_exc())
@@ -197,20 +204,185 @@ def update_session(session_id: int, session_update: RaceSessionUpdate, dbsession
     return race_session
 
 
+@app.get("/races/current/")
+def get_current_race(dbsession: SessionDep):
+    """The race the UI should show now: the Running race if one exists, else the next
+    queued (NotStarted) race. Read-only — the DB is authoritative for *which* race is
+    current; lapdata's race_state is a live overlay applied only when race_ids match.
+    Returns 404 when no session is in progress (nothing to show until one is started).
+    """
+    current = load_current_race(dbsession)
+    if current:
+        return current
+    pending = load_pending_race(dbsession)
+    if pending:
+        return pending
+    raise HTTPException(status_code=404, detail="No current race — no session in progress")
+
+
 @app.get("/races/pending/")
 def get_pending_race(dbsession: SessionDep):
+    """Read-only: the next race to run (head of the session's queue), or 404 if none.
+
+    Races are no longer created on read — the whole session is pre-populated when it
+    is started (POST /sessions/start-next) and topped up by regeneration. A 404 here
+    means there is no in-progress session with a queued race (e.g. between sessions),
+    not that one should be conjured.
+    """
     existing = load_pending_race(dbsession)
     if existing:
         return existing
-    active_session = get_active_session(dbsession)
+    raise HTTPException(status_code=404, detail="No pending race — start a session first")
+
+
+@app.get("/races/queue/")
+def get_race_queue(dbsession: SessionDep):
+    """Read-only: the ordered list of upcoming (NotStarted) races for the active
+    session. The head is the next race; the tail is the lookahead the NextRace page
+    previews. Empty list when no session is in progress."""
+    return load_race_queue(dbsession)
+
+
+def generate_session_schedule(dbsession: SessionDep, race_session):
+    """Pre-populate (or top up) a session's race queue: compute the full balanced
+    schedule for every outstanding race and persist them as NotStarted races. Assumes
+    any stale queue has already been cleared. Returns the number of races created."""
     lanes = get_lanes(dbsession)
-    drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=active_session.id)
-    if active_session.races_per_driver:
-        drivers, complete = select_balanced_race_drivers(active_session, drivers, lanes)
-        if complete:
-            raise HTTPException(status_code=409, detail="Session complete — all drivers reached race target")
-    setup = assign_drivers_to_lanes(drivers, lanes)
-    return save_pending_race(dbsession, setup, active_session)
+    drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=race_session.id)
+    schedule = build_session_schedule(race_session, drivers, lanes)
+    return save_session_schedule(dbsession, schedule, race_session)
+
+
+@app.post("/sessions/start-next")
+def start_next_session(dbsession: SessionDep):
+    """Operator action ("Next Session"): begin the next NotStarted session in the
+    active meeting and pre-populate its full race queue. Ending is automatic; starting
+    a session is always this manual step (directive: no race exists until a session is
+    started). 409 if a session is already in progress, 404 if none is queued."""
+    meeting_id = get_active_meeting_id(dbsession)
+    in_progress = dbsession.exec(
+        select(RaceSession)
+        .where(RaceSession.meeting_id == meeting_id, RaceSession.state == 'InProgress')
+    ).first()
+    if in_progress:
+        raise HTTPException(status_code=409, detail="A session is already in progress")
+    nxt = dbsession.exec(
+        select(RaceSession)
+        .where(RaceSession.meeting_id == meeting_id, RaceSession.state == 'NotStarted')
+        .order_by(RaceSession.id)
+    ).first()
+    if not nxt:
+        raise HTTPException(status_code=404, detail="No upcoming session to start")
+    nxt.state = 'InProgress'
+    dbsession.add(nxt)
+    dbsession.commit()
+    count = generate_session_schedule(dbsession, nxt)
+    return {"session_id": nxt.id, "races_generated": count}
+
+
+@app.get("/sessions/active/regen-status")
+def session_regen_status(dbsession: SessionDep):
+    """Whether the active session's upcoming queue is stale — i.e. an eligible driver
+    (still under the race target, not sitting out) appears in no upcoming race. That
+    only happens when the roster changed after the schedule was built (a late arrival),
+    so it drives the RaceControl "New driver added, regenerate?" prompt. Returns
+    needs_regeneration=False for manual-end sessions (no fixed schedule to be stale)."""
+    quiet = {"needs_regeneration": False, "missing_driver_names": [], "session_id": None,
+             "sit_out_candidates": []}
+    try:
+        session = get_active_session(dbsession)
+    except HTTPException:
+        return quiet
+    if session.state != 'InProgress':
+        return quiet
+
+    drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=session.id)
+
+    # Drivers who have sat out too many races and could be disqualified from the rest of
+    # the session. Only offered when the session sets a max_sit_outs limit; already-DQ'd
+    # drivers are excluded. Cumulative skips = withdrawals on the session's finished races.
+    sit_out_candidates = []
+    if session.max_sit_outs:
+        skips = session_skip_counts(dbsession, session.id)
+        sit_out_candidates = [
+            {"driver_id": d.id, "driver_name": d.driver_name, "sit_outs": skips[d.id]}
+            for d in drivers
+            if not d.disqualified and skips.get(d.id, 0) >= session.max_sit_outs
+        ]
+
+    if not session.races_per_driver:
+        return {**quiet, "session_id": session.id, "sit_out_candidates": sit_out_candidates}
+
+    target = session.races_per_driver
+    queued_race_ids = [r.id for r in dbsession.exec(
+        select(Race).where(Race.session_id == session.id, Race.state == 'NotStarted')
+    ).all()]
+    queued_driver_ids = set()
+    if queued_race_ids:
+        for dr in dbsession.exec(
+            select(DriverRace).where(DriverRace.race_id.in_(queued_race_ids))
+        ).all():
+            queued_driver_ids.add(dr.driver_id)
+    missing = [d for d in drivers
+               if not d.sit_out_next_race
+               and not d.disqualified
+               and d.completed_races < target
+               and d.id not in queued_driver_ids]
+    return {
+        "session_id": session.id,
+        "needs_regeneration": len(missing) > 0,
+        "missing_driver_names": [d.driver_name for d in missing],
+        "sit_out_candidates": sit_out_candidates,
+    }
+
+
+@app.post("/sessions/{session_id}/regenerate-races")
+def regenerate_session_races(session_id: int, dbsession: SessionDep):
+    """Rebuild the queue of upcoming races for an in-progress session — used after the
+    driver roster changes mid-session (e.g. a late arrival is added). Finished/running
+    races are untouched; the NotStarted queue is discarded and recomputed from each
+    driver's *outstanding* race count. 409 unless the session is in progress."""
+    race_session = dbsession.get(RaceSession, session_id)
+    if not race_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if race_session.state != 'InProgress':
+        raise HTTPException(status_code=409, detail="Can only regenerate races for an in-progress session")
+    remove_pending_races(dbsession, session_id)
+    count = generate_session_schedule(dbsession, race_session)
+    return {"races_generated": count}
+
+
+@app.post("/sessions/{session_id}/drivers/{driver_id}/disqualify")
+def disqualify_driver(session_id: int, driver_id: int, dbsession: SessionDep):
+    """Remove a driver from the rest of a session (they've sat out too many races). Sets
+    the per-session disqualified flag and rebuilds the upcoming queue so the remaining
+    races refill without them. 409 unless the session is in progress."""
+    race_session = dbsession.get(RaceSession, session_id)
+    if not race_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if race_session.state != 'InProgress':
+        raise HTTPException(status_code=409, detail="Can only disqualify from an in-progress session")
+    set_driver_disqualified(dbsession, session_id, driver_id, True)
+    remove_pending_races(dbsession, session_id)
+    count = generate_session_schedule(dbsession, race_session)
+    return {"races_generated": count}
+
+
+@app.post("/sessions/{session_id}/drivers/{driver_id}/reinstate")
+def reinstate_driver(session_id: int, driver_id: int, dbsession: SessionDep):
+    """Undo a disqualification and rebuild the upcoming queue so the driver is scheduled
+    again for their outstanding races. 409 unless the session is in progress."""
+    race_session = dbsession.get(RaceSession, session_id)
+    if not race_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if race_session.state != 'InProgress':
+        raise HTTPException(status_code=409, detail="Can only reinstate for an in-progress session")
+    set_driver_disqualified(dbsession, session_id, driver_id, False)
+    # A deliberate reinstate forgives past sit-outs, else the disqualify prompt fires again.
+    clear_session_withdrawals(dbsession, session_id, driver_id)
+    remove_pending_races(dbsession, session_id)
+    count = generate_session_schedule(dbsession, race_session)
+    return {"races_generated": count}
 
 
 @app.post("/races/{race_id}/start")
@@ -241,7 +413,8 @@ def finish_race(race_id: int, dbsession: SessionDep):
         target = session.races_per_driver
         if target:
             all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=session.id)
-            eligible = [d for d in all_drivers if not d.sit_out_next_race and d.completed_races < target]
+            eligible = [d for d in all_drivers
+                        if not d.sit_out_next_race and not d.disqualified and d.completed_races < target]
             if not eligible:
                 # Auto-end the session (ending is automatic). Starting the NEXT
                 # session is a manual operator action from /racecontrol — it begins
@@ -250,6 +423,8 @@ def finish_race(race_id: int, dbsession: SessionDep):
                 session.state = 'Finished'
                 dbsession.add(session)
                 dbsession.commit()
+                # No NotStarted race may outlive a Finished session.
+                remove_pending_races(dbsession, session.id)
     return {"ok": True}
 
 
@@ -371,8 +546,12 @@ def remove_driver_from_pending_lane(lane_number: int, dbsession: SessionDep):
         )
     ).first()
     if driver_race:
+        driver_id = driver_race.driver_id
         dbsession.delete(driver_race)
         dbsession.commit()
+        # Removing a scheduled driver is an operator withdrawal: if this race runs
+        # without them it counts as a skip toward the session sit-out limit.
+        record_withdrawal(dbsession, pending_race.id, driver_id)
     return load_pending_race(dbsession)
 
 
@@ -426,9 +605,11 @@ def finish_session(session_id: int, dbsession: SessionDep):
         raise HTTPException(status_code=404, detail="Session not found")
     race_session.state = 'Finished'
     dbsession.add(race_session)
-    # Next session is started manually from /racecontrol (by starting its first
-    # race), not auto-promoted here.
+    # Next session is started manually from /racecontrol (Next Session → start-next),
+    # not auto-promoted here.
     dbsession.commit()
+    # No NotStarted race may outlive a Finished session — drop the whole queue.
+    remove_pending_races(dbsession, race_session.id)
     return {"ok": True}
 
 
@@ -569,9 +750,11 @@ def build_session_results(race_session, dbsession):
     }
 
 
-@app.get("/sessions/active/results")
-def get_active_session_results(dbsession: SessionDep):
-    return build_session_results(get_active_session(dbsession), dbsession)
+@app.get("/sessions/current/results")
+def get_current_session_results(dbsession: SessionDep):
+    # "current" = active session if there is one, else the most recently finished
+    # session (so results stay viewable after a meeting ends). Mirrors /races/current/.
+    return build_session_results(get_session_for_results(dbsession), dbsession)
 
 
 @app.get("/sessions/{session_id}/results")

@@ -19,7 +19,7 @@
 .home-nav {
     display: flex;
     flex-direction: column;
-    gap: 32px;
+    gap: 24px;
     width: min(560px, 95vw);
 }
 
@@ -36,7 +36,7 @@
     display: flex;
     align-items: center;
     gap: 20px;
-    padding: 44px 56px;
+    padding: 24px 56px;
     background: #222;
     color: #fff;
     border: 3px solid #555;

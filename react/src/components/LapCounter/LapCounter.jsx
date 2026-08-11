@@ -50,24 +50,73 @@ const LapCounter = () => {
     raceIdRef.current = raceId;
 
     const [raceNumber, setRaceNumber] = useState(pendingRace?.race_number ?? null);
+    const [sessionNumber, setSessionNumber] = useState(pendingRace?.session_number ?? null);
+    const [sessionRacesTotal, setSessionRacesTotal] = useState(pendingRace?.session_races_total ?? null);
     const [sessionType, setSessionType] = useState(pendingRace?.session_type ?? 'Points');
     const [fastestLapRaceState, setFastestLapRaceState] = useState(null);
 
     const mqttClientRef = useRef(null);
+    const resyncInFlightRef = useRef(false);
 
-    // Seed driver names, raceId, and sessionType from pending race on page load
-    useEffect(() => {
-        if (!pendingRace?.lane_assignments) return;
-        if (pendingRace.race_id) setRaceId(pendingRace.race_id);
-        if (pendingRace.session_type) setSessionType(pendingRace.session_type);
-        setDrivers(current =>
-            current.map(driver => {
-                const a = pendingRace.lane_assignments.find(
+    // Apply a race setup (from the loader / /races/current/) to the viewmodel:
+    // identity (id, number, type) + a *staged* lane lineup. Driver cards are rebuilt
+    // from a fresh base so no lap times / laps-remaining bleed across from a previous
+    // race — live lap data only ever comes from race_state. `targetLaps` (from the
+    // race_state) seeds "Laps Remaining" with the full race distance before any laps
+    // are run; it falls back to the local race config when unknown.
+    const applyRaceSetup = (setup, targetLaps) => {
+        if (!setup?.lane_assignments) return;
+        setDrivers(
+            getInitialDrivers(targetLaps ?? lapsPerRace, defaultCarImg).map(driver => {
+                const a = setup.lane_assignments.find(
                     a => a.lane_number === driver.number && a.id !== 0
                 );
                 return a ? { ...driver, name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture) } : driver;
             })
         );
+        if (setup.race_id) setRaceId(setup.race_id);
+        if (setup.race_number != null) setRaceNumber(setup.race_number);
+        if (setup.session_number != null) setSessionNumber(setup.session_number);
+        if (setup.session_races_total != null) setSessionRacesTotal(setup.session_races_total);
+        if (setup.session_type) setSessionType(setup.session_type);
+    };
+
+    // Stage a freshly-loaded race onto the get-ready preview: clean lineup (above)
+    // plus reset race-phase UI. Used when lapdata stages a new race — e.g. "Next
+    // Race" on /racecontrol — so /currentrace immediately shows the new lineup
+    // instead of leaving the finished leaderboard on screen.
+    const stageRace = (setup, targetLaps) => {
+        applyRaceSetup(setup, targetLaps);
+        setRacePhase('getready');
+        setPreviewDriverCards(true);
+        setStartLightsShown(false);
+        setLightsOut(false);
+        setStartLights(0);
+        setRace(r => ({ ...r, hasStarted: false, paused: false, underStartersOrders: false }));
+    };
+
+    // The DB is authoritative for which race is current. When a race_state arrives
+    // for a race other than the one we're showing, re-fetch /races/current/ to decide
+    // whether to adopt it (newly staged) or ignore it (stale lapdata broadcast).
+    // A NotStarted state means lapdata just staged a new race, so reset to the clean
+    // get-ready preview; otherwise overlay identity/lineup onto the live view.
+    const resyncCurrentRace = (incomingState, targetLaps) => {
+        if (resyncInFlightRef.current) return;
+        resyncInFlightRef.current = true;
+        fetch(`${config.apiurl}/races/current/`)
+            .then(r => r.ok ? r.json() : null)
+            .then(setup => {
+                if (!setup) return;
+                if (incomingState === 'NotStarted') stageRace(setup, targetLaps);
+                else applyRaceSetup(setup, targetLaps);
+            })
+            .catch(() => {})
+            .finally(() => { resyncInFlightRef.current = false; });
+    };
+
+    // Seed identity + lineup from the current race on page load
+    useEffect(() => {
+        applyRaceSetup(pendingRace);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Ask lapdata for the current state on load — race_state is not retained on the broker.
@@ -81,6 +130,7 @@ const LapCounter = () => {
     const [racePhase, setRacePhase] = useState(pendingRace?.lane_assignments ? 'getready' : null);
     const [startLightsShown, setStartLightsShown] = useState(false);
     const [lightsOut, setLightsOut] = useState(false);
+    const [startLights, setStartLights] = useState(0); // lit count, driven by lapdata's race_state
     const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);
 
     const storeFastestLapToday = (lapTime) => {
@@ -136,10 +186,15 @@ const LapCounter = () => {
     const processRaceStateMsg = (raceState) => {
         const { state, race_fastest_lap } = raceState;
 
-        // Keep raceId and raceNumber in sync with LapData
+        // Reconcile identity against the DB (authoritative for which race is
+        // current). A race_state for a different race than the one we're showing is
+        // either a newly-staged race or a stale lapdata broadcast — re-fetch the
+        // current race to arbitrate, and don't apply this (possibly stale) message.
         if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
-            setRaceId(raceState.race_id);
+            resyncCurrentRace(raceState.state, raceState.target_laps);
+            return;
         }
+
         if (raceState.race_number) {
             setRaceNumber(raceState.race_number);
         }
@@ -147,6 +202,11 @@ const LapCounter = () => {
         // Sync session type from race_state
         if (raceState.session_type) {
             setSessionType(raceState.session_type);
+        }
+
+        // Start-light count is owned by lapdata (published as it lights each one).
+        if (raceState.start_lights != null) {
+            setStartLights(raceState.start_lights);
         }
 
         // Header phase + (Points) staged-lineup preview, driven by the live state.
@@ -244,7 +304,9 @@ const LapCounter = () => {
                     debug={DEBUG}
                 />
                 <Header
+                    sessionNumber={sessionNumber}
                     raceNumber={raceNumber}
+                    sessionRacesTotal={sessionRacesTotal}
                     racePhase={racePhase}
                 />
                 <YellowFlagRacePaused
@@ -254,8 +316,9 @@ const LapCounter = () => {
                 />
                 <StartLights
                     showMe={startLightsShown}
-                    onClose={() => { setStartLightsShown(false); setLightsOut(false); }}
+                    onClose={() => { setStartLightsShown(false); setLightsOut(false); setStartLights(0); }}
                     lightsOut={lightsOut}
+                    startLights={startLights}
                 />
                 {sessionType === 'FastestLap' ? (
                     <FastestLapCounter

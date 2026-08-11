@@ -1,6 +1,6 @@
 import './NextRace.css';
 import { useState, useRef } from 'react';
-import { useLoaderData } from 'react-router-dom';
+import { useLoaderData, Link } from 'react-router-dom';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
 import MqttSubscriber from '../MqttSubscriber';
 import PageHeader from '../PageHeader/PageHeader';
@@ -8,11 +8,29 @@ import PageHeader from '../PageHeader/PageHeader';
 
 function NextRace() {
     const next_race_setup = useLoaderData();
+
+    if (next_race_setup?.error || !next_race_setup?.lane_assignments) {
+        return (
+            <div id="nextrace-page">
+                <PageHeader title="Next Race" />
+                <div className="nr-empty">
+                    <p>Session has ended</p>
+                    <Link to="/results" className="nr-empty-link">View Results</Link>
+                </div>
+            </div>
+        );
+    }
+
+    return <NextRaceSetupView next_race_setup={next_race_setup} />;
+}
+
+function NextRaceSetupView({ next_race_setup }) {
     const [laneAssignments, setLaneAssignments] = useState(next_race_setup.lane_assignments);
     const [otherDrivers, setOtherDrivers] = useState(next_race_setup.other_drivers);
     const [carSelectorLane, setCarSelectorLane] = useState(null);
 
     const [raceNumber, setRaceNumber] = useState(next_race_setup.race_number);
+    const [sessionNumber, setSessionNumber] = useState(next_race_setup.session_number ?? null);
     const [sessionRacesTotal, setSessionRacesTotal] = useState(next_race_setup.session_races_total ?? null);
 
     const refreshPendingRace = () => {
@@ -23,6 +41,7 @@ function NextRace() {
                     setLaneAssignments(data.lane_assignments);
                     setOtherDrivers(data.other_drivers);
                     if (data.race_number) setRaceNumber(data.race_number);
+                    if (data.session_number != null) setSessionNumber(data.session_number);
                     if (data.session_races_total != null) setSessionRacesTotal(data.session_races_total);
                 }
             })
@@ -102,7 +121,7 @@ function NextRace() {
                 onRaceStateMessage={handleRaceState}
                 onRaceControlMessage={handleRaceControl}
             />
-            <PageHeader title={`Next - Race ${raceNumber}${sessionRacesTotal != null ? ` of ${sessionRacesTotal}` : ''}`} />
+            <PageHeader title={`Next - ${sessionNumber != null ? `Session ${sessionNumber}, ` : ''}Race ${raceNumber}${sessionRacesTotal != null ? ` of ${sessionRacesTotal}` : ''}`} />
             <div className="nr-columns">
 
                 <div className="nr-col nr-col-assigned">

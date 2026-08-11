@@ -21,14 +21,34 @@ function fmtLap(t) {
     return intLen < 2 ? ' '.repeat(2 - intLen) + s : s;
 }
 
-function ResultsTable({ drivers, races, scrollRef }) {
+// Rank drivers within each race by best lap (ascending) so the fastest three lap
+// times in each race can be medalled gold / silver / bronze. Returns
+// { [race_id]: { [driver_id]: position } }. Must be fed the full field, not a
+// single display column, so positions are correct across the whole race.
+function computeRaceRanks(drivers, races) {
+    const ranks = {};
+    for (const r of races) {
+        const key = String(r.race_id);
+        const order = drivers
+            .map(d => ({ id: d.driver_id, t: d.lap_times?.[key] }))
+            .filter(e => e.t != null)
+            .sort((a, b) => a.t - b.t);
+        const m = {};
+        order.forEach((e, i) => { m[e.id] = i + 1; });
+        ranks[key] = m;
+    }
+    return ranks;
+}
+
+function ResultsTable({ drivers, races, scrollRef, startIndex = 0 }) {
     return (
         <div className="results-column" ref={scrollRef}>
-            <table className="results-table">
+            <table className="results-table results-table--points">
                 <thead>
                     <tr>
+                        <th className="posn-col">Pos</th>
                         <th className="driver-col">Driver</th>
-                        <th className="total-col">Points</th>
+                        <th className="total-col">Pts</th>
                         <th className="raced-col">Raced</th>
                         {[...races].reverse().map(r => (
                             <th key={r.race_id} className="race-col">R{r.race_number}</th>
@@ -36,16 +56,19 @@ function ResultsTable({ drivers, races, scrollRef }) {
                     </tr>
                 </thead>
                 <tbody>
-                    {drivers.map(d => (
+                    {drivers.map((d, i) => (
                         <tr key={d.driver_id}>
+                            <td className="posn-cell">{startIndex + i + 1}</td>
                             <td className="driver-name-cell">{d.driver_name}</td>
                             <td className="total-cell">{d.total_points}</td>
                             <td className="raced-cell">{d.races_entered}</td>
                             {[...races].reverse().map(r => {
-                                const pos = d.positions[String(r.race_id)];
+                                const key = String(r.race_id);
+                                const pos = d.positions[key];
+                                const pts = d.points?.[key];
                                 return (
                                     <td key={r.race_id} className={`position-cell ${posClass(pos)}`}>
-                                        {pos == null ? '–' : pos}
+                                        {pos == null ? '–' : pts}
                                     </td>
                                 );
                             })}
@@ -57,13 +80,14 @@ function ResultsTable({ drivers, races, scrollRef }) {
     );
 }
 
-function FastestLapResultsTable({ drivers, races, scrollRef, scoringMethod }) {
+function FastestLapResultsTable({ drivers, races, scrollRef, scoringMethod, raceRanks, startIndex = 0 }) {
     const totalLabel = scoringMethod === 'AverageFastestLap' ? 'Avg Lap' : 'Best Lap';
     return (
         <div className="results-column" ref={scrollRef}>
-            <table className="results-table">
+            <table className="results-table results-table--fastestlap">
                 <thead>
                     <tr>
+                        <th className="posn-col">Pos</th>
                         <th className="driver-col">Driver</th>
                         <th className="total-col">{totalLabel}</th>
                         <th className="raced-col">Raced</th>
@@ -73,15 +97,19 @@ function FastestLapResultsTable({ drivers, races, scrollRef, scoringMethod }) {
                     </tr>
                 </thead>
                 <tbody>
-                    {drivers.map(d => (
+                    {drivers.map((d, i) => (
                         <tr key={d.driver_id}>
+                            <td className="posn-cell">{startIndex + i + 1}</td>
                             <td className="driver-name-cell">{d.driver_name}</td>
                             <td className="total-cell fl-lap">{fmtLap(d.total_lap_time)}</td>
                             <td className="raced-cell">{d.races_entered}</td>
                             {[...races].reverse().map(r => {
-                                const t = d.lap_times?.[String(r.race_id)];
+                                const key = String(r.race_id);
+                                const t = d.lap_times?.[key];
+                                const empty = t == null;
+                                const rank = empty ? null : raceRanks?.[key]?.[d.driver_id];
                                 return (
-                                    <td key={r.race_id} className="position-cell pos-other fl-lap">
+                                    <td key={r.race_id} className={`position-cell ${rank ? posClass(rank) : 'pos-other'} fl-lap${empty ? ' fl-empty' : ''}`}>
                                         {fmtLap(t)}
                                     </td>
                                 );
@@ -97,9 +125,12 @@ function FastestLapResultsTable({ drivers, races, scrollRef, scoringMethod }) {
 function Results() {
     const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
 
-    const loaded = useLoaderData() || { races: [], drivers: [], scoring_method: null, session_type: null, meeting_name: null, sessions: [] };
+    const loaded = useLoaderData();
     const [results, setResults] = useState(loaded);
-    const { races, drivers, meeting_name, sessions, session_id, session_type, scoring_method } = results;
+    const {
+        races = [], drivers = [], sessions = [],
+        meeting_name = null, session_id, session_type = null, scoring_method = null,
+    } = results || {};
     const isFastestLap = session_type === 'FastestLap';
 
     useEffect(() => {
@@ -113,7 +144,7 @@ function Results() {
     const [wideView, setWideView] = useState(false);
 
     const refreshResults = () => {
-        fetch(`${import.meta.env.VITE_API_URL}/sessions/active/results`)
+        fetch(`${import.meta.env.VITE_API_URL}/sessions/current/results`)
             .then(r => r.ok ? r.json() : null)
             .then(data => { if (data) setResults(data); })
             .catch(() => {});
@@ -183,6 +214,9 @@ function Results() {
 
     const col1 = drivers.slice(0, splitAt);
     const col2 = drivers.slice(splitAt);
+    // Medal ranks computed from the full field so they stay correct when the
+    // table is split into two display columns.
+    const raceRanks = isFastestLap ? computeRaceRanks(drivers, races) : null;
 
     return (
         <div className="results-page">
@@ -231,20 +265,20 @@ function Results() {
             ) : wideView ? (
                 <div className="results-columns results-columns--wide">
                     {isFastestLap
-                        ? <FastestLapResultsTable drivers={drivers} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} />
+                        ? <FastestLapResultsTable drivers={drivers} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} raceRanks={raceRanks} />
                         : <ResultsTable drivers={drivers} races={races} scrollRef={col1Ref} />}
                 </div>
             ) : (
                 <div className="results-columns" ref={colRef}>
                     {isFastestLap ? (
                         <>
-                            <FastestLapResultsTable drivers={col1} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} />
-                            <FastestLapResultsTable drivers={col2} races={races} scrollRef={col2Ref} scoringMethod={scoring_method} />
+                            <FastestLapResultsTable drivers={col1} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} raceRanks={raceRanks} startIndex={0} />
+                            <FastestLapResultsTable drivers={col2} races={races} scrollRef={col2Ref} scoringMethod={scoring_method} raceRanks={raceRanks} startIndex={splitAt} />
                         </>
                     ) : (
                         <>
-                            <ResultsTable drivers={col1} races={races} scrollRef={col1Ref} />
-                            <ResultsTable drivers={col2} races={races} scrollRef={col2Ref} />
+                            <ResultsTable drivers={col1} races={races} scrollRef={col1Ref} startIndex={0} />
+                            <ResultsTable drivers={col2} races={races} scrollRef={col2Ref} startIndex={splitAt} />
                         </>
                     )}
                 </div>

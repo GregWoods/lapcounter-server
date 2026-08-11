@@ -2,6 +2,11 @@
 .vscode/
 .vite/
 
+# Python bytecode - regenerated on every run, and the dbwriter/lapdata
+# directories are bind-mounted into containers so these appear constantly.
+__pycache__/
+*.py[cod]
+
 build
 public
 /data/logs

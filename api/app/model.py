@@ -100,6 +100,7 @@ class RaceSession(SQLModel, table=True):
     end_condition: str              # per-race end: 'Laps' (Finishing Position) or 'Time' (Fastest Lap)
     end_condition_info: Optional[int]   #number of laps or time  in minutes
     races_per_driver: Optional[int] = Field(default=None)  # automatic session end: each driver races this many times (None = manual end)
+    max_sit_outs: Optional[int] = Field(default=None)  # skips before a driver is offered up for disqualification (None = no limit)
     scoring_method: str             # 'PositionPoints' (Finishing Position) or 'FastestLap' (personal best)
     scoring_points: Optional[str]   # JSON string with points array used for PositionPoints
     start_time: Optional[time]
@@ -132,6 +133,30 @@ class DriverRace(SQLModel, table=True):
     laps_completed: Optional[int]
     last_lap_time: Optional[Decimal] = Field(default=None)
     fastest_lap_time: Optional[Decimal] = Field(default=None)
+
+
+# Records an operator withdrawal of a driver from a race (the NextRace "×" button).
+# Written when a driver is removed from a race lineup; cleared if the same driver is
+# re-added to that race, and deleted with the race when a NotStarted queue is discarded.
+# A withdrawal attached to a *Finished* race counts as one "skip" for the driver in that
+# session — that's how skips are effectively counted at race-finish time. Rotation (a
+# driver the scheduler simply didn't include this race) leaves no withdrawal, so it never
+# counts as a skip.
+class RaceWithdrawal(SQLModel, table=True):
+    __tablename__ = "race_withdrawals"
+    race_id: Optional[int] = Field(default=None, foreign_key="races.id", primary_key=True)
+    driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
+
+
+# Per-session, per-driver state. Currently just holds the disqualified flag: a driver who
+# has sat out too many races (skips >= session.max_sit_outs) and whom the operator has
+# chosen to remove from the rest of the session. Disqualified drivers are excluded from
+# all further scheduling for that session (unlike the global, one-race Driver.sit_out_next_race).
+class SessionDriver(SQLModel, table=True):
+    __tablename__ = "session_drivers"
+    session_id: Optional[int] = Field(default=None, foreign_key="sessions.id", primary_key=True)
+    driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
+    disqualified: bool = Field(default=False)
 
 
 class DriverLap(SQLModel, table=True):
@@ -168,6 +193,7 @@ class RaceSessionUpdate(SQLModel):
     end_condition: Optional[str] = None
     end_condition_info: Optional[int] = None
     races_per_driver: Optional[int] = None
+    max_sit_outs: Optional[int] = None
     scoring_method: Optional[str] = None
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None
@@ -194,6 +220,7 @@ class RaceSessionCreate(SQLModel):
     end_condition: str
     end_condition_info: Optional[int] = None
     races_per_driver: Optional[int] = None
+    max_sit_outs: Optional[int] = None
     scoring_method: str
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None

@@ -1,8 +1,22 @@
 import pytest
-from next_race import assign_drivers_to_lanes
-from model import Lane
+from collections import Counter
+from next_race import (
+    assign_drivers_to_lanes,
+    select_balanced_race_drivers,
+    build_session_schedule,
+)
+from model import Lane, RaceSession
 from responsemodel import DriverWithLane
 from pprint import pprint
+
+
+def make_session(races_per_driver=None):
+    """A minimal in-memory RaceSession for the pure-logic scheduler tests."""
+    return RaceSession(
+        meeting_id=1, session_type='Points', end_condition='Laps',
+        end_condition_info=20, races_per_driver=races_per_driver,
+        scoring_method='PositionPoints',
+    )
 
 
 @pytest.fixture
@@ -178,5 +192,72 @@ def test_lane_preference(test_lanes, test_drivers):
     assert result.lane_assignments[3].driver_name == "Driver GG"
     assert result.lane_assignments[4].driver_name == "Driver HH"
     assert result.lane_assignments[5].driver_name == "Driver JJ"
+
+
+# ── Disqualification (per-session sit-out limit) ──────────────────────
+
+def test_disqualified_driver_excluded_from_lanes(test_lanes, test_drivers):
+    """A disqualified driver is treated like sitting out: never assigned a lane, always
+    pushed to other_drivers — even with a free lane available."""
+    drivers = test_drivers[:6]
+    drivers[2].disqualified = True  # Driver CC (id=3) is out of the session
+    result = assign_drivers_to_lanes(drivers, test_lanes)
+
+    assert all(d.id != 3 for d in result.lane_assignments), "Disqualified driver should not race"
+    assert any(d.id == 3 for d in result.other_drivers), "Disqualified driver should be in other_drivers"
+    # 5 remaining drivers fill 5 of the 6 lanes.
+    assert_common_test_conditions(result, len(drivers), 5)
+
+
+def test_disqualified_excluded_from_balanced_selection(test_lanes, test_drivers):
+    """select_balanced_race_drivers ignores disqualified drivers when picking a race."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 0
+    drivers[0].disqualified = True  # id=1 out
+
+    session = make_session(races_per_driver=2)
+    selected, complete = select_balanced_race_drivers(session, drivers, test_lanes)
+
+    assert not complete
+    assert all(d.id != 1 for d in selected), "Disqualified driver must never be selected"
+
+
+def test_schedule_refills_after_disqualification(test_lanes, test_drivers):
+    """The user's scenario: with a driver removed from the session, the remaining schedule
+    covers exactly the active drivers' outstanding races and never schedules the DQ'd one.
+    6 drivers, target 2, all fresh, one DQ'd -> 5 drivers x 2 slots = 10 over 6 lanes =>
+    two races of 5, and each active driver races exactly twice."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 0
+    drivers[0].disqualified = True  # id=1 out
+
+    session = make_session(races_per_driver=2)
+    schedule = build_session_schedule(session, drivers, test_lanes)
+
+    scheduled_ids = [la.id for setup in schedule for la in setup.lane_assignments if la.id != 0]
+    assert 1 not in scheduled_ids, "Disqualified driver must not appear in the schedule"
+
+    appearances = Counter(scheduled_ids)
+    active_ids = {d.id for d in drivers if not d.disqualified}
+    assert set(appearances) == active_ids, "Every active driver should be scheduled"
+    assert all(appearances[i] == 2 for i in active_ids), "Each active driver races exactly twice"
+    assert len(schedule) == 2, "10 slots over 6 lanes should be two balanced races"
+
+
+def test_disqualified_not_scheduled_even_when_under_target(test_lanes, test_drivers):
+    """A DQ'd driver who is behind on races is still not given make-up races."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 2
+    drivers[0].disqualified = True
+    drivers[0].completed_races = 0  # behind, but disqualified
+
+    session = make_session(races_per_driver=3)
+    schedule = build_session_schedule(session, drivers, test_lanes)
+
+    scheduled_ids = [la.id for setup in schedule for la in setup.lane_assignments if la.id != 0]
+    assert 1 not in scheduled_ids, "Disqualified driver gets no make-up races"
 
 

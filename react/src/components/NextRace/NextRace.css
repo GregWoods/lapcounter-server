@@ -12,6 +12,36 @@ html:has(#nextrace-page) body {
     font-family: "Selawik", sans-serif;
 }
 
+/* ── Empty / error state ── */
+.nr-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 4rem 1rem;
+    text-align: center;
+}
+
+.nr-empty p {
+    font-size: 1.75rem;
+    margin: 0;
+}
+
+.nr-empty .nr-empty-link {
+    margin-top: 1rem;
+    padding: 0.6rem 1.5rem;
+    font-size: 1.2rem;
+    color: #fff;
+    background: #1a6aab;
+    border-radius: 8px;
+    text-decoration: none;
+}
+
+.nr-empty .nr-empty-link:hover {
+    background: #2080cc;
+}
+
 /* ── Columns ── */
 .nr-columns {
     display: flex;

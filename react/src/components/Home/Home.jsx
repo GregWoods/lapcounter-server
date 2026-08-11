@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
 import { UserPlus, Flag, ListOrdered, Trophy, CalendarDays, Users } from 'lucide-react';
+import ChequeredFlagIcon from '../ChequeredFlagIcon';
 import './Home.css';
 
 const DEFAULT_TITLE = 'Go! Go! Go! Race Manager';
@@ -54,9 +55,10 @@ function Home() {
                 <Link to="/register" className="home-button"><UserPlus /><span>Driver Registration</span></Link>
                 <Link to="/currentrace" className="home-button"><Flag /><span>Current Race</span></Link>
                 <Link to="/nextrace" className="home-button"><ListOrdered /><span>Next Race</span></Link>
+                <Link to="/racecontrol" className="home-button"><ChequeredFlagIcon /><span>Race Control</span></Link>
                 <Link to="/results" className="home-button"><Trophy /><span>Results</span></Link>
                 <Link to="/drivers" className="home-button"><Users /><span>Drivers</span></Link>
-                <Link to="/meetings" className="home-button"><CalendarDays /><span>Meetings</span></Link>
+                <Link to="/meetings" className="home-button"><CalendarDays /><span>Meetings &amp; Sessions</span></Link>
             </nav>
 
             {clockModalShown && (

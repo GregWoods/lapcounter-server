@@ -138,10 +138,10 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, NULL) ON CONFL
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, scoring_method, scoring_points, start_time, end_time, state)
-    VALUES (1, 3, 'FastestLap', 'Time', 3, 2, 'FastestLap', NULL, NULL, NULL, 'Finished') ON CONFLICT (id) DO NOTHING;
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, scoring_method, scoring_points, start_time, end_time, state)
-    VALUES (2, 3, 'Points', 'Laps', 20, 3, 'PositionPoints', '[10, 8, 6, 4, 3, 2]', NULL, NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, scoring_method, scoring_points, start_time, end_time, state)
+    VALUES (1, 3, 'FastestLap', 'Time', 3, 2, NULL, 'FastestLap', NULL, NULL, NULL, 'Finished') ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, scoring_method, scoring_points, start_time, end_time, state)
+    VALUES (2, 3, 'Points', 'Laps', 20, 3, 2, 'PositionPoints', '[10, 8, 6, 4, 3, 2]', NULL, NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO lanes (lane_number, color, enabled) VALUES (1, 'red', true) ON CONFLICT (lane_number) DO NOTHING;
@@ -233,6 +233,105 @@ INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES
     (62, 12, 12.456, '2030-01-01 16:00:30'), (63, 12, 15.123, '2030-01-01 16:00:42'),
     (64, 12, 14.567, '2030-01-01 16:00:57')
     ON CONFLICT (id) DO NOTHING;
+
+-- FastestLap session (id 1) race data.
+-- Generated rather than hand-written: 13 drivers, races_per_driver = 2, 6 lanes
+-- => 5 races of sizes 6,5,5,5,5 (each driver races exactly twice).
+--
+-- Lap times use the same model as gpio/mocked_timestamps.py: each driver has a
+-- fixed pace (base) plus a fixed lap-to-lap spread (range), and every lap is
+--   lap = base + uniform(0, range)
+-- The gpio defaults (abilityRangeMax 4.2, lapTimeRangeMax 3.5) make the per-lap
+-- spread almost as big as the ability spread, so on a *best-lap* leaderboard a
+-- slow-but-erratic driver posts a lucky fast lap and the field looks flat. We keep
+-- the model but widen the ability range and tighten each driver's spread so pace
+-- dominates and slow drivers stay slow:
+--   base  = 5 + uniform(0, 5)   -- this driver's pace, 5..10s (ability)
+--   range = uniform(0, 2)       -- this driver's lap-to-lap consistency
+-- => laps span ~5s..12s with a mean around 8s; abilities clearly separate.
+-- base/range are per driver (fixed across both their races). The source's outlier
+-- branch is dead code (its test random.uniform(0,5) <= 0 never fires) and is
+-- omitted. Each race runs for the session's 3-minute Time limit, so faster drivers
+-- complete more laps. setseed makes it reproducible.
+DO $$
+DECLARE
+  rec RECORD;
+  v_race_id INT;
+  v_dr_id INT;
+  v_base NUMERIC;
+  v_range NUMERIC;
+  v_nlaps INT;
+  v_elapsed NUMERIC;
+  v_lt NUMERIC;
+  v_best NUMERIC;
+  v_last NUMERIC;
+  i INT;
+  race_ids INT[] := '{}';
+  car_for_lane INT[] := ARRAY[2, 7, 3, 5, 8, 9];  -- lane -> car_id (meeting 3)
+  race_seconds NUMERIC := 180;  -- session 1 end_condition: Time, 3 min
+BEGIN
+  PERFORM setseed(0.42);  -- reproducible
+
+  -- Sync sequences to current MAX so nextval() below doesn't collide with the
+  -- explicitly-numbered rows inserted above.
+  PERFORM setval(pg_get_serial_sequence('races', 'id'), COALESCE((SELECT MAX(id) FROM races), 1));
+  PERFORM setval(pg_get_serial_sequence('driver_races', 'id'), COALESCE((SELECT MAX(id) FROM driver_races), 1));
+  PERFORM setval(pg_get_serial_sequence('driver_laps', 'id'), COALESCE((SELECT MAX(id) FROM driver_laps), 1));
+
+  FOR i IN 1..5 LOOP
+    INSERT INTO races (session_id, race_number, state)
+      VALUES (1, i, 'Finished') RETURNING id INTO v_race_id;
+    race_ids[i] := v_race_id;
+  END LOOP;
+
+  CREATE TEMP TABLE tmp_sched (race_number INT, lane INT, driver_id INT) ON COMMIT DROP;
+  INSERT INTO tmp_sched VALUES
+    (1,1,1),(1,2,2),(1,3,3),(1,4,4),(1,5,5),(1,6,6),
+    (2,1,7),(2,2,8),(2,3,9),(2,4,10),(2,5,11),
+    (3,1,12),(3,2,13),(3,3,1),(3,4,2),(3,5,3),
+    (4,1,4),(4,2,5),(4,3,6),(4,4,7),(4,5,8),
+    (5,1,9),(5,2,10),(5,3,11),(5,4,12),(5,5,13);
+
+  -- Per-driver ability, mirroring gpio/mocked_timestamps.py (fixed per driver).
+  CREATE TEMP TABLE tmp_base (driver_id INT PRIMARY KEY, base_lap NUMERIC, lap_range NUMERIC) ON COMMIT DROP;
+  INSERT INTO tmp_base (driver_id, base_lap, lap_range)
+    SELECT g, 5 + random() * 5.0, random() * 2.0 FROM generate_series(1, 13) g;
+
+  FOR rec IN
+    SELECT s.race_number, s.lane, s.driver_id, b.base_lap, b.lap_range
+    FROM tmp_sched s JOIN tmp_base b USING (driver_id)
+    ORDER BY s.race_number, s.lane
+  LOOP
+    v_race_id := race_ids[rec.race_number];
+    v_base := rec.base_lap;
+    v_range := rec.lap_range;
+    v_nlaps := 0;
+    v_elapsed := 0;
+    v_best := NULL;
+    v_last := NULL;
+
+    INSERT INTO driver_races (driver_id, race_id, car_id, lane)
+      VALUES (rec.driver_id, v_race_id, car_for_lane[rec.lane], rec.lane)
+      RETURNING id INTO v_dr_id;
+
+    -- lap = base + uniform(0, range); keep completing laps until the 3 min run out
+    LOOP
+      v_lt := round((v_base + random() * v_range)::numeric, 3);
+      EXIT WHEN v_elapsed + v_lt > race_seconds;
+      INSERT INTO driver_laps (driver_race_id, lap_time) VALUES (v_dr_id, v_lt);
+      v_elapsed := v_elapsed + v_lt;
+      v_nlaps := v_nlaps + 1;
+      v_last := v_lt;
+      IF v_best IS NULL OR v_lt < v_best THEN
+        v_best := v_lt;
+      END IF;
+    END LOOP;
+
+    UPDATE driver_races
+       SET laps_completed = v_nlaps, last_lap_time = v_last, fastest_lap_time = v_best
+     WHERE id = v_dr_id;
+  END LOOP;
+END $$;
 
 -- Reset sequences so that auto-generated IDs don't collide with explicitly inserted sample data
 SELECT setval(pg_get_serial_sequence('car_manufacturers', 'id'), MAX(id)) FROM car_manufacturers;

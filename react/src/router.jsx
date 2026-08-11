@@ -35,7 +35,8 @@ const router = createBrowserRouter([
         element: <App />,
         loader: async () => {
             try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/`);
+                // The DB is authoritative for which race is current (Running else pending).
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/races/current/`);
                 if (!res.ok) return null;
                 return res.json();
             } catch {
@@ -47,9 +48,16 @@ const router = createBrowserRouter([
         path: "nextrace",
         element: <NextRace />,
         loader: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/`);
-            if (!res.ok) throw new Error('Failed to load pending race');
-            return res.json();
+            try {
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/`);
+                if (!res.ok) {
+                    const body = await res.json().catch(() => ({}));
+                    return { error: body.detail || 'No pending race available' };
+                }
+                return res.json();
+            } catch {
+                return { error: 'Could not reach the server' };
+            }
         },
     },
     {
@@ -57,7 +65,7 @@ const router = createBrowserRouter([
         element: <Results />,
         loader: async () => {
             try {
-                const res = await fetch(`${import.meta.env.VITE_API_URL}/sessions/active/results`);
+                const res = await fetch(`${import.meta.env.VITE_API_URL}/sessions/current/results`);
                 if (!res.ok) return { races: [], drivers: [] };
                 return res.json();
             } catch {

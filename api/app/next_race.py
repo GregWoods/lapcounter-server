@@ -24,6 +24,7 @@ def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
                 d.id,
                 md.driver_name,
                 d.sit_out_next_race,
+                COALESCE(sd.disqualified, FALSE) as disqualified,
                 COUNT(r.id) as completed_races,
                 COUNT(CASE WHEN dr.lane = 1 THEN 1 END) as lane1_count,
                 COUNT(CASE WHEN dr.lane = 2 THEN 1 END) as lane2_count,
@@ -40,8 +41,10 @@ def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
                 driver_races dr ON d.id = dr.driver_id
             LEFT JOIN
                 races r ON dr.race_id = r.id AND r.state = 'Finished' AND r.session_id = :session_id
+            LEFT JOIN
+                session_drivers sd ON d.id = sd.driver_id AND sd.session_id = :session_id
             GROUP BY
-                d.id, md.driver_name, d.sit_out_next_race
+                d.id, md.driver_name, d.sit_out_next_race, sd.disqualified
             ORDER BY
                 sit_out_next_race ASC,
                 completed_races ASC,
@@ -55,6 +58,7 @@ def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
                 id=row.id,
                 driver_name=row.driver_name,
                 sit_out_next_race=row.sit_out_next_race,
+                disqualified=row.disqualified,
                 completed_races=row.completed_races,
                 lane1_count=row.lane1_count,
                 lane2_count=row.lane2_count,
@@ -100,8 +104,9 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
     # Get enabled lanes and determine how many drivers we need
     enabled_lanes = [lane for lane in lanes if lane.enabled]
 
-    # Get all drivers who aren't sitting out
-    available_racing_drivers = [d for d in available_drivers if not d.sit_out_next_race]
+    # Get all drivers who aren't sitting out or disqualified from the session
+    available_racing_drivers = [d for d in available_drivers
+                                if not d.sit_out_next_race and not d.disqualified]
     
     # Determine how many drivers we need (min of enabled lanes and available available_racing_drivers)
     num_racing_drivers = min(len(enabled_lanes), len(available_racing_drivers))
@@ -193,7 +198,7 @@ def compute_session_progress(race_session, all_drivers, dbsession):
     races_done = len(dbsession.exec(
         select(Race).where(Race.session_id == race_session.id, Race.state == 'Finished')
     ).all())
-    active = [d for d in all_drivers if not d.sit_out_next_race]
+    active = [d for d in all_drivers if not d.sit_out_next_race and not d.disqualified]
     remaining_slots = sum(max(0, R - d.completed_races) for d in active)
     effective_L = min(len(active), L)
     races_remaining = math.ceil(remaining_slots / effective_L) if remaining_slots > 0 and effective_L > 0 else 0
@@ -216,7 +221,8 @@ def select_balanced_race_drivers(race_session, drivers, lanes):
     if not R:
         return drivers, False
 
-    active_under = [d for d in drivers if not d.sit_out_next_race and d.completed_races < R]
+    active_under = [d for d in drivers
+                    if not d.sit_out_next_race and not d.disqualified and d.completed_races < R]
     if not active_under:
         return [], True
 
@@ -272,6 +278,27 @@ def get_active_session(dbsession):
     raise HTTPException(status_code=404, detail="No active or upcoming sessions found for this meeting")
 
 
+def get_session_for_results(dbsession):
+    """Return the session whose results should be shown by default.
+
+    Prefers the active session (InProgress / NotStarted). Once a meeting is over
+    and every session is Finished, falls back to the most recently finished
+    session so results stay viewable after the session ends.
+    """
+    try:
+        return get_active_session(dbsession)
+    except HTTPException:
+        meeting_id = get_active_meeting_id(dbsession)
+        finished = dbsession.exec(
+            select(RaceSession)
+            .where(RaceSession.meeting_id == meeting_id, RaceSession.state == 'Finished')
+            .order_by(RaceSession.id.desc())
+        ).first()
+        if finished:
+            return finished
+        raise
+
+
 def compute_session_state(races) -> str:
     if not races:
         return 'NotStarted'
@@ -287,14 +314,37 @@ def session_with_state(race_session, dbsession) -> RaceSessionWithState:
 
 
 def find_pending_race(dbsession):
-    """Return the NotStarted race in the active session, or None."""
+    """Return the *next* NotStarted race in the active session, or None.
+
+    A session now holds an ordered queue of NotStarted races (the whole session is
+    pre-populated when it starts). The earliest by race_number is the one to run
+    next — the "current" race once nothing is Running.
+    """
     try:
         active_session = get_active_session(dbsession)
     except HTTPException:
         return None
     return dbsession.exec(
-        select(Race).where(Race.state == 'NotStarted', Race.session_id == active_session.id)
+        select(Race)
+        .where(Race.state == 'NotStarted', Race.session_id == active_session.id)
+        .order_by(Race.race_number, Race.id)
     ).first()
+
+
+def load_race_queue(dbsession):
+    """Read-only: the ordered list of upcoming (NotStarted) race setups for the active
+    session — the head is the next race, the tail is the lookahead the NextRace page
+    previews. Empty when no session is in progress or the queue is exhausted."""
+    try:
+        active_session = get_active_session(dbsession)
+    except HTTPException:
+        return []
+    races = dbsession.exec(
+        select(Race)
+        .where(Race.state == 'NotStarted', Race.session_id == active_session.id)
+        .order_by(Race.race_number, Race.id)
+    ).all()
+    return [setup for setup in (_build_race_setup(dbsession, r) for r in races) if setup]
 
 
 def load_pending_race(dbsession):
@@ -319,14 +369,55 @@ def load_pending_race(dbsession):
         dbsession.add(pending_race)
         dbsession.commit()
 
-    driver_races = dbsession.exec(
+    has_lineup = dbsession.exec(
         select(DriverRace).where(DriverRace.race_id == pending_race.id)
-    ).all()
+    ).first()
 
     # Stale race with no lineup (e.g. from sample data) — delete and recalculate
-    if not driver_races:
+    if not has_lineup:
         dbsession.delete(pending_race)
         dbsession.commit()
+        return None
+
+    return _build_race_setup(dbsession, pending_race)
+
+
+def find_current_race(dbsession):
+    """Return the Running race in the active session, or None.
+
+    The DB is authoritative for *which* race is current; lapdata's race_state is a
+    live overlay the client applies only when its race_id matches.
+    """
+    try:
+        active_session = get_active_session(dbsession)
+    except HTTPException:
+        return None
+    return dbsession.exec(
+        select(Race)
+        .where(Race.state == 'Running', Race.session_id == active_session.id)
+        .order_by(Race.id.desc())
+    ).first()
+
+
+def load_current_race(dbsession):
+    """Setup for the Running race if one exists, else None (the caller falls back
+    to the pending race)."""
+    running = find_current_race(dbsession)
+    if not running:
+        return None
+    return _build_race_setup(dbsession, running)
+
+
+def _build_race_setup(dbsession, race):
+    """Build a NextRaceSetup response from a Race (pending or running).
+
+    Returns None if the race has no lineup. Shared by load_pending_race and
+    load_current_race so the pending and running views are built identically.
+    """
+    driver_races = dbsession.exec(
+        select(DriverRace).where(DriverRace.race_id == race.id)
+    ).all()
+    if not driver_races:
         return None
 
     lanes_list = dbsession.exec(select(Lane).order_by(Lane.lane_number)).all()
@@ -342,11 +433,11 @@ def load_pending_race(dbsession):
         car_pictures = {c.id: c.picture for c in car_rows}
 
     # Reuse existing SQL for driver stats (lane counts, completed_races, etc.)
-    all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=pending_race.session_id)
+    all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=race.session_id)
     all_drivers_map = {d.id: d for d in all_drivers}
 
     # Get meeting-specific display names
-    race_session = dbsession.get(RaceSession, pending_race.session_id)
+    race_session = dbsession.get(RaceSession, race.session_id)
     md_rows = dbsession.exec(
         select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)
     ).all()
@@ -376,6 +467,15 @@ def load_pending_race(dbsession):
     meeting = dbsession.get(Meeting, race_session.meeting_id)
     count_first_crossing = meeting.count_first_crossing if meeting else False
 
+    # 1-based ordinal of this session within its meeting (matches the Results tabs).
+    meeting_session_ids = list(dbsession.exec(
+        select(RaceSession.id)
+        .where(RaceSession.meeting_id == race_session.meeting_id)
+        .order_by(RaceSession.id)
+    ).all())
+    session_number = (meeting_session_ids.index(race_session.id) + 1
+                      if race_session.id in meeting_session_ids else None)
+
     races_done, races_total = compute_session_progress(race_session, all_drivers, dbsession)
 
     race_duration_seconds = None
@@ -387,8 +487,9 @@ def load_pending_race(dbsession):
         session_drivers = get_session_fastest_laps(dbsession, race_session.id)
 
     return NextRaceSetup(
-        race_id=pending_race.id,
-        race_number=pending_race.race_number or 1,
+        race_id=race.id,
+        race_number=race.race_number or 1,
+        session_number=session_number,
         count_first_crossing=count_first_crossing,
         lane_assignments=lane_assignments,
         other_drivers=other_drivers,
@@ -454,7 +555,82 @@ def add_driver_to_pending_lineup(dbsession, pending_race, driver_id: int):
         lane=best_lane.lane_number,
     ))
     dbsession.commit()
+    # Re-adding a driver to this race cancels any earlier withdrawal (it wasn't a skip).
+    clear_withdrawal(dbsession, pending_race.id, driver_id)
+    # Re-instating a disqualified driver undoes their session DQ and resets their skip
+    # tally, so the "sat out too many races" prompt doesn't fire again on a deliberate return.
+    if driver_data.disqualified:
+        set_driver_disqualified(dbsession, pending_race.session_id, driver_id, False)
+        clear_session_withdrawals(dbsession, pending_race.session_id, driver_id)
     return load_pending_race(dbsession)
+
+
+def record_withdrawal(dbsession, race_id: int, driver_id: int):
+    """Record that the operator removed a driver from a race (the NextRace "×"). Idempotent."""
+    existing = dbsession.get(RaceWithdrawal, (race_id, driver_id))
+    if not existing:
+        dbsession.add(RaceWithdrawal(race_id=race_id, driver_id=driver_id))
+        dbsession.commit()
+
+
+def clear_withdrawal(dbsession, race_id: int, driver_id: int):
+    """Undo a withdrawal — the driver has been re-added to that race, so it isn't a skip."""
+    existing = dbsession.get(RaceWithdrawal, (race_id, driver_id))
+    if existing:
+        dbsession.delete(existing)
+        dbsession.commit()
+
+
+def clear_session_withdrawals(dbsession, session_id: int, driver_id: int):
+    """Drop every withdrawal a driver has accrued in a session — resets their skip tally.
+
+    Used when the operator deliberately brings a driver back (reinstate, or re-adding them
+    in NextRace) so the "sat out too many races" prompt doesn't immediately fire again on
+    what is now an intentional return."""
+    race_ids = [r.id for r in dbsession.exec(
+        select(Race).where(Race.session_id == session_id)
+    ).all()]
+    if not race_ids:
+        return
+    withdrawals = dbsession.exec(
+        select(RaceWithdrawal).where(
+            RaceWithdrawal.driver_id == driver_id,
+            RaceWithdrawal.race_id.in_(race_ids),
+        )
+    ).all()
+    for w in withdrawals:
+        dbsession.delete(w)
+    if withdrawals:
+        dbsession.commit()
+
+
+def session_skip_counts(dbsession, session_id: int) -> dict:
+    """Map driver_id -> cumulative skips for a session: withdrawals attached to the
+    session's *Finished* races. A withdrawal on a NotStarted race doesn't count yet (the
+    race hasn't run), which is what makes skips effectively counted at race-finish time."""
+    from sqlalchemy import text
+    query = text("""
+        SELECT w.driver_id AS driver_id, COUNT(*) AS skips
+        FROM race_withdrawals w
+        JOIN races r ON r.id = w.race_id
+        WHERE r.session_id = :session_id AND r.state = 'Finished'
+        GROUP BY w.driver_id
+    """)
+    rows = dbsession.exec(query.bindparams(session_id=session_id)).all()
+    return {row.driver_id: row.skips for row in rows}
+
+
+def set_driver_disqualified(dbsession, session_id: int, driver_id: int, disqualified: bool):
+    """Upsert the per-session disqualified flag for a driver."""
+    sd = dbsession.get(SessionDriver, (session_id, driver_id))
+    if sd:
+        sd.disqualified = disqualified
+        dbsession.add(sd)
+    else:
+        dbsession.add(SessionDriver(
+            session_id=session_id, driver_id=driver_id, disqualified=disqualified
+        ))
+    dbsession.commit()
 
 
 def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
@@ -493,6 +669,7 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
         next_driver = next(
             (d for d in all_drivers
              if not d.sit_out_next_race
+             and not d.disqualified
              and d.id not in assigned_ids
              and (quota is None or d.completed_races < quota)),
             None
@@ -507,6 +684,8 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
                 lane=lane_number,
             ))
             dbsession.commit()
+            # Auto-filling this driver back in cancels any withdrawal on this race.
+            clear_withdrawal(dbsession, pending_race.id, next_driver.id)
 
     return load_pending_race(dbsession)
 
@@ -546,21 +725,13 @@ def recalculate_meeting_driver_names(dbsession, meeting_id: int):
     dbsession.commit()
 
 
-def save_pending_race(dbsession, setup, race_session):
-    """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
-    meeting_id = race_session.meeting_id
-    preceding_count = len(dbsession.exec(
-        select(Race).where(
-            Race.session_id == race_session.id,
-            Race.state.in_(['Finished', 'Running'])
-        )
-    ).all())
-    race = Race(state='NotStarted', session_id=race_session.id, race_number=preceding_count + 1)
-    dbsession.add(race)
-    dbsession.commit()
-    dbsession.refresh(race)
+def _lane_to_car_map(dbsession, meeting_id):
+    """Resolve lane → car_id for a new race lineup in this meeting.
 
-    # Primary: lane → car_id from the last completed race in this meeting
+    Primary source is the last completed race (cars stay on their lanes between
+    races); falls back to the meeting_cars defaults for lanes not yet seen.
+    Returns a single dict with the primary mapping layered over the fallback.
+    """
     session_ids = [s.id for s in dbsession.exec(
         select(RaceSession).where(RaceSession.meeting_id == meeting_id)
     ).all()]
@@ -578,25 +749,127 @@ def save_pending_race(dbsession, setup, race_session):
             dr.lane: dr.car_id for dr in last_driver_races if dr.car_id is not None
         }
 
-    # Fallback: lane → car_id from meeting_cars defaults
     meeting_cars = dbsession.exec(
         select(MeetingCar).where(MeetingCar.meeting_id == meeting_id)
     ).all()
     meeting_lane_to_car = {mc.lane: mc.car_id for mc in meeting_cars if mc.lane is not None}
 
+    # Last-race assignment wins over the meeting default.
+    return {**meeting_lane_to_car, **last_race_lane_to_car}
+
+
+def _persist_race(dbsession, setup, race_session, race_number, lane_to_car):
+    """Persist one NextRaceSetup as a NotStarted Race + DriverRace rows. No commit of
+    the surrounding transaction beyond what's needed to obtain the race id."""
+    race = Race(state='NotStarted', session_id=race_session.id, race_number=race_number)
+    dbsession.add(race)
+    dbsession.commit()
+    dbsession.refresh(race)
     for lane_assignment in setup.lane_assignments:
         if lane_assignment.id == 0:
             continue
-        car_id = last_race_lane_to_car.get(lane_assignment.lane_number) or meeting_lane_to_car.get(lane_assignment.lane_number)
-        driver_race = DriverRace(
+        dbsession.add(DriverRace(
             driver_id=lane_assignment.id,
             race_id=race.id,
-            car_id=car_id,
+            car_id=lane_to_car.get(lane_assignment.lane_number),
             lane=lane_assignment.lane_number,
-        )
-        dbsession.add(driver_race)
-
+        ))
     dbsession.commit()
+    return race
+
+
+def _next_race_number(dbsession, session_id):
+    """The race_number for the next race appended to a session's queue: one past the
+    count of existing races (finished, running, or already queued). Counting rather
+    than max() keeps numbering correct even when older rows have a NULL race_number."""
+    existing = dbsession.exec(
+        select(Race).where(Race.session_id == session_id)
+    ).all()
+    return len(existing) + 1
+
+
+def save_pending_race(dbsession, setup, race_session):
+    """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
+    lane_to_car = _lane_to_car_map(dbsession, race_session.meeting_id)
+    _persist_race(dbsession, setup, race_session,
+                  _next_race_number(dbsession, race_session.id), lane_to_car)
     # Reload from DB so the response includes everything load_pending_race adds
     # (car pictures, meeting display names), not just the in-memory lineup.
     return load_pending_race(dbsession)
+
+
+def remove_pending_races(dbsession, session_id):
+    """Delete every NotStarted race (and its lineup) for a session — the whole queue.
+
+    Used when a session ends (no dangling pending race may survive a Finished session)
+    and when regenerating the schedule after the driver roster changes.
+    """
+    pending = dbsession.exec(
+        select(Race).where(Race.session_id == session_id, Race.state == 'NotStarted')
+    ).all()
+    for race in pending:
+        for dr in dbsession.exec(
+            select(DriverRace).where(DriverRace.race_id == race.id)
+        ).all():
+            dbsession.delete(dr)
+        # Withdrawals only count once their race has run (Finished). A NotStarted race
+        # being discarded never ran, so its withdrawals must not survive as phantom skips.
+        for w in dbsession.exec(
+            select(RaceWithdrawal).where(RaceWithdrawal.race_id == race.id)
+        ).all():
+            dbsession.delete(w)
+        dbsession.delete(race)
+    if pending:
+        dbsession.commit()
+    return len(pending)
+
+
+def build_session_schedule(race_session, drivers, lanes):
+    """Compute the full *remaining* race schedule for a session as a list of
+    NextRaceSetup, one per race, in running order.
+
+    Iterates the single-race balancer (select_balanced_race_drivers +
+    assign_drivers_to_lanes) over in-memory copies of the driver stats — incrementing
+    each chosen driver's completed_races and lane counts after every race — so the
+    whole schedule balances exactly as the lazy one-at-a-time path did: every active
+    driver ends on `races_per_driver` races, lanes are spread evenly, and the final
+    races shrink rather than draining to a single straggler.
+
+    `drivers` already reflects completed (Finished) races, so regenerating mid-session
+    only schedules each driver's *outstanding* races. Sessions with no
+    races_per_driver target return a single race (manual-end → stage one at a time).
+    """
+    work = [d.model_copy() for d in drivers]
+    by_id = {d.id: d for d in work}
+
+    if not race_session.races_per_driver:
+        return [assign_drivers_to_lanes(work, lanes)]
+
+    schedule = []
+    # Defensive cap: at most one race per driver-target plus a margin.
+    max_races = len(work) * race_session.races_per_driver + 1
+    for _ in range(max_races):
+        work.sort(key=lambda d: (d.sit_out_next_race, d.completed_races, d.random_value))
+        selected, complete = select_balanced_race_drivers(race_session, work, lanes)
+        if complete:
+            break
+        setup = assign_drivers_to_lanes(selected, lanes)
+        schedule.append(setup)
+        for la in setup.lane_assignments:
+            if la.id == 0:
+                continue
+            d = by_id[la.id]
+            d.completed_races += 1
+            attr = f'lane{la.lane_number}_count'
+            setattr(d, attr, getattr(d, attr) + 1)
+    return schedule
+
+
+def save_session_schedule(dbsession, schedule, race_session):
+    """Persist a list of NextRaceSetup as consecutively-numbered NotStarted races,
+    appended after any existing finished/running/queued races. Returns the count."""
+    lane_to_car = _lane_to_car_map(dbsession, race_session.meeting_id)
+    start_number = _next_race_number(dbsession, race_session.id)
+    for offset, setup in enumerate(schedule):
+        _persist_race(dbsession, setup, race_session, start_number + offset, lane_to_car)
+    return len(schedule)

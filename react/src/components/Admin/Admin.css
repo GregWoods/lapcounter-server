@@ -151,10 +151,18 @@
     flex-wrap: wrap;
 }
 
-.admin-session-type {
-    color: #ddd;
-    font-weight: 600;
-    font-size: 0.95rem;
+/* Session-type icon (podium = Finishing Position, tortoise = Fastest Lap) */
+.admin-session-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #b9c2d0;
+}
+
+/* Session "title" — larger/bold; intended to become editable later */
+.admin-session-title {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.15rem;
     min-width: 100px;
 }
 

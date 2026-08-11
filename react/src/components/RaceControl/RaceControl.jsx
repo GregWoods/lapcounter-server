@@ -3,11 +3,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { House, Flag, Pause, Play } from 'lucide-react';
 import MqttSubscriber from '../MqttSubscriber';
+import ChequeredFlagIcon from '../ChequeredFlagIcon';
 import { defaultConfig } from '../../defaultConfig';
 
 const API = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
-const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
 const STATE_LABELS = {
     NotStarted: 'Staged',
     ArmedForStart: 'Starting…',
@@ -16,43 +16,43 @@ const STATE_LABELS = {
     Finished: 'Finished',
 };
 
-// Chequered-flag icon (same artwork as the old header End control)
-function ChequeredFlagIcon() {
-    return (
-        <svg width="1.5em" height="1.5em" viewBox="0 0 1280 1228" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            <g transform="translate(0,1228) scale(0.1,-0.1)" fill="#fff" stroke="none">
-                <path d="M10310 12228 c-179 -164 -475 -378 -710 -513 -460 -266 -1074 -491 -1790 -655 -102 -23 -202 -46 -222 -51 l-37 -9 14 -48 c7 -26 23 -81 34 -122 177 -660 423 -1570 533 -1975 38 -143 72 -263 74 -266 4 -7 162 26 339 72 188 48 624 194 648 218 4 4 -55 178 -132 387 -76 208 -216 591 -311 849 -95 259 -192 525 -217 593 -25 68 -44 124 -42 126 2 2 69 22 149 45 516 151 990 374 1437 676 68 46 125 80 127 77 3 -6 699 -1737 722 -1795 10 -26 -402 -322 -676 -487 -248 -149 -582 -306 -870 -409 -80 -28 -152 -55 -161 -59 -14 -6 -5 -38 66 -232 45 -124 157 -434 250 -690 326 -904 446 -1234 449 -1237 10 -10 401 185 606 302 400 227 659 416 1023 749 54 49 99 87 101 85 2 -2 90 -224 196 -494 106 -269 255 -647 331 -838 l137 -348 -60 -77 c-141 -179 -446 -460 -733 -675 -318 -238 -914 -601 -928 -565 -2 7 -154 425 -337 928 -183 503 -334 917 -336 919 -2 2 -57 -21 -121 -52 -161 -76 -321 -144 -510 -215 -178 -67 -457 -159 -497 -164 -26 -3 -48 44 -1305 2872 l-1279 2875 -134 6 c-73 4 -245 7 -383 8 -1652 7 -3126 -448 -4301 -1327 -186 -138 -424 -338 -424 -354 0 -7 85 -228 189 -492 193 -489 630 -1599 851 -2161 163 -413 822 -2088 1000 -2540 78 -198 315 -801 527 -1340 212 -539 411 -1044 442 -1123 l57 -142 81 102 c272 347 726 801 1178 1179 1249 1043 2811 1905 3465 1912 170 2 262 -38 312 -136 29 -58 22 -202 -15 -305 -81 -226 -310 -571 -567 -857 -106 -117 -210 -227 -210 -221 0 3 26 47 58 98 224 357 326 626 292 769 -22 92 -94 139 -214 139 -308 0 -924 -335 -1333 -724 l-106 -101 23 -45 c104 -206 284 -379 495 -476 523 -240 1348 -170 2345 201 941 350 1913 946 2490 1525 140 141 280 310 358 434 l53 83 -200 504 c-211 534 -463 1171 -811 2049 -117 294 -301 760 -410 1035 -109 275 -293 741 -410 1035 -117 294 -297 751 -402 1015 -104 263 -192 484 -196 491 -5 8 -26 -5 -62 -38z m-3912 -1415 c247 -533 378 -829 371 -833 -6 -4 -54 -10 -107 -14 -434 -30 -1127 -161 -1603 -302 -128 -38 -434 -140 -518 -174 -30 -11 -58 -17 -62 -13 -9 10 -750 1860 -756 1890 -5 19 4 24 83 48 514 157 1044 219 1900 223 l310 2 382 -827z m-1891 -1410 c22 -51 546 -1260 880 -2032 62 -145 110 -268 106 -272 -5 -5 -118 -65 -252 -134 -758 -392 -1324 -750 -1854 -1173 -65 -52 -121 -92 -124 -89 -9 9 -953 2467 -953 2480 1 22 338 273 610 454 310 207 641 396 995 569 238 117 534 252 553 253 7 1 25 -25 39 -56z m3261 -1690 c11 -27 174 -392 362 -813 188 -421 345 -773 347 -782 4 -13 -5 -19 -39 -27 -108 -27 -417 -135 -563 -197 -406 -172 -917 -450 -1349 -731 -87 -57 -162 -101 -167 -96 -4 4 -130 301 -279 658 -150 358 -339 810 -421 1005 -82 195 -147 360 -145 366 6 15 296 132 586 237 522 189 1022 329 1440 402 74 12 151 24 171 24 34 1 38 -2 57 -46z" />
-                <path d="M285 10362 c-154 -69 -281 -126 -282 -127 -3 -2 83 -247 837 -2400 210 -599 568 -1622 796 -2272 228 -651 601 -1717 830 -2370 229 -654 573 -1638 766 -2188 192 -550 351 -1001 352 -1002 3 -3 947 374 953 381 3 3 -47 137 -110 298 -136 345 -927 2359 -1462 3723 -207 528 -516 1313 -685 1745 -434 1105 -1184 3014 -1466 3733 -131 334 -241 606 -244 606 -3 -1 -131 -58 -285 -127z" />
-            </g>
-        </svg>
-    );
-}
-
 export default function RaceControl() {
     const [raceState, setRaceState] = useState(null);
+    const [infoLoaded, setInfoLoaded] = useState(false);
     const [info, setInfo] = useState({
-        meetingName: '', sessionType: null, raceNumber: null,
+        meetingName: '', sessionType: null, sessionNumber: null, raceNumber: null,
         racesTotal: null, targetLaps: 20, pendingRaceId: null,
+        sessionInProgress: false, nextSessionAvailable: false, activeSessionId: null,
+        needsRegen: false, missingDrivers: [], sitOutCandidates: [],
     });
     const clientRef = useRef(null);
 
-    // Pull session / next-race details the MQTT race_state doesn't carry.
+    // Pull session / next-race details the MQTT race_state doesn't carry. Pending and
+    // regen-status are read-only (races are pre-populated when a session starts); a 404
+    // on pending just means no session is in progress, not that one should be created.
     const loadInfo = useCallback(async () => {
         try {
-            const [pendingRes, meetingRes] = await Promise.all([
+            const [pendingRes, meetingRes, regenRes] = await Promise.all([
                 fetch(`${API}/races/pending/`),
                 fetch(`${API}/meetings/active`),
+                fetch(`${API}/sessions/active/regen-status`),
             ]);
             const pending = pendingRes.ok ? await pendingRes.json() : null;
             const meeting = meetingRes.ok ? await meetingRes.json() : null;
+            const regen = regenRes.ok ? await regenRes.json() : null;
 
             let targetLaps = 20;
+            let sessionInProgress = false, nextSessionAvailable = false, activeSessionId = null;
             if (meeting?.id) {
                 const sRes = await fetch(`${API}/sessions?meeting_id=${meeting.id}`);
                 if (sRes.ok) {
                     const sessions = await sRes.json();
-                    const active = sessions.find(s => s.state === 'InProgress')
-                        ?? sessions.find(s => s.state === 'NotStarted');
+                    const inProgress = sessions.find(s => s.state === 'InProgress');
+                    const upcoming = sessions.find(s => s.state === 'NotStarted');
+                    sessionInProgress = !!inProgress;
+                    nextSessionAvailable = !!upcoming;
+                    activeSessionId = inProgress?.id ?? null;
+                    const active = inProgress ?? upcoming;
                     if (active?.end_condition === 'Laps' && active.end_condition_info) {
                         targetLaps = active.end_condition_info;
                     }
@@ -61,13 +61,20 @@ export default function RaceControl() {
             setInfo({
                 meetingName: meeting?.name ?? '',
                 sessionType: pending?.session_type ?? null,
+                sessionNumber: pending?.session_number ?? null,
                 raceNumber: pending?.race_number ?? null,
                 racesTotal: pending?.session_races_total ?? null,
                 targetLaps,
                 pendingRaceId: pending?.race_id ?? null,
+                sessionInProgress, nextSessionAvailable, activeSessionId,
+                needsRegen: regen?.needs_regeneration ?? false,
+                missingDrivers: regen?.missing_driver_names ?? [],
+                sitOutCandidates: regen?.sit_out_candidates ?? [],
             });
         } catch {
             /* leave previous info in place */
+        } finally {
+            setInfoLoaded(true);
         }
     }, []);
 
@@ -95,13 +102,38 @@ export default function RaceControl() {
     const raceId = raceState?.race_id ?? info.pendingRaceId;
     const isFastestLap = sessionType === 'FastestLap';
 
+    const live = state === 'Running' || state === 'ArmedForStart';
+
+    const apiPost = async (path) => {
+        try { await fetch(`${API}${path}`, { method: 'POST' }); } catch { /* ignore */ }
+    };
+
     const nextRace = () => { publish('prepare', { race_id: info.pendingRaceId }); setTimeout(loadInfo, 300); };
     const startRace = () => publish('arm', { race_id: raceId, target_laps: info.targetLaps });
     const endRace = () => publish('end');
     const pauseRace = () => publish('pause');
     const resumeRace = () => publish('resume');
 
-    const live = state === 'Running' || state === 'ArmedForStart';
+    // "Next Session": begin the next NotStarted session and pre-populate its queue.
+    const nextSession = async () => { await apiPost('/sessions/start-next'); await loadInfo(); };
+
+    // Regenerate the upcoming queue after the roster changed. If a race is staged but
+    // not yet running, re-stage the new head so the display reflects the new lineup.
+    const regenerate = async () => {
+        if (!info.activeSessionId) return;
+        await apiPost(`/sessions/${info.activeSessionId}/regenerate-races`);
+        await loadInfo();
+        if (!live) publish('prepare', {});
+    };
+
+    // Disqualify a driver who has sat out too many races: drops them from the rest of the
+    // session and rebuilds the upcoming queue so remaining races refill without them.
+    const disqualify = async (driverId) => {
+        if (!info.activeSessionId) return;
+        await apiPost(`/sessions/${info.activeSessionId}/drivers/${driverId}/disqualify`);
+        await loadInfo();
+        if (!live) publish('prepare', {});
+    };
 
     return (
         <div className="rc-page">
@@ -118,7 +150,9 @@ export default function RaceControl() {
 
             <section className="rc-info">
                 <div className="rc-meeting">{info.meetingName || '—'}</div>
-                <div className="rc-session">{SESSION_TYPE_LABELS[sessionType] ?? sessionType ?? '—'}</div>
+                <div className="rc-session">
+                    {info.sessionNumber != null ? `Session ${info.sessionNumber}` : '—'}
+                </div>
                 <div className="rc-racenum">
                     {raceNumber ? `Race ${raceNumber}` : 'No race'}
                     {info.racesTotal ? ` of ${info.racesTotal}` : ''}
@@ -128,24 +162,29 @@ export default function RaceControl() {
                 </div>
             </section>
 
-            <section className="rc-actions">
-                {state === 'Finished' && (
-                    <button className="rc-btn rc-btn--next" onClick={nextRace}>
-                        <Flag size={32} /> Next Race
+            {info.needsRegen && (
+                <div className="rc-regen-banner">
+                    <span>
+                        New driver added{info.missingDrivers.length ? ` (${info.missingDrivers.join(', ')})` : ''},
+                        {' '}regenerate upcoming races?
+                    </span>
+                    <button className="rc-btn rc-btn--regen" onClick={regenerate}>Regenerate</button>
+                </div>
+            )}
+
+            {info.sitOutCandidates.map((c) => (
+                <div key={c.driver_id} className="rc-regen-banner rc-sitout-banner">
+                    <span>
+                        {c.driver_name} has sat out {c.sit_outs} race{c.sit_outs === 1 ? '' : 's'} —
+                        {' '}disqualify from the rest of the session?
+                    </span>
+                    <button className="rc-btn rc-btn--regen" onClick={() => disqualify(c.driver_id)}>
+                        Disqualify
                     </button>
-                )}
+                </div>
+            ))}
 
-                {state === 'NotStarted' && (
-                    <>
-                        <button className="rc-btn rc-btn--start" onClick={startRace}>
-                            <Play size={32} /> Start Race
-                        </button>
-                        <button className="rc-btn rc-btn--ghost" onClick={nextRace}>
-                            Reload Lineup
-                        </button>
-                    </>
-                )}
-
+            <section className="rc-actions">
                 {live && (
                     <>
                         {!isFastestLap && (
@@ -170,7 +209,38 @@ export default function RaceControl() {
                     </>
                 )}
 
-                {state == null && <p className="rc-connecting">Connecting…</p>}
+                {state === 'NotStarted' && (
+                    <>
+                        <button className="rc-btn rc-btn--start" onClick={startRace}>
+                            <Play size={32} /> Start Race
+                        </button>
+                        <button className="rc-btn rc-btn--ghost" onClick={nextRace}>
+                            Reload Lineup
+                        </button>
+                    </>
+                )}
+
+                {/* Idle (Finished / not connected): advance the race queue, start the
+                    next session, or report completion. */}
+                {!live && state !== 'Paused' && state !== 'NotStarted' && (
+                    info.pendingRaceId ? (
+                        <button className="rc-btn rc-btn--next" onClick={nextRace}>
+                            <Flag size={32} /> Next Race
+                        </button>
+                    ) : info.nextSessionAvailable ? (
+                        <button className="rc-btn rc-btn--next" onClick={nextSession}>
+                            <Flag size={32} /> Next Session
+                        </button>
+                    ) : info.sessionInProgress ? (
+                        <p className="rc-session-complete">
+                            Session complete — every driver has run all their races.
+                        </p>
+                    ) : infoLoaded ? (
+                        <p className="rc-session-complete">Meeting complete — no more sessions.</p>
+                    ) : (
+                        <p className="rc-connecting">Connecting…</p>
+                    )
+                )}
             </section>
         </div>
     );

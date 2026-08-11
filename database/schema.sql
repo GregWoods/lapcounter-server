@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS race_withdrawals;
+DROP TABLE IF EXISTS session_drivers;
 DROP TABLE IF EXISTS driver_laps;
 DROP TABLE IF EXISTS driver_races;
 DROP TABLE IF EXISTS lanes;
@@ -111,6 +113,7 @@ CREATE TABLE sessions (
     end_condition VARCHAR(255) CHECK (end_condition IN ('Laps', 'Time')),
     end_condition_info INT,
     races_per_driver INT NULL,
+    max_sit_outs INT NULL,   -- skips before a driver is offered for disqualification (NULL = no limit)
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,
@@ -153,4 +156,21 @@ CREATE TABLE driver_laps (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- not used for lap times, just for sorting
     -- lap_number can be derived
     lap_time DECIMAL(10,3)
+);
+
+-- An operator withdrawal of a driver from a race (the NextRace "×" button). A withdrawal
+-- attached to a Finished race counts as one "skip" for that driver in the session.
+CREATE TABLE race_withdrawals (
+    race_id INT REFERENCES races(id),
+    driver_id INT REFERENCES drivers(id),
+    PRIMARY KEY (race_id, driver_id)
+);
+
+-- Per-session, per-driver state. Currently just the disqualified flag: a driver who has
+-- sat out too many races and been removed from the rest of the session by the operator.
+CREATE TABLE session_drivers (
+    session_id INT REFERENCES sessions(id),
+    driver_id INT REFERENCES drivers(id),
+    disqualified BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (session_id, driver_id)
 );

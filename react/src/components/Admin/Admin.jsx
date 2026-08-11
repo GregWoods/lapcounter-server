@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
-import { House, LogOut, ChevronDown, ChevronRight } from 'lucide-react';
+import { House, LogOut, ChevronDown, ChevronRight, Timer, Trophy } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import './Admin.css';
 
@@ -11,9 +11,15 @@ const API_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostna
 const RACE_TYPES = ['Points', 'FastestLap'];
 const SESSION_TYPE_LABELS = { Points: 'Finishing Position', FastestLap: 'Fastest Lap', Championship: 'Championship' };
 
+// Fastest Lap → stopwatch; Finishing Position (and anything else) → trophy.
+function SessionTypeIcon({ type }) {
+    return type === 'FastestLap' ? <Timer size={26} /> : <Trophy size={26} />;
+}
+
 const DEFAULT_LAPS = 20;
 const DEFAULT_MINUTES = 5;
 const DEFAULT_RACES_PER_DRIVER = 3;
+const DEFAULT_MAX_SIT_OUTS = 2;
 const DEFAULT_POINTS = '10, 8, 6, 4, 3, 2';
 
 function parsePoints(str) {
@@ -84,6 +90,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
         session_type: initial?.session_type ?? 'Points',
         end_condition_info: initial?.end_condition_info ?? DEFAULT_LAPS,
         races_per_driver: initial?.races_per_driver ?? DEFAULT_RACES_PER_DRIVER,
+        max_sit_outs: initial?.max_sit_outs ?? DEFAULT_MAX_SIT_OUTS,
         scoring_points: initial ? parsePoints(initial.scoring_points) : DEFAULT_POINTS,
     }));
     const [saving, setSaving] = useState(false);
@@ -112,6 +119,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
             end_condition: isFastestLap ? 'Time' : 'Laps',
             end_condition_info: form.end_condition_info || null,
             races_per_driver: form.races_per_driver || null,
+            max_sit_outs: form.max_sit_outs || null,
             scoring_method: isFastestLap ? 'FastestLap' : 'PositionPoints',
             scoring_points: isFastestLap ? null : serializePoints(form.scoring_points),
         };
@@ -161,6 +169,20 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
                         min="1"
                     />
                     <span className="admin-form-suffix">races per driver</span>
+                </div>
+            </div>
+            <div className="admin-form-row">
+                <label>Disqualify after</label>
+                <div className="admin-form-inline">
+                    <input
+                        className="admin-input-narrow"
+                        type="number"
+                        value={form.max_sit_outs || ''}
+                        onChange={e => set('max_sit_outs', parseInt(e.target.value) || null)}
+                        min="1"
+                        placeholder="—"
+                    />
+                    <span className="admin-form-suffix">sit-outs (blank = no limit)</span>
                 </div>
             </div>
             {error && <p className="admin-error">{error}</p>}
@@ -356,7 +378,7 @@ const Admin = () => {
                             <p className="admin-sessions-empty">No sessions — add one below.</p>
                         )}
 
-                        {(meeting.sessions || []).map(session => (
+                        {(meeting.sessions || []).map((session, sessionIdx) => (
                             <div key={session.id} className="admin-session-row">
                                 {editingSessionId === session.id ? (
                                     <SessionForm
@@ -367,16 +389,25 @@ const Admin = () => {
                                     />
                                 ) : (
                                     <div className="admin-session-display">
-                                        <span className="admin-session-type">{SESSION_TYPE_LABELS[session.session_type] || session.session_type}</span>
+                                        <span className="admin-session-title">Session {sessionIdx + 1}</span>
                                         {session.state === 'InProgress' && (
                                             <span className="admin-session-badge">In Progress</span>
                                         )}
-                                        <span className="admin-session-detail">
-                                            {session.end_condition_info}&nbsp;{session.end_condition === 'Time' ? 'min' : 'laps'}
-                                        </span>
                                         {session.races_per_driver != null && (
-                                            <span className="admin-session-detail">{session.races_per_driver} races/driver</span>
+                                            <span className="admin-session-detail">
+                                                {session.races_total != null ? `${session.races_total} races ` : ''}
+                                                ({session.races_per_driver} races per driver)
+                                            </span>
                                         )}
+                                        <span className="admin-session-detail">
+                                            {session.end_condition_info}&nbsp;{session.end_condition === 'Time' ? 'minute' : 'lap'} races
+                                        </span>
+                                        <span
+                                            className="admin-session-icon"
+                                            title={SESSION_TYPE_LABELS[session.session_type] || session.session_type}
+                                        >
+                                            <SessionTypeIcon type={session.session_type} />
+                                        </span>
                                         <div className="admin-session-actions">
                                             {session.state === 'InProgress' && (
                                                 <button
