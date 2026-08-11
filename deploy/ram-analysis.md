@@ -24,6 +24,54 @@ RSS alone is misleading here because the machine swaps into zram, and swapped
 pages leave RSS. The figures below add `memory.current` and
 `memory.swap.current` from each container's cgroup to get true demand.
 
+## How the swapping actually works — it is NOT a problem
+
+**Swap here is compressed RAM, not the SD card.** The only swap device is
+`/dev/zram0`. Measured:
+
+```
+orig_data   88,461,312 B  =  84.4 MB of pages handed to swap
+compr_data  27,665,548 B  =  26.4 MB after compression
+mem_used    29,949,952 B  =  28.6 MB of real RAM actually consumed
+algorithm   zstd
+```
+
+84.4 MB of cold pages stored in 28.6 MB of RAM — **~2.95:1, a net saving of
+~56 MB**. That is why `available` reads ~199 MB rather than ~143 MB.
+
+**Why it swaps even though demand < total RAM.** It is not a shortage response:
+
+- zram costs microseconds of CPU rather than disk I/O, so at the stock
+  `swappiness=60` the kernel evicts cold anonymous pages freely whenever page
+  cache would benefit. (`page-cluster=0` is zram-aware tuning — one page at a
+  time, versus the disk-oriented default of 8.)
+- Most of the swapped 84 MB is **container startup code that never runs again**.
+  Eight containers start simultaneously at boot; `mem_used_max` (33.3 MB) sits
+  above current (28.6 MB), confirming a peak that has since receded. Nothing
+  pulls those pages back until something touches them.
+- 155 MB of page cache is worth more than cold anon pages on a slow SD card.
+
+**It is not thrashing.** `vmstat 2 4` shows `si`/`so` at **0** with the CPU 98%
+idle. The distress signal would be sustained non-zero `si`/`so` — that is when
+swap costs latency and would visibly hurt live MQTT updates. Check with
+`vmstat 2 4` before concluding memory pressure exists.
+
+> **Correction.** Earlier revisions of this document said "the stack does not fit
+> in RAM." **That was wrong.** It fits comfortably; the kernel is *choosing* to
+> compress cold pages because zram is nearly free real estate. A healthy
+> optimisation was misread as a symptom, which overstated the case for every
+> saving listed below — including the Docker question.
+
+**`/var/swap` is not a stale file — do not delete it.**
+`/sys/block/zram0/backing_dev` reads `/dev/loop0`, and `/var/swap` is the file
+behind that loop device, wired up at boot by the stock
+`rpi-setup-loop@var-swap.service`. It is zram's **writeback backing store**: when
+a page proves incompressible or goes fully idle, the kernel can write it out
+there and reclaim the RAM zram was holding. `bd_stat` reads `0 0 0` — nothing
+has ever been written back on this workload — so it is pure insurance costing
+424 MB of a 29 GB card. `dphys-swapfile` is not installed; this is a different
+mechanism.
+
 ## Round 2 — current images (authoritative)
 
 All images rebuilt from `race_meet_manager`; React on the nginx production build.
@@ -79,7 +127,8 @@ replacing it is the wrong target.
 | containerd-shim × 8 | 61.1 MB (~7.6 MB each) |
 | | **≈114 MB** |
 
-Total process RSS: **290 MB**, with ~108 MB pushed into zram swap.
+Total process RSS: **290 MB**, with ~108 MB held in zram (costing rather less
+than that in real RAM — see the swap section above).
 
 ## What this means
 
@@ -262,12 +311,18 @@ comparable — quad-core A53 — so zram compression is not markedly worse). It 
 not change the Docker question above; it only removes the margin worth keeping
 for the BLE/ARC Pro work.
 
-- **Today:** ~273 MB demand, ~108 MB swapped. It would run, but under swap
-  pressure, which adds latency exactly where it hurts — MQTT updates to phones.
-- **After options 1 and 2:** ~95 MB of containers + ~100 MB Docker runtime +
-  ~60 MB OS ≈ **255 MB**, comfortably inside 424 MB with no swapping.
+- **Round 2 (current):** ~230 MB demand, ~89 MB in zram costing ~29 MB of real
+  RAM, ~199 MB available, and `si`/`so` at zero. It runs with headroom.
+- **After option 2:** roughly 20 MB better again.
 
-So the Zero 2 W target is realistic, but only after the React image is fixed.
+So the Zero 2 W target is **already realistic** now that the React image is
+fixed — not contingent on further work.
+
+Note the earlier framing here ("under swap pressure, which adds latency exactly
+where it hurts") was wrong for the same reason as the correction above: pages
+resident in zram are not pressure, and there is no measured swap-in/swap-out
+traffic. Latency would only suffer if `vmstat` showed sustained `si`/`so`, which
+is the thing to check before believing memory is the problem.
 
 ## Related build note
 
