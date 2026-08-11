@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Installs to /etc/hotplug.d/iface/99-portal-mode
+#
+# Drives portal mode from the WAN cable:
+#   plug WAN in   -> ifup   -> build mode (real DNS, update the Pi)
+#   unplug WAN    -> ifdown -> race mode  (captive portal active)
+#
+# NOTE: the WAN interface is named 'mywan', not 'wan', in this config.
+
+[ "$INTERFACE" = "mywan" ] || exit 0
+
+case "$ACTION" in
+    ifup)   /usr/sbin/portal-mode off ;;
+    ifdown) /usr/sbin/portal-mode on  ;;
+esac
+
+exit 0

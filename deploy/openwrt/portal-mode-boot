@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+#
+# Installs to /etc/init.d/portal-mode-boot  (enable with: /etc/init.d/portal-mode-boot enable)
+#
+# FAIL-SAFE BOOT DEFAULT. Without this there is a hole in the WAN-carrier
+# automation: hotplug only fires on a *transition*. If the puck is left in build
+# mode and then boots at a venue with no WAN cable, no ifup and no ifdown ever
+# fire, so the hijack would stay OFF and the captive portal would silently never
+# work - discovered only when 30 people can't get on.
+#
+# So: always boot into RACE mode. If the WAN cable is in, the ifup hotplug fires
+# a few seconds later and switches to build mode. Costs one extra dnsmasq restart
+# at boot; buys a portal that fails toward "working at the meet".
+
+START=95
+
+start() {
+    /usr/sbin/portal-mode on
+}
+
+stop() {
+    :
+}

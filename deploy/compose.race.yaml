@@ -1,0 +1,144 @@
+# Race-meet deployment for the Raspberry Pi 3A+ on the OpenWrt puck network.
+#
+# Differs from compose.pi.yaml (which targets `lapcounter.local` and the old
+# Pi-as-AP design):
+#   - addresses are 192.168.8.3, matching the puck's DHCP reservation
+#   - React is published on 8087
+#   - dbwriter is included (it has no published image, so it builds from source)
+#   - port 80 is deliberately left FREE: the captive portal runs on the puck,
+#     not here, to save RAM on a 424MB machine
+#
+# NOTE ON VITE_* VARS: the published react image is built from Dockerfile.dev,
+# so it runs the Vite dev server and reads these at container start. They are
+# NOT baked in, contrary to the comment in compose.pi.yaml. See
+# race-network-setup.md for why that image should eventually be replaced with a
+# Dockerfile.prod (nginx) build.
+
+services:
+
+  mosquitto:
+    image: eclipse-mosquitto
+    pull_policy: missing
+    container_name: mosquitto
+    volumes:
+      - ./mosquitto:/mosquitto
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    ports:
+      - 1883:1883
+      - 8080:8080
+    restart: unless-stopped
+
+  gpio-lane1:
+    image: gregkwoods/lapcounter-server-gpio:latest
+    pull_policy: missing
+    environment:
+      - LANE_NUMBER=1
+      - MQTT_HOSTNAME=mosquitto
+    container_name: gpio-1
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+
+  gpio-lane2:
+    image: gregkwoods/lapcounter-server-gpio:latest
+    pull_policy: missing
+    environment:
+      - LANE_NUMBER=2
+      - MQTT_HOSTNAME=mosquitto
+    container_name: gpio-2
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - gpio-lane1
+
+  lapdata:
+    image: gregkwoods/lapcounter-server-lapdata:latest
+    pull_policy: missing
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - MINIMUM_LAP_TIME=4
+      - API_URL=http://api:8000
+    container_name: lapdata
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - api
+
+  dbwriter:
+    image: gregkwoods/lapcounter-server-dbwriter:latest
+    pull_policy: missing
+    container_name: dbwriter
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - DB_HOST=database
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_PORT=5432
+    depends_on:
+      - mosquitto
+      - database
+    restart: unless-stopped
+
+  react:
+    image: gregkwoods/lapcounter-server-react:latest
+    pull_policy: missing
+    container_name: react
+    ports:
+      - 8087:80            # nginx (image is now built from Dockerfile.prod)
+    # NO VITE_* vars here. The prod image inlines them at BUILD time via
+    # --build-arg in react/build-and-push-react.ps1; setting them here does
+    # nothing. Changing the address, port or admin PIN needs a rebuild.
+    restart: unless-stopped
+
+  api:
+    image: gregkwoods/lapcounter-server-api:latest
+    pull_policy: missing
+    container_name: api
+    cap_add:
+      - SYS_TIME
+    ports:
+      - "8000:8000"
+    environment:
+      - API_URL=http://192.168.8.3:8000
+      # CORS is an EXACT origin match - scheme, host AND port must equal what
+      # the browser actually uses, or every API call silently fails.
+      - REACT_URL=http://192.168.8.3:8087
+      - MEDIA_FOLDER=media
+      - CARS_MEDIA_FOLDER=media/cars
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_HOST=database
+      - DB_PORT=5432
+    volumes:
+      - car_images:/usr/src/app/media/cars
+    restart: unless-stopped
+    depends_on:
+      - database
+
+  database:
+    image: postgres:17
+    pull_policy: missing
+    container_name: database
+    environment:
+      POSTGRES_DB: lapcounter_server
+      POSTGRES_USER: lap
+      POSTGRES_PASSWORD: lap
+    # Tuned down hard for 512MB of RAM. Defaults assume a server.
+    command: >
+      postgres
+      -c shared_buffers=16MB
+      -c max_connections=20
+      -c work_mem=1MB
+      -c maintenance_work_mem=16MB
+      -c effective_cache_size=64MB
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  car_images:

@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# portal-mode on|off|status   ->  installs to /usr/sbin/portal-mode
+#
+# Toggles the captive-portal DNS hijack.
+#   on  = RACE mode  : every name resolves to the router, portal fires, no internet
+#   off = BUILD mode : real DNS via WAN, so apt/docker/apk work
+#
+# Normally driven automatically by WAN carrier (see /etc/hotplug.d/iface/99-portal-mode),
+# but safe to call by hand.
+
+HIJACK_ADDR='/#/192.168.8.1'
+
+case "$1" in
+    on)
+        uci -q del_list dhcp.@dnsmasq[0].address="$HIJACK_ADDR"
+        uci add_list dhcp.@dnsmasq[0].address="$HIJACK_ADDR"
+        uci commit dhcp
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1
+        logger -t portal-mode "RACE mode: DNS hijack ON"
+        echo "race mode (portal active, no internet)"
+        ;;
+    off)
+        uci -q del_list dhcp.@dnsmasq[0].address="$HIJACK_ADDR"
+        uci commit dhcp
+        /etc/init.d/dnsmasq restart >/dev/null 2>&1
+        logger -t portal-mode "BUILD mode: DNS hijack OFF"
+        echo "build mode (real DNS via WAN)"
+        ;;
+    status)
+        if uci -q get dhcp.@dnsmasq[0].address >/dev/null 2>&1; then
+            echo "race mode (portal active)"
+        else
+            echo "build mode (real DNS)"
+        fi
+        ;;
+    *)
+        echo "usage: portal-mode on|off|status" >&2
+        exit 1
+        ;;
+esac

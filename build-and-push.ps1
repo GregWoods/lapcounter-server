@@ -20,3 +20,7 @@ cd ..
 cd api
 ./build-and-push-api.ps1
 cd ..
+
+cd dbwriter
+./build-and-push-dbwriter.ps1
+cd ..

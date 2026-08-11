@@ -1,5 +1,20 @@
 # Pi Deploy — Dev Setup
 
+> ## ⚠️ SUPERSEDED — do not follow for a race meet
+>
+> This describes the **old architecture: the Pi as its own WiFi access point**
+> (hostapd, `192.168.4.1`, SSID `LapCounter`), reached over Ethernet.
+>
+> The current setup uses a **Google WiFi puck running OpenWrt as the AP**, with
+> the Pi as a wireless *client* on `192.168.8.3`. See
+> **[race-network-setup.md](race-network-setup.md)**.
+>
+> **Do not run `deploy/setup.sh`** on the current Pi. It configures hostapd and a
+> NetworkManager AP profile, which would stop the Pi being a WiFi client and cut
+> it off from the puck — and the Pi 3A+ has no Ethernet port to recover over.
+>
+> Kept for reference only.
+
 Test the Raspberry Pi configuration without going through the GitHub Actions build pipeline.
 Flash a standard Raspberry Pi OS Lite image, SSH in over ethernet, run the setup steps manually,
 then test by connecting a device to the Pi's WiFi.

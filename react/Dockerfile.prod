@@ -1,4 +1,14 @@
-FROM node:20-alpine AS build-step
+# Production React image: static bundle served by nginx.
+#
+# Uses ~5-10MB at runtime vs ~50MB for the Dockerfile.dev (Vite dev server)
+# image. On a 512MB Pi that difference matters - see deploy/ram-analysis.md.
+#
+# --platform=$BUILDPLATFORM pins the build stage to the NATIVE architecture of
+# the build machine. The output is static JS/CSS/HTML, which is
+# architecture-independent, so there is no reason to run npm under QEMU
+# emulation - doing so turns a 2-minute build into a 40-minute one. Only the
+# final nginx stage is built for the target platform.
+FROM --platform=$BUILDPLATFORM node:20-alpine AS build-step
 WORKDIR /app
 ENV PATH=/app/node_modules/.bin:$PATH
 
@@ -8,18 +18,30 @@ RUN npm ci
 COPY ./public ./public/
 COPY ./src ./src/
 
+# Vite inlines import.meta.env.VITE_* at BUILD time, so unlike the dev-server
+# image these must be supplied here - setting them in compose has no effect.
+ARG VITE_API_URL
+ARG VITE_MQTT_URL
+ARG VITE_CAR_MEDIA_FOLDER=media/cars
+ARG VITE_ADMIN_PIN
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_MQTT_URL=$VITE_MQTT_URL \
+    VITE_CAR_MEDIA_FOLDER=$VITE_CAR_MEDIA_FOLDER \
+    VITE_ADMIN_PIN=$VITE_ADMIN_PIN
+
 RUN npm run build
 
 
-# Build step #2: build an nginx container
+# Build step #2: serve the bundle from nginx
 FROM nginx:stable-alpine
 COPY --from=build-step /app/dist /usr/share/nginx/html
 
-# untested. may not be needed if Step #1 bundles the public folder into 'dist'
-COPY --from=build-step /app/public /usr/share/nginx/html
+# NOTE: do NOT also copy ./public here. Vite already copies public/ into dist/,
+# and public/index.html is a stale 2024 template - copying it over dist would
+# replace the generated index.html (which references the hashed bundles) and
+# leave a blank page.
 
 COPY ./nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
-

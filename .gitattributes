@@ -1,0 +1,12 @@
+# Shell scripts and OpenWrt/container config MUST keep LF endings.
+#
+# This repo is developed on Windows with core.autocrlf enabled, which would
+# otherwise hand out CRLF copies on checkout. A CRLF shell script fails on
+# OpenWrt's /bin/sh and inside Linux containers with errors as unhelpful as
+# "no such file or directory" on a line that plainly exists - the trailing \r
+# is treated as part of the interpreter path or the argument.
+*.sh              text eol=lf
+deploy/openwrt/*  text eol=lf
+deploy/portal/cgi-bin/* text eol=lf
+Dockerfile*       text eol=lf
+*.conf            text eol=lf

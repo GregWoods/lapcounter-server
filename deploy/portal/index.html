@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Race Meet</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 18px 40px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #11151c; color: #eef2f7;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 1.75rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: #93a1b5; margin: 0 0 28px; font-size: 0.95rem; }
+  a.btn {
+    display: block; text-decoration: none; margin-bottom: 12px;
+    padding: 18px 20px; border-radius: 12px;
+    background: #1c2431; border: 1px solid #2c3849; color: #eef2f7;
+  }
+  a.btn:active { background: #243044; }
+  a.btn .t { font-size: 1.1rem; font-weight: 600; display: block; }
+  a.btn .d { font-size: 0.85rem; color: #93a1b5; margin-top: 3px; display: block; }
+  .note {
+    margin-top: 26px; padding: 14px 16px; border-radius: 10px;
+    background: #1a2130; border-left: 3px solid #e8a33d;
+    font-size: 0.88rem; color: #c7d2e0; line-height: 1.5;
+  }
+  .addr { margin-top: 20px; font-size: 0.8rem; color: #6f7f95; text-align: center; }
+  code { background: #232c3b; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Race Meet</h1>
+  <p class="sub">You're connected. There's no internet on this network &mdash; just the race.</p>
+
+  <!-- Routes per react/src/router.jsx. NOTE: "/" is <Home/>, a menu page - the
+       live leaderboard is /currentrace. /racecontrol, /drivers and /meetings are
+       wrapped in <RequireAdmin> and are deliberately not linked here. -->
+  <a class="btn" href="http://192.168.8.3:8087/currentrace">
+    <span class="t">Live Leaderboard</span>
+    <span class="d">Positions, lap counts and fastest laps as they happen</span>
+  </a>
+
+  <a class="btn" href="http://192.168.8.3:8087/register">
+    <span class="t">Register as a Driver</span>
+    <span class="d">Add yourself to tonight's meeting</span>
+  </a>
+
+  <a class="btn" href="http://192.168.8.3:8087/nextrace">
+    <span class="t">Next Race</span>
+    <span class="d">See who's on which lane in the upcoming race</span>
+  </a>
+
+  <a class="btn" href="http://192.168.8.3:8087/results">
+    <span class="t">Results</span>
+    <span class="d">Standings and lap times from completed sessions</span>
+  </a>
+
+  <div class="note">
+    <strong>Tap &ldquo;Open in Browser&rdquo;</strong> if this page appeared in a
+    pop-up window. The live leaderboard needs a full browser to update by itself.
+    <br><br>
+    Your phone will say this WiFi has no internet &mdash; that's expected.
+    Choose <strong>Stay connected</strong> so you don't drop back to mobile data.
+  </div>
+
+  <p class="addr">Bookmark <code>http://192.168.8.3:8087/</code></p>
+</div>
+</body>
+</html>
