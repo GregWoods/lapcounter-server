@@ -315,6 +315,29 @@ Windows may route lookups to `192.168.8.1`, which in **race mode** answers every
 name with the router's own address. Switch the puck to build mode, or unplug the
 dongle, before pushing.
 
+### Deploying a new version
+
+One command, from the repo root:
+
+```powershell
+./deploy/deploy.ps1                        # build+push everything, deploy, verify
+./deploy/deploy.ps1 -Services react,api    # only what changed - much faster
+./deploy/deploy.ps1 -SkipBuild             # just pull+restart on the Pi
+./deploy/deploy.ps1 -VerifyOnly            # health check, changes nothing
+```
+
+It preflights (Docker running, **puck in build mode**, Pi reachable), builds and
+pushes the selected services, runs `pull` then `up -d` on the Pi, and verifies
+containers, API route count, the React app and the MQTT WebSocket.
+
+Rough build times: **React ~1 min** (builds natively via `$BUILDPLATFORM`), but
+**`api` ~10–15 min** and **`dbwriter` ~8 min** — their C extensions compile under
+QEMU for armv7. Use `-Services` to skip what hasn't changed.
+
+The preflight matters: if the puck is in race mode, DNS resolves every name to
+the router and `docker push` fails with `lookup registry-1.docker.io: no such
+host`. Plugging the WAN cable in fixes it in ~5 s.
+
 ### Updating the stack: `pull` first, always
 
 `compose.race.yaml` uses `pull_policy: missing`, which means Docker only fetches
