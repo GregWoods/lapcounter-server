@@ -1,0 +1,49 @@
+# Lap Counter first-boot configuration.
+#
+# Copy to the SD card's FAT boot partition as `lapcounter.conf` and edit it.
+# That partition is readable/writable on Windows and macOS, so no Linux machine
+# is needed. It is applied once, on first boot.
+#
+# Everything here is optional - the defaults match the documented network in
+# deploy/race-network-setup.md.
+
+# --- WiFi (the access point this Pi joins) ------------------------------------
+# Must match the SSID/password configured on the OpenWrt puck by
+# deploy/openwrt-ap-setup.sh.
+WIFI_SSID=Scalextric
+WIFI_PSK=racenight2026
+
+# Regulatory domain. REQUIRED for the radio to come up at all - without it the
+# WiFi is soft-blocked by rfkill and nothing will associate.
+WIFI_COUNTRY=GB
+
+# --- Identity -----------------------------------------------------------------
+HOSTNAME=lapcounter-server
+
+# --- Database -----------------------------------------------------------------
+# Only reachable from other containers on this Pi; it is not published on the
+# network. Change it anyway if you like.
+DB_PASSWORD=lap
+
+# --- Sample data --------------------------------------------------------------
+# yes = seed drivers/meetings/sessions so the UI has something to show.
+# no  = empty database.
+SEED_SAMPLE_DATA=yes
+
+
+# ==============================================================================
+# NOT configurable here, and why
+# ==============================================================================
+#
+# The Pi's address is fixed at 192.168.8.3 and the router at 192.168.8.1.
+#
+# The React bundle is built by Vite, which inlines VITE_API_URL and
+# VITE_MQTT_URL as compile-time constants. Changing the address therefore needs
+# a rebuild of the react image, not a setting - so the image ships the
+# documented network and the puck config (openwrt-ap-setup.sh) hardcodes the
+# matching values.
+#
+# The admin PIN is likewise compiled into the JS bundle. It defaults to 1234 and
+# is readable by anyone who inspects the bundle: it deters a curious attendee
+# from opening /racecontrol, and is not security. To change it, rebuild the
+# react image with a different --build-arg VITE_ADMIN_PIN.

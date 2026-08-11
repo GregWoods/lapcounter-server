@@ -1,9 +1,25 @@
 name: Build Raspberry Pi Image
 
+# Produces a flashable, fully offline Raspberry Pi image and attaches it to a
+# GitHub release. Trigger with a v* tag, or run manually to test the build
+# without publishing.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+
+env:
+  # Everything the stack needs. Third-party images are included so the Pi never
+  # needs internet on first boot.
+  IMAGES: >-
+    gregkwoods/lapcounter-server-api:latest
+    gregkwoods/lapcounter-server-react:latest
+    gregkwoods/lapcounter-server-lapdata:latest
+    gregkwoods/lapcounter-server-gpio:latest
+    gregkwoods/lapcounter-server-dbwriter:latest
+    postgres:17
+    eclipse-mosquitto:latest
 
 jobs:
   build:
@@ -14,10 +30,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install QEMU
+      - name: Free up runner disk space
+        # A 9G sparse image plus ~2GB of container tarballs plus the base image
+        # overruns the default runner otherwise.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Install QEMU and tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static xz-utils
+          sudo apt-get install -y qemu-user-static binfmt-support xz-utils zstd
+
+      - name: Collect armhf container images
+        # The Pi is 32-bit, so pull the linux/arm/v7 variants explicitly - on an
+        # amd64 runner the default would silently fetch amd64 images and produce
+        # an SD card that fails with "exec format error" on first boot.
+        run: |
+          mkdir -p deploy/output
+          for img in $IMAGES; do
+            echo "==> $img"
+            docker pull --platform linux/arm/v7 "$img"
+          done
+          # shellcheck disable=SC2086
+          docker save $IMAGES | zstd -T0 -3 -o deploy/output/images.tar.zst
+          ls -lh deploy/output/images.tar.zst
 
       - name: Install Packer
         uses: hashicorp/setup-packer@main
@@ -29,28 +66,91 @@ jobs:
         run: |
           cd deploy
           packer init lapcounter.pkr.hcl
-          packer build lapcounter.pkr.hcl
+          sudo -E $(which packer) build lapcounter.pkr.hcl
+
+      - name: Shrink image
+        # Shrinks the rootfs to its minimum and injects a first-boot autoexpand,
+        # so the artifact is small but still fills whatever card it is written
+        # to. Without this the release is a full 9G of mostly-zeros.
+        run: |
+          curl -fsSL -o pishrink.sh https://raw.githubusercontent.com/Drewsif/PiShrink/master/pishrink.sh
+          chmod +x pishrink.sh
+          sudo ./pishrink.sh -a deploy/output/lapcounter.img
+          ls -lh deploy/output/lapcounter.img
 
       - name: Compress image
         run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
           xz -T0 -6 deploy/output/lapcounter.img
-          mv deploy/output/lapcounter.img.xz lapcounter-${{ github.ref_name }}.img.xz
+          mv deploy/output/lapcounter.img.xz "lapcounter-${VERSION}.img.xz"
+          sha256sum "lapcounter-${VERSION}.img.xz" > "lapcounter-${VERSION}.img.xz.sha256"
+          ls -lh lapcounter-*.img.xz
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lapcounter-image
+          path: lapcounter-*.img.xz*
+          retention-days: 7
 
       - name: Create release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           name: Lap Counter ${{ github.ref_name }}
           body: |
-            ## Installation
+            ## What this is
+
+            A complete, offline lap-counting appliance for a Scalextric race
+            meet: a Raspberry Pi running the race stack, joined to an OpenWrt
+            access point as a WiFi client. Attendees scan a QR code, join the
+            WiFi, and a captive portal drops them on the race pages. **No
+            internet is required at any point after flashing.**
+
+            ## You need both halves
+
+            This image is only the Pi. The access point is separate hardware and
+            must be set up too - see
+            [`deploy/race-network-setup.md`](../blob/${{ github.ref_name }}/deploy/race-network-setup.md).
+
+            ## Flashing
 
             1. Download `lapcounter-${{ github.ref_name }}.img.xz`
-            2. Open **Raspberry Pi Imager**
-            3. Choose OS → **Use custom** → select the downloaded file
-            4. Choose your SD card
-            5. Click **Write**
-            6. Boot the Pi — the stack starts automatically on first boot
+            2. **Raspberry Pi Imager** → Choose OS → **Use custom** → select the file
+            3. Choose your SD card (8 GB or larger) and write
+            4. Before ejecting, open the small `bootfs`/`boot` drive that appears
+               and edit **`lapcounter.conf`** - at minimum set your WiFi SSID,
+               password and country
 
-            The Pi will be accessible at **http://lapcounter.local** once booted
-            (allow ~2 minutes on first boot for Docker images to download).
-          files: lapcounter-${{ github.ref_name }}.img.xz
+            ## First boot
+
+            Takes **10-20 minutes** on a Pi 3A+. It loads ~2 GB of pre-baked
+            container images from the SD card, so it is slow but needs no
+            network. Progress is logged to
+            `/var/log/lapcounter-firstboot.log`.
+
+            Afterwards:
+
+            | | |
+            |---|---|
+            | App | `http://192.168.8.3:8087/` |
+            | Captive portal | `http://192.168.8.1/` |
+            | Router admin | `http://192.168.8.1:8080/` |
+
+            ## Two things worth knowing
+
+            **The addresses are fixed.** `VITE_API_URL` is compiled into the
+            React bundle, so the Pi is `192.168.8.3` and the router
+            `192.168.8.1`. Changing them means rebuilding the react image.
+
+            **Set the clock at the start of every meet.** There is no RTC and no
+            internet, so open the Home page on a laptop and use the clock-sync
+            button. Lap timestamps depend on it.
+
+            **The admin PIN is `1234`** and is readable in the JS bundle. It
+            deters a curious attendee from opening `/racecontrol`; it is not
+            security.
+          files: |
+            lapcounter-${{ github.ref_name }}.img.xz
+            lapcounter-${{ github.ref_name }}.img.xz.sha256
           generate_release_notes: false

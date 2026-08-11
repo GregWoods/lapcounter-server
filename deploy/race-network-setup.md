@@ -373,6 +373,75 @@ Verify with `docker images` before disconnecting.
 
 ---
 
+## Part 3b — Building a distributable SD-card image
+
+For handing the whole appliance to someone else, rather than building a Pi by
+hand. Tag a release and CI produces a flashable, **fully offline** image:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`.github/workflows/build-pi-image.yml` then pulls the `linux/arm/v7` container
+images, bakes them in, builds the SD image with Packer, shrinks it, and attaches
+`lapcounter-v0.1.0.img.xz` to a GitHub release. Use **Run workflow** on the
+Actions tab to test a build without publishing — the image is uploaded as a
+build artifact instead.
+
+### How the pieces fit
+
+| File | Role |
+|---|---|
+| [`lapcounter.pkr.hcl`](lapcounter.pkr.hcl) | Packer template — Raspberry Pi OS Lite **32-bit trixie** |
+| [`image/setup-image.sh`](image/setup-image.sh) | Runs in the chroot: installs Docker, enables services |
+| [`image/firstboot.sh`](image/firstboot.sh) | Runs once on the real Pi: WiFi, `docker load`, seed DB |
+| [`image/lapcounter.conf.example`](image/lapcounter.conf.example) | Config on the FAT boot partition |
+
+The split matters: the chroot has **no systemd and no real kernel**, so anything
+needing a running system (WiFi, `docker load`, seeding Postgres) has to be in
+`firstboot.sh`, not the chroot script.
+
+### Why the images are baked in
+
+The stack is ~2 GB of container images and the whole point is to work with no
+internet. Populating `/var/lib/docker` inside a qemu chroot means running dockerd
+in the chroot, which is painful and fragile. Instead CI does
+`docker save | zstd`, ships the tarball inside the image, and `firstboot.sh`
+runs `docker load` then deletes it to give the card its space back.
+
+Cost: first boot takes **10–20 minutes** on a Pi 3A+. Progress goes to
+`/var/log/lapcounter-firstboot.log`.
+
+**`docker pull --platform linux/arm/v7` is not optional.** On an amd64 runner the
+default pulls amd64 images, producing a card that fails with `exec format error`
+on first boot — and only on the target hardware.
+
+### Why the artifact is small
+
+A 9 GB image would otherwise compress to a 9 GB-ish download. Two steps fix it:
+
+- `setup-image.sh` **zero-fills free space** before the image is closed. Deleted
+  files leave their old contents behind, and random bytes do not compress.
+- **PiShrink** cuts the rootfs to its minimum and injects a first-boot
+  auto-expand, so the image still fills whatever card it is written to.
+
+### What is deliberately NOT configurable
+
+The Pi is fixed at `192.168.8.3` and the router at `192.168.8.1`, because Vite
+inlines `VITE_API_URL`/`VITE_MQTT_URL` as **compile-time constants**. Changing the
+addresses means rebuilding the react image, so the SD image ships the documented
+network and `openwrt-ap-setup.sh` hardcodes the matching values. The admin PIN is
+compiled in the same way.
+
+`lapcounter.conf` covers what genuinely can vary: WiFi SSID/password/country,
+hostname, DB password, and whether to seed sample data.
+
+### The other half is separate hardware
+
+This image is only the Pi. Whoever adopts it also needs an OpenWrt access point
+configured per Part 1 — and flashing OpenWrt onto a Google WiFi puck is the
+hardest step for a newcomer. Any public release should say so plainly.
+
 ## Part 4 — Captive portal
 
 ### How it works

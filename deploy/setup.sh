@@ -1,5 +1,27 @@
 #!/bin/bash
+#
+# ############################################################################
+# ## SUPERSEDED - DO NOT RUN ON THE CURRENT PI                              ##
+# ############################################################################
+#
+# This configures the Pi as its OWN WiFi access point (hostapd, 192.168.4.1,
+# SSID "LapCounter"). That architecture has been replaced: an OpenWrt puck is
+# now the access point and the Pi is a WiFi *client* on 192.168.8.3.
+#
+# Running this would stop the Pi being a client and cut it off from the puck -
+# and a Pi 3A+ has no Ethernet port to recover over. Recovery means re-imaging
+# the SD card.
+#
+# The image build now uses image/setup-image.sh instead. See
+# race-network-setup.md. Kept for reference only.
+#
 set -e
+
+echo "REFUSING TO RUN: deploy/setup.sh is superseded - see the header." >&2
+echo "It configures the Pi as an access point, which would cut it off from" >&2
+echo "the puck with no Ethernet port to recover over." >&2
+echo "If you really mean it, comment out this guard." >&2
+exit 1
 
 # ── Customise these before building the image ────────────────────────────────
 WIFI_SSID="LapCounter"
