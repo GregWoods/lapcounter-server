@@ -194,10 +194,73 @@ Against that, the porting cost is real:
 is more than three times what dropping Postgres would yield, for a fraction of
 the risk. Re-measure before considering a database change.
 
+## Is it worth ditching Docker in production?
+
+Asked because Docker's runtime is the largest single line in the budget. Short
+answer: **viable, worth ~100–120 MB, but not yet worthwhile — and the specific
+hybrid of "Docker in dev, native in prod" is the option to avoid.**
+
+### Measured inputs
+
+- **Four distinct Python base images** (`api`, `lapdata`, `dbwriter`, `gpio`).
+  `gpio-1`/`gpio-2` share one image, so those pages *are* shared; the other
+  three each carry their own interpreter and site-packages.
+- **Native Python on the Pi is 3.13.5, ~6.7 MB RSS** for a bare interpreter.
+- **`postgresql 17` and `mosquitto 2.0.21` are both packaged for this OS**, so a
+  native path genuinely exists rather than being hypothetical.
+
+| | Containerised (measured) | Native (estimated) |
+|---|---:|---:|
+| Docker runtime | 95 MB | **0** |
+| Python services (5 processes) | 104 MB | ~85 MB — one shared interpreter, not 4 copies |
+| Postgres / nginx / mosquitto | 31 MB | ~30 MB |
+| **Total** | **~230 MB** | **~115 MB** |
+
+### Why not to do it
+
+Going native in production while developing on Docker means **the thing you test
+is no longer the thing you ship**. This repo has already been bitten by that four
+times, all discovered on 2026-08-10/11:
+
+1. The React image was built from `Dockerfile.dev` — production ran a **Vite dev
+   server for 18 months**.
+2. `dbwriter` had no published image, so `compose.pi.yaml` deployments had **no
+   lap persistence at all**.
+3. `psycopg2-binary` has no `armv7l` wheel — surfaced only on the target.
+4. `Dockerfile.prod` was broken (`COPY ./public` overwriting the generated
+   `index.html`) and was marked "untested".
+
+Every one is a dev/prod divergence bug. Making that divergence deliberate and
+permanent institutionalises the failure mode that has already cost the most time.
+
+### The middle path: Podman
+
+**The artifact is the image, not the daemon.** Podman is daemonless — no
+`dockerd` (34.5 MB), no `containerd` (18.6 MB) — and `conmon` costs ~1–2 MB per
+container against `containerd-shim`'s 7.6 MB.
+
+Estimated saving **~75–85 MB**, most of the prize, while keeping OCI images,
+compose-compatible workflows, atomic rollback, and *the same artifact in dev and
+prod*. Docker-in-dev / Podman-in-prod is a safe hybrid precisely because the
+image is identical. Native-in-prod discards the artifact, which is where parity
+dies.
+
+### Recommended order
+
+1. **Nothing yet.** 169 MB available and swap down to 77 MB after the React fix.
+   Don't spend a weekend reclaiming memory you aren't short of.
+2. **Investigate `api` first** — at 53.6 MB it is now the largest single
+   consumer, having overtaken everything else. FastAPI + SQLModel + uvicorn is
+   heavy; trimming one process is far cheaper than re-architecting deployment.
+3. **Podman**, if real headroom is needed.
+4. **Native**, only if 2 and 3 are insufficient — and then go native in dev too.
+
 ## Pi Zero 2 W feasibility
 
 The Zero 2 W has the same 512 MB, so the arithmetic is identical (its CPU is
-comparable — quad-core A53 — so zram compression is not markedly worse).
+comparable — quad-core A53 — so zram compression is not markedly worse). It does
+not change the Docker question above; it only removes the margin worth keeping
+for the BLE/ARC Pro work.
 
 - **Today:** ~273 MB demand, ~108 MB swapped. It would run, but under swap
   pressure, which adds latency exactly where it hurts — MQTT updates to phones.
