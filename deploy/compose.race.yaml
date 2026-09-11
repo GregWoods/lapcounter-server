@@ -53,6 +53,28 @@ services:
     depends_on:
       - gpio-lane1
 
+  # Alternative Layer 1: Scalextric ARC Pro powerbase over BLE instead of the
+  # two GPIO finish-line sensors above. NOT started by default - gpio-lane1/2
+  # remain the deployed Layer 1 until this is tested and approved. To switch
+  # over (only one Layer 1 should publish car_timestamp at a time):
+  #   docker compose stop gpio-lane1 gpio-lane2
+  #   docker compose --profile ble up -d ble
+  ble:
+    profiles: ["ble"]
+    image: gregkwoods/lapcounter-server-ble:latest
+    pull_policy: missing
+    container_name: ble
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - BLE_ADDRESS=            # set to the powerbase's MAC to skip the discovery scan
+    volumes:
+      - /var/run/dbus:/var/run/dbus
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+
   lapdata:
     image: gregkwoods/lapcounter-server-lapdata:latest
     pull_policy: missing

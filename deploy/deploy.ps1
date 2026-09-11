@@ -12,7 +12,10 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet('react', 'api', 'lapdata', 'gpio', 'dbwriter')]
+    # ble is deliberately excluded from the default list below: it's an
+    # unapproved alternative to gpio (see deploy/compose.race.yaml), not part
+    # of a normal full deploy. Select it explicitly with -Services ble.
+    [ValidateSet('react', 'api', 'lapdata', 'gpio', 'dbwriter', 'ble')]
     [string[]]$Services = @('react', 'api', 'lapdata', 'gpio', 'dbwriter'),
     [switch]$SkipBuild,
     [switch]$VerifyOnly
@@ -33,6 +36,7 @@ $BuildScripts = @{
     lapdata  = 'lapdata\build-and-push-lapdata.ps1'
     gpio     = 'gpio\build-and-push-gpio.ps1'
     dbwriter = 'dbwriter\build-and-push-dbwriter.ps1'
+    ble      = 'ble\build-and-push-ble.ps1'
 }
 
 function Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }

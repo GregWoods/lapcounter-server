@@ -22,9 +22,32 @@ services:
     environment:
       - MQTT_HOSTNAME=mosquitto
       - MOCK_NUMBER_OF_DRIVERS=6
-    build: 
+    build:
       context: ./gpio
-      dockerfile: Dockerfile.Mocked 
+      dockerfile: Dockerfile.Mocked
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+
+  # Alternative Layer 1: reads lap crossings from a Scalextric ARC Pro powerbase
+  # over BLE instead of the GPIO finish-line sensors, republishing the same
+  # car_timestamp contract. Not started by default (`docker compose up`) so it
+  # doesn't fight mocked-gpio/gpio for the car_timestamp topic — run it with
+  # `docker compose --profile ble up ble mosquitto lapdata ...`. Needs a real
+  # powerbase in range and BlueZ's D-Bus socket, so this only runs meaningfully
+  # on the Pi, not this dev machine.
+  ble:
+    profiles: ["ble"]
+    container_name: ble
+    build: ./ble
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - BLE_ADDRESS=            # set to the powerbase's MAC to skip the discovery scan
+    volumes:
+      - /var/run/dbus:/var/run/dbus
+    cap_add:
+      - NET_ADMIN
     depends_on:
       - mosquitto
     restart: unless-stopped

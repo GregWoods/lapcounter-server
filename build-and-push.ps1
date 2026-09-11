@@ -9,6 +9,10 @@ cd gpio
 ./build-and-push-gpio.ps1
 cd ..
 
+cd ble
+./build-and-push-ble.ps1
+cd ..
+
 cd lapdata
 ./build-and-push-lapdata.ps1
 cd ..
