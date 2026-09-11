@@ -31,15 +31,19 @@ http://localhost:8000/docs — auto-generated from FastAPI route definitions.
 
 ## Tests
 
+A root `pytest.ini` (repo root) runs this directory alongside `lapdata/`'s tests in one
+invocation — see the top-level CLAUDE.md "Run Python tests". From here directly:
 ```
-python -m pytest api/app/test_next_race.py
+python -m pytest api/app
 ```
 Single test:
 ```
 python -m pytest api/app/test_next_race.py::test_lane_preference
 ```
 
-Tests cover `assign_drivers_to_lanes()` only — the pure-logic function with no DB dependency. Tests use pytest fixtures defined at the top of the test file for `Lane` and `DriverWithLane` objects.
+`test_next_race.py` covers `assign_drivers_to_lanes()` — the pure-logic function with no
+DB dependency, using fixtures for `Lane` and `DriverWithLane` objects. `test_points.py`
+covers `PositionPoints` scoring.
 
 ## File Structure
 

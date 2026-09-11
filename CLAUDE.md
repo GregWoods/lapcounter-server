@@ -20,7 +20,7 @@ DB Writer service    React apps        Any client
 
 - **mosquitto/** - Eclipse Mosquitto MQTT broker config
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
-- **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order.
+- **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. `race_manager.py` is pure/DB-free and covered by `lapdata/test_race_manager.py` (see "Run Python tests" below). ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order; this is a regression test in that suite.
 - **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
 - **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
 - **dbwriter/** - Small service: subscribes to `driver_lap` (counted laps) and `race_state`. Writes `driver_laps` rows + `driver_races` aggregates **directly to PostgreSQL** (psycopg2, raw SQL — *not* via the API), and keeps `races`/`sessions` state in step with lapdata so persistence is browser-independent.
@@ -104,12 +104,16 @@ cd app && fastapi dev main.py
 Requires PostgreSQL running on localhost:5432 (the Docker `database` container works).
 
 ### Run Python tests
+A root `pytest.ini` sets `testpaths = api/app, lapdata`, so one command runs every
+DB-free pure-logic suite (lane assignment, points scoring, the lapdata race manager).
+Only the `api/.venv` has pytest installed, so invoke it explicitly:
+```powershell
+./api/.venv/Scripts/python.exe -m pytest
 ```
-python -m pytest api/app/test_next_race.py
-```
-Run a single test:
-```
-python -m pytest api/app/test_next_race.py::test_lane_preference
+Run one file or one test:
+```powershell
+./api/.venv/Scripts/python.exe -m pytest lapdata/test_race_manager.py
+./api/.venv/Scripts/python.exe -m pytest api/app/test_next_race.py::test_lane_preference
 ```
 
 ### Lint React code
