@@ -101,7 +101,7 @@ In dev the same trap exists in reverse: `mocked-gpio` is unprofiled, so a bare `
 The BLE protocol is Scalextric's official doc, obtained via customerservices.uk@scalextric.com, cross-checked against [RazManager/ScalextricArcBleProtocolExplorer](https://github.com/RazManager/ScalextricArcBleProtocolExplorer). A text copy is checked in at `ble/reference/Scalextric_ARC_BLE_Protocol.md`; the original `Scalextric_ARC_BLE_Protocol_live-1.docx` lives on Greg's machine under `OneDrive\Scalextric ARC Firmware, Protocols etc\`. `ble/` only implements the **Slot characteristic** (`0x3B0B`) for lap timing so far. The protocol exposes several other characteristics that GPIO structurally cannot — noted here so they aren't lost before BLE is adopted:
 
 - **Throttle characteristic (`0x3B09`, notify, all 6 cars per packet, several times/sec)** — real-time throttle position (0–63) and brake/lane-change button state per car. This is the basis for a **simulated fuel consumption** feature: integrate `throttle × dt` continuously into a per-car running total (trivial computationally — 6 floats updated ~10–30×/sec). That integration belongs in the **BLE container** (it's the only place with access to raw throttle telemetry), published on its **own new topic** (e.g. `car_throttle`) — deliberately *not* folded into `car_timestamp`/`lap`, since fuel isn't a lap-boundary concept: a "low fuel" event has to be able to fire mid-lap, not only when a car happens to cross the start/finish line. So **LapData** would subscribe to `car_throttle` as a second, independent live input alongside `car_timestamp` (same "internal to LapData" treatment) and keep a continuously-decrementing `fuel_remaining` per driver, checking the low-fuel threshold on every throttle update rather than at lap boundaries. Crossing the threshold publishes its own event immediately, not gated on the next lap. One real consequence: `race_state` (or a fuel gauge within it) would then have two independent things driving updates — crossings *and* throttle ticks, which arrive far more often — so the publish cadence for fuel-driven state may need its own debounce rather than reusing "publish after every crossing" as-is. Since GPIO can never produce this data, it must stay optional, not a hard dependency.
-- **Power multiplier + override flag** (Command characteristic `0x3B0A`, write) — software can cap or directly drive a car's power, independent of the physical controller. Could make a low-fuel/fuel-out state actually slow the car, not just display a number.
+- **Power multiplier + override flag** (Command characteristic `0x3B0A`, write) — software can cap or directly drive a car's power, independent of the physical controller. Could make a low-fuel/fuel-out state actually slow the car, not just display a number, and is the mechanism behind the proposed yellow-flag limp/power-down behaviour (see "Yellow flags" below).
 - **Throttle profile** (`0xFF01`–`0xFF06`, write, one per car) — a 64-entry throttle→power response curve per car. Could be reshaped as fuel drops (flatten the top end) for a "fuel-save mode."
 - **Rumble** (per car, in `0x3B0A`) — haptic feedback in the physical hand controller, e.g. a low-fuel warning the driver feels.
 - **KERS trigger** (per car, one bit in `0x3B0A`) — hardware already has a boost-button concept, if a "push to pass" mechanic is ever wanted.
@@ -116,7 +116,53 @@ BLE also subscribes to `race_state` and re-sends `POWER_ON_RACING` the instant i
 
 **Refuel** is still an open question, not just plumbing: does it belong in BLE at all? Per the split above, **LapData** owns `fuel_remaining` (it's the one diffing/thresholding `car_throttle`), so a refuel action is naturally just LapData resetting its own in-memory value — no round-trip to BLE required, unless BLE ends up needing to know the fuel level itself (e.g. to drive rumble directly from hardware state rather than being told discrete commands). Recommended default: keep BLE dumb, handle refuel entirely inside LapData, and only route a message to BLE if a future feature (like rumble-on-low-fuel) needs BLE to *act* on it.
 
-The throttle-driven features above it (fuel, power multiplier, throttle profiles, rumble, KERS, CarID) are still unimplemented — `ble/` only does lap timing plus the race-lifecycle Command writes described above, to keep parity with GPIO while that swap gets validated on real hardware first.
+#### Yellow flags: proposed power-based handling
+
+**Today's yellow flag is bookkeeping only.** RaceControl's "Yellow Flag" button publishes `race_control` `pause` (`RaceControl.jsx:114`), which sets `state = 'Paused'` in `race_manager.py:140` so crossings stop counting. The cars keep running at **full power** — BLE currently maps *every* race_control command, `pause` included, to `POWER_ON_RACING` with `FULL_POWER` in bytes 1–6. So a car coming off the track means the marshal reaches over a live track while everyone else keeps racing at speed, and the only thing that stopped was the lap count.
+
+The proposed replacement has **two mechanics, which are independent and may be combined** (and the current intent is to do both):
+
+1. **Grace period, then power down.** On yellow, the other drivers get a fixed number of seconds to keep racing — enough to finish the corner / get clear — after which power is cut and everything stops until the off car is reslotted and the operator resumes.
+2. **Limp mode.** On yellow, cap every other car to a low power multiplier so they trundle round slowly rather than stopping dead, while the off car is reslotted. Ballpark **~30%** of full scale — Command bytes 1–6 are `0…0x3f`, so ~30% is `0x13`.
+
+⚠️ **The multiplier is a power cap, not a speed setting, and needs empirical tuning.** Output isn't linear in the byte value and the mapping differs per car and per track voltage: too low and some cars stall or won't pull out of a corner at all (worse than stopping them cleanly), too high and it isn't a meaningful slow-down. So the limp value must be a **tunable setting, not a hardcoded constant**, and wants a real-hardware sweep before a number is committed to. Combining both mechanics — slow them *and* bound how long they may continue — is the safest default: limp mode alone has no end state if the off car can't be recovered.
+
+**Ownership: lapdata owns the yellow-flag state machine and the grace timer; BLE only executes.** This follows the existing principle that lapdata's race manager is the sole authority on race rules — the alternative (BLE running its own countdown) would fork the rules by hardware and make the behaviour untestable in the DB-free `test_race_manager.py` suite. The grace period is seconds-scale while MQTT round-trips are milliseconds, so there is no latency argument for pushing the timer down into Layer 1. Sketch:
+
+- `race_control` gains a `yellow` command; the race manager gains a `Yellow` state alongside `Paused`, with `yellow_ends_at` published in `race_state` so React can show the countdown to power-down.
+- On grace expiry, lapdata itself transitions `Yellow → Paused` (the same internal-timer pattern as `_do_lights_out()`), and publishes the new `race_state`.
+- BLE's `handle_race_control()` / `handle_race_state()` stop collapsing everything to `POWER_ON_RACING`: `Yellow` maps to `POWER_ON_RACING` with the limp multiplier in bytes 1–6, `Paused` to a genuine stop (`POWER_ON_TIMER_HALT`, or `POWER_ON_RACING` with zero power bytes), `Running` back to `FULL_POWER`. **This is exactly the differentiation deliberately deferred in `handle_race_control()`'s docstring** — yellow flags are the feature that makes it necessary.
+
+Three design questions are genuinely open and should be decided before coding:
+
+- **Do laps count under yellow?** Non-`Running` crossings don't count today, and under limp mode cars are still moving and still crossing the line — so a driver who was mid-lap at the flag loses that lap through no fault of their own. Consistency with `Paused` says don't count; fairness says do, or credit the lap at the pre-yellow pace.
+- **Does the race clock pause?** It currently does **not** — `pause()`/`resume()` leave `race_start_time` and `race_end_time` untouched, so in a timed (FastestLap) session the yellow period eats into the session clock. That's tolerable for a bookkeeping pause of a few seconds; it is not obviously right for a limp-mode yellow that may run much longer.
+- **Who clears it?** Operator-only resume, or auto-resume once the reslotted car is detected crossing again.
+
+**Under GPIO this feature cannot work** — there is no power control at all, so yellow necessarily degrades to today's `Paused`. The per-session settings it needs (grace seconds, limp multiplier) are therefore operator-facing config that silently does nothing on one Layer 1, which is precisely the case the next section exists to handle.
+
+#### Layer 1 capability advertising
+
+**The original principle — layers 2+ don't know which Layer 1 is running — still holds, and the power-state writes did not break it.** Nothing in `lapdata/` or `react/src/` references BLE or a powerbase (the only mentions are comments in `timestamps_to_lapdata.py` explaining why `timestamp` is trusted). The reason is **dependency direction**: BLE subscribes *upward* to `race_control` and `race_state` and acts on them, while lapdata publishes those topics for its own reasons and has no idea anyone is listening. Layer 1 depends on Layer 2's contract; Layer 2 gained no knowledge. That is the same shape as the DB writer — an opt-in subscriber, not a leak. Power control is a capability only Layer 1 exercises, using information it was already entitled to.
+
+Three planned features do cross the line, in increasing severity:
+
+1. **Fuel (`car_throttle` → lapdata)** — Layer 2 gains a live input only one Layer 1 can produce. Survivable as a *soft* dependency: under GPIO the topic simply never arrives, `fuel_remaining` stays unset, nothing renders, and lapdata needn't know why. Hence the existing rule that it must stay optional, not a hard dependency.
+2. **React rendering a fuel gauge** — Layer 3 must decide whether to show the UI. It still doesn't need to know *"BLE"*, only *"does `race_state` carry fuel"*. Presence-of-data remains hardware-agnostic.
+3. **Operator-facing options that only work on one Layer 1** — the real break. Yellow-flag grace/limp settings, an "allow jump starts" toggle, power-cut-on-fuel-out: these are session settings in the DB and the Admin form. Under GPIO they would save happily and silently do nothing — config that lies. They must be resolvable *before any data flows*, so presence-of-topic cannot answer it.
+
+**Conclusion: don't teach layers 2+ about BLE — have Layer 1 advertise capabilities.** A retained MQTT topic, published by whichever Layer 1 is running, on connect:
+
+```
+topic: layer1_status   (retained)
+{"layer1": "ble", "capabilities": ["lap_timing", "power_control", "throttle", "rumble", "car_id"]}
+```
+
+GPIO publishes `["lap_timing"]`. lapdata passes the capability set through into `race_state`; React greys out what isn't offered; the Admin session form disables yellow-flag power settings with *"requires ARC powerbase"*. ⚠️ **The `layer1` name is diagnostic only — nothing may branch on it.** Branch on capabilities and a fourth Layer 1 with a different mix works with zero changes above it; branch on the name and the abstraction is gone. **Retained matters**: a browser connecting mid-meet needs the answer immediately, for the same reason race state is browser-independent.
+
+This keeps the principle intact in its useful form: *layers 2+ don't know which hardware is attached, only what it can do.*
+
+The throttle-driven features above it (fuel, power multiplier, throttle profiles, rumble, KERS, CarID), the power-based yellow flag, and capability advertising are all still unimplemented — `ble/` only does lap timing plus the race-lifecycle Command writes described above, to keep parity with GPIO while that swap gets validated on real hardware first.
 
 ## Development Commands
 
