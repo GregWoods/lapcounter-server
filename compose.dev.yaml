@@ -32,11 +32,19 @@ services:
 
   # Alternative Layer 1: reads lap crossings from a Scalextric ARC Pro powerbase
   # over BLE instead of the GPIO finish-line sensors, republishing the same
-  # car_timestamp contract. Not started by default (`docker compose up`) so it
-  # doesn't fight mocked-gpio/gpio for the car_timestamp topic — run it with
-  # `docker compose --profile ble up ble mosquitto lapdata ...`. Needs a real
-  # powerbase in range and BlueZ's D-Bus socket, so this only runs meaningfully
-  # on the Pi, not this dev machine.
+  # car_timestamp contract. Needs a real powerbase in range and BlueZ's D-Bus
+  # socket, so this only runs meaningfully on the Pi, not this dev machine.
+  #
+  # DEV DEFAULTS TO mocked-gpio and that is deliberate — the opposite of the live
+  # Pi, where ble is the default and gpio sits behind a profile (see
+  # deploy/compose.race.yaml). Only one Layer 1 may publish car_timestamp; two
+  # double-counts every lap.
+  #
+  # ⚠️ `docker compose --profile ble up` on its own is NOT the way to run this:
+  # mocked-gpio has no profile, so it starts too and you get both. Name the
+  # services explicitly, or stop mocked-gpio first:
+  #   docker compose -f compose.dev.yaml stop mocked-gpio
+  #   docker compose -f compose.dev.yaml --profile ble up -d ble
   ble:
     profiles: ["ble"]
     container_name: ble

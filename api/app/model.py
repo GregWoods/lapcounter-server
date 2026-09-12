@@ -2,6 +2,7 @@ from typing import Optional
 from decimal import Decimal
 from datetime import date, datetime, time
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
+from sqlalchemy import Column, DateTime
 
 class CarManufacturer(SQLModel, table=True):
     __tablename__ = "car_manufacturers"
@@ -114,7 +115,13 @@ class Race(SQLModel, table=True):
     session_id: Optional[int] = Field(default=None, foreign_key="sessions.id")
     race_number: Optional[int] = Field(default=None)
     state: str          # 'NotStarted', 'Running', 'Finished'
-    started_at: Optional[datetime] = Field(default=None)  # lights-out instant, from lapdata's race_start_time
+    # Lights-out instant, from lapdata's race_start_time. Written tz-aware (UTC), so it
+    # needs an explicit sa_column: a bare `Optional[datetime]` maps to TIMESTAMP WITHOUT
+    # TIME ZONE, and a DB built by sampledata.py's create_all would then silently drop
+    # the offset that schema.sql's TIMESTAMPTZ preserves.
+    started_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
 
 
 # Links drivers with their cars for a particular race,

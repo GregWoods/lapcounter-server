@@ -29,38 +29,20 @@ services:
       - 8080:8080
     restart: unless-stopped
 
-  gpio-lane1:
-    image: gregkwoods/lapcounter-server-gpio:latest
-    pull_policy: missing
-    environment:
-      - LANE_NUMBER=1
-      - MQTT_HOSTNAME=mosquitto
-    container_name: gpio-1
-    privileged: true
-    restart: unless-stopped
-    depends_on:
-      - mosquitto
+  # ---------------------------------------------------------------- Layer 1
+  # EXACTLY ONE of these may run: they both publish car_timestamp, and two of them
+  # at once double-counts every lap. ble is the default; gpio sits behind a profile.
+  #
+  #   ./deploy/deploy.ps1                    # ble (default)
+  #   ./deploy/deploy.ps1 -Layer1 gpio       # falls back to the GPIO sensors
+  #
+  # Switching by hand needs the old one stopped explicitly, AFTER the up - compose
+  # leaves a now-profiled-out service running rather than removing it, and ble is
+  # unprofiled so even `--profile gpio up -d` starts it:
+  #   docker compose up -d && docker stop gpio-1 gpio-2          # -> ble
+  #   docker compose --profile gpio up -d && docker stop ble     # -> gpio
 
-  gpio-lane2:
-    image: gregkwoods/lapcounter-server-gpio:latest
-    pull_policy: missing
-    environment:
-      - LANE_NUMBER=2
-      - MQTT_HOSTNAME=mosquitto
-    container_name: gpio-2
-    privileged: true
-    restart: unless-stopped
-    depends_on:
-      - gpio-lane1
-
-  # Alternative Layer 1: Scalextric ARC Pro powerbase over BLE instead of the
-  # two GPIO finish-line sensors above. NOT started by default - gpio-lane1/2
-  # remain the deployed Layer 1 until this is tested and approved. To switch
-  # over (only one Layer 1 should publish car_timestamp at a time):
-  #   docker compose stop gpio-lane1 gpio-lane2
-  #   docker compose --profile ble up -d ble
   ble:
-    profiles: ["ble"]
     image: gregkwoods/lapcounter-server-ble:latest
     pull_policy: missing
     container_name: ble
@@ -74,6 +56,32 @@ services:
     restart: unless-stopped
     depends_on:
       - mosquitto
+
+  gpio-lane1:
+    profiles: ["gpio"]
+    image: gregkwoods/lapcounter-server-gpio:latest
+    pull_policy: missing
+    environment:
+      - LANE_NUMBER=1
+      - MQTT_HOSTNAME=mosquitto
+    container_name: gpio-1
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+
+  gpio-lane2:
+    profiles: ["gpio"]
+    image: gregkwoods/lapcounter-server-gpio:latest
+    pull_policy: missing
+    environment:
+      - LANE_NUMBER=2
+      - MQTT_HOSTNAME=mosquitto
+    container_name: gpio-2
+    privileged: true
+    restart: unless-stopped
+    depends_on:
+      - gpio-lane1
 
   lapdata:
     image: gregkwoods/lapcounter-server-lapdata:latest

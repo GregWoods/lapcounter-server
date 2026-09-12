@@ -20,7 +20,7 @@ DB Writer service    React apps        Any client
 
 - **mosquitto/** - Eclipse Mosquitto MQTT broker config
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
-- **ble/** - Alternative Layer 1: reads laps from a Scalextric ARC Pro powerbase over Bluetooth LE instead of the two GPIO finish-line sensors, publishing the same `car_timestamp` contract. Not yet validated against real hardware. See "Layer 1 hardware options" below for the protocol and future capabilities beyond lap timing.
+- **ble/** - Alternative Layer 1: reads laps from a Scalextric ARC Pro powerbase over Bluetooth LE instead of the two GPIO finish-line sensors, publishing the same `car_timestamp` contract. **Now the default Layer 1 on the live Pi** (`gpio` is the `--profile gpio` fallback), though still not validated against real hardware. See "Layer 1 hardware options" below for the protocol and future capabilities beyond lap timing.
 - **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. `race_manager.py` is pure/DB-free and covered by `lapdata/test_race_manager.py` (see "Run Python tests" below). ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order; this is a regression test in that suite.
 - **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
 - **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
@@ -72,6 +72,24 @@ Emitted by lapdata only when `race_manager.on_lap` counts a real lap (so idle/no
 
 Three interchangeable Layer 1s all publish the same `car_timestamp` contract, so nothing above LapData cares which is running: `mocked-gpio` (software, default in `compose.dev.yaml`), `gpio` (two containers, one per physical GPIO sensor — Pi only), and `ble` (one container, talks to a Scalextric ARC Pro powerbase — see `ble/ble_to_timestamps.py`).
 
+**Exactly one Layer 1 may run.** Two publishers on `car_timestamp` means every lap is counted twice, and at a meet that reads as a timing fault rather than a deploy fault. The defaults differ by environment, deliberately:
+
+| | default Layer 1 | the other one |
+|---|---|---|
+| dev (`compose.dev.yaml`) | `mocked-gpio` | `ble` behind `--profile ble` |
+| live Pi (`deploy/compose.race.yaml`) | `ble` | `gpio` behind `--profile gpio` |
+
+`./deploy/deploy.ps1` takes `-Layer1 ble|gpio` (default `ble`) and both starts the right one and stops the other, then verifies exactly one is running. Two Compose behaviours make the manual path a trap, so prefer the script: a service that has been *profiled out* keeps **running** rather than being removed, and `ble` is unprofiled so even `--profile gpio up -d` starts it. Hence the stop must come **after** the `up`:
+```
+docker compose up -d && docker stop gpio-1 gpio-2          # -> ble
+docker compose --profile gpio up -d && docker stop ble     # -> gpio
+```
+In dev the same trap exists in reverse: `mocked-gpio` is unprofiled, so a bare `docker compose --profile ble up` starts **both**. Stop `mocked-gpio` first, or name services explicitly.
+
+⚠️ `ble` is the live default but has **not yet been validated against real powerbase hardware** — the first meet on it is the first real test. `-Layer1 gpio` is the fallback.
+
+⚠️ **BLE crossings are edge-detected, so the first Slot packet per car after connecting only *seeds* the baseline — it never publishes.** The powerbase reports each car's last start/finish timestamp as absolute state, and keeps counting while nothing is connected (`POWER_ON_RACING` leaves the timers ticking; only commands 0 and 1 zero them). So on connect it hands over whatever each car's last crossing was. Comparing that against "unknown" would read as a change and fake a lap for **every** car — six phantom laps on a mid-race reconnect, straight into the leaderboard. Hence `_last_start_finish` distinguishes `[None, None]` ("not yet seeded since connecting") from `[0, 0]` ("seen, timers at zero"), and `handle_slot_notification()` returns early on the first packet. The accepted cost is missing a real crossing in the sub-second before a car's first round-robin packet. Don't "simplify" this back into a plain `!= previous` check.
+
 The BLE protocol is Scalextric's official doc, obtained via customerservices.uk@scalextric.com, cross-checked against [RazManager/ScalextricArcBleProtocolExplorer](https://github.com/RazManager/ScalextricArcBleProtocolExplorer). A text copy is checked in at `ble/reference/Scalextric_ARC_BLE_Protocol.md`; the original `Scalextric_ARC_BLE_Protocol_live-1.docx` lives on Greg's machine under `OneDrive\Scalextric ARC Firmware, Protocols etc\`. `ble/` only implements the **Slot characteristic** (`0x3B0B`) for lap timing so far. The protocol exposes several other characteristics that GPIO structurally cannot — noted here so they aren't lost before BLE is adopted:
 
 - **Throttle characteristic (`0x3B09`, notify, all 6 cars per packet, several times/sec)** — real-time throttle position (0–63) and brake/lane-change button state per car. This is the basis for a **simulated fuel consumption** feature: integrate `throttle × dt` continuously into a per-car running total (trivial computationally — 6 floats updated ~10–30×/sec). That integration belongs in the **BLE container** (it's the only place with access to raw throttle telemetry), published on its **own new topic** (e.g. `car_throttle`) — deliberately *not* folded into `car_timestamp`/`lap`, since fuel isn't a lap-boundary concept: a "low fuel" event has to be able to fire mid-lap, not only when a car happens to cross the start/finish line. So **LapData** would subscribe to `car_throttle` as a second, independent live input alongside `car_timestamp` (same "internal to LapData" treatment) and keep a continuously-decrementing `fuel_remaining` per driver, checking the low-fuel threshold on every throttle update rather than at lap boundaries. Crossing the threshold publishes its own event immediately, not gated on the next lap. One real consequence: `race_state` (or a fuel gauge within it) would then have two independent things driving updates — crossings *and* throttle ticks, which arrive far more often — so the publish cadence for fuel-driven state may need its own debounce rather than reusing "publish after every crossing" as-is. Since GPIO can never produce this data, it must stay optional, not a hard dependency.
@@ -83,6 +101,8 @@ The BLE protocol is Scalextric's official doc, obtained via customerservices.uk@
 - **CarID characteristic (`0x3B0D`, write)** — lets software assign a car's digital ID over BLE instead of the physical DIP-switch/programmer chip. Could simplify car setup in NextRace.
 
 **BLE is now bidirectional for race lifecycle.** `ble/ble_to_timestamps.py` subscribes to `race_control` (same topic LapData subscribes to) and translates every command (`prepare`/`arm`/`start`/`pause`/`resume`/`end`) into a Command characteristic (`0x3B0A`) write of `POWER_ON_RACING`, both on each transition and once immediately on connect. This deliberately keeps Layer 1 dumb and behavior identical to GPIO (which has no ability to cut power at all) — lapdata's race manager remains the sole authority on which crossings count. Differentiating pause/end into other Command states (`POWER_ON_RACE_TRIGGER` for a yellow-flag-style halt that keeps power on, `POWER_ON_TIMER_HALT` to actually stop cars, or a future per-session "allow jump starts" toggle that holds power off between `arm` and `start`) is intentionally left for later — see `handle_race_control()`'s docstring. The paho (sync, own thread) → bleak (asyncio) handoff uses `asyncio.run_coroutine_threadsafe`, since bleak's client isn't safe to call directly from another thread; `_bleak_client`/`_ble_loop` are set once connected in `run()` and cleared on disconnect.
+
+⚠️ **The Command payload's per-car power bytes are not padding.** Bytes 1–6 are the power *multiplier* (0…0x3f), and under `POWER_ON_RACING` the protocol doc says power output follows "the throttle levels **and** the car power bytes" — so sending zeros there caps every car at zero output and nothing moves, however hard the trigger is pulled. `_write_command_async()` sends `FULL_POWER` (0x3f) in bytes 1–6 for GPIO-parity pass-through; only bytes 7–19 (rumble/brake/KERS) are genuinely unused. The `0x80` bit (app drives the car directly, ignoring its controller) stays clear — that's what a future ghost-car or fuel-cut feature would set. `_write_command_async()` also swallows and logs its own exceptions: the Command write is optional garnish on top of this container's real job, and must never be able to tear down a working slot-notification subscription on a powerbase that rejects it (e.g. ARC One, which has no such characteristic).
 
 BLE also subscribes to `race_state` and re-sends `POWER_ON_RACING` the instant it sees the transition into `Running` (`handle_race_state()`, tracking `_last_seen_race_state` to avoid rewriting on every crossing-triggered `race_state` publish). This matters because the actual lights-out "go" is an *internal* lapdata timer (`_do_lights_out()` in `timestamps_to_lapdata.py`) — it fires seconds after the `arm` race_control message and never publishes its own race_control command, so `race_state`'s `Running` transition is the only signal that lands exactly at go. The `arm`-time write and this one are deliberately redundant (belt-and-braces against e.g. a BLE reconnect mid-countdown).
 
@@ -205,6 +225,19 @@ docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
 docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
 ```
 Alternatively, run `python sampledata.py` inside the `api` container (drops all tables, recreates, seeds).
+
+### Upgrading a database that holds real data
+
+Both rebuild paths above **DROP everything**, so neither is how you add a column to the
+race Pi's live meeting data. Numbered, re-runnable scripts in `database/migrations/` do
+that instead:
+```
+docker exec -i database psql -U lap -d lapcounter_server < database/migrations/001-races-started-at.sql
+```
+Add one whenever `model.py` gains a column, and keep `schema.sql` in step for fresh
+builds. This matters more than it looks: SQLModel names every mapped column explicitly in
+its SELECTs, so one missing column takes out *all* of that table's endpoints with
+`UndefinedColumn` — not just the feature that added it.
 
 ### Key schema notes
 - `meeting_cars.lane` — nullable INT, unique per `(meeting_id, lane)`. Source of truth for car-to-lane assignment when building a race lineup.

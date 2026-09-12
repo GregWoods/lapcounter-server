@@ -4,6 +4,7 @@
 #   ./deploy/deploy.ps1 -Services react,api    # only what changed (much faster)
 #   ./deploy/deploy.ps1 -SkipBuild             # just pull+restart on the Pi
 #   ./deploy/deploy.ps1 -VerifyOnly            # health check, change nothing
+#   ./deploy/deploy.ps1 -Layer1 gpio -Services gpio   # fall back to GPIO sensors
 #
 # Why this exists: a deployment is otherwise ~20 separate commands. Beyond the
 # typing, each one is a separate approval prompt when driven by an agent.
@@ -12,11 +13,17 @@
 
 [CmdletBinding()]
 param(
-    # ble is deliberately excluded from the default list below: it's an
-    # unapproved alternative to gpio (see deploy/compose.race.yaml), not part
-    # of a normal full deploy. Select it explicitly with -Services ble.
+    # gpio is excluded from the default list to match -Layer1: a normal deploy
+    # builds ble. Deploying a gpio change needs -Services gpio -Layer1 gpio.
     [ValidateSet('react', 'api', 'lapdata', 'gpio', 'dbwriter', 'ble')]
-    [string[]]$Services = @('react', 'api', 'lapdata', 'gpio', 'dbwriter'),
+    [string[]]$Services = @('react', 'api', 'lapdata', 'ble', 'dbwriter'),
+
+    # Which Layer 1 publishes car_timestamp. Exactly one may run - two of them
+    # double-counts every lap. ble is the default; gpio is the fallback to the
+    # physical finish-line sensors if the powerbase misbehaves at a meet.
+    [ValidateSet('ble', 'gpio')]
+    [string]$Layer1 = 'ble',
+
     [switch]$SkipBuild,
     [switch]$VerifyOnly
 )
@@ -86,12 +93,25 @@ if (-not $VerifyOnly -and -not $SkipBuild) {
 
 # ---------------------------------------------------------------- deploy
 if (-not $VerifyOnly) {
-    Step 'Deploying to the Pi'
+    Step "Deploying to the Pi (Layer 1: $Layer1)"
+
+    # The Layer 1 we are NOT using has to be stopped explicitly, and it has to
+    # happen AFTER `up -d`, not before:
+    #   - ble is unprofiled, so `--profile gpio up -d` starts it too; stopping it
+    #     first would just see it come straight back.
+    #   - gpio is profiled out on a ble deploy, but compose leaves an already-running
+    #     profiled-out service RUNNING rather than removing it.
+    # Either way the failure mode is two publishers on car_timestamp and every lap
+    # counted twice. The brief overlap during `up -d` is harmless - no race is live
+    # mid-deploy - and the verify step below confirms the end state.
+    $profileArg = if ($Layer1 -eq 'gpio') { '--profile gpio ' } else { '' }
+    $stale      = if ($Layer1 -eq 'gpio') { 'ble' } else { 'gpio-1 gpio-2' }
+
     # `pull` is REQUIRED: compose uses pull_policy:missing and every service is
     # pinned to :latest, so `up -d` alone silently keeps the old images.
-    ssh -o BatchMode=yes $PI 'cd /opt/lapcounter && docker compose pull && docker compose up -d'
+    ssh -o BatchMode=yes $PI "cd /opt/lapcounter && docker compose ${profileArg}pull && docker compose ${profileArg}up -d && (docker stop $stale 2>/dev/null || true)"
     if ($LASTEXITCODE -ne 0) { throw 'Deployment failed on the Pi.' }
-    Ok 'pull + up -d complete'
+    Ok "pull + up -d complete (layer 1: $Layer1, stopped: $stale)"
     Start-Sleep -Seconds 30
 }
 
@@ -99,9 +119,40 @@ if (-not $VerifyOnly) {
 Step 'Verifying'
 $failed = @()
 
-$state = ssh -o BatchMode=yes $PI 'docker compose -f /opt/lapcounter/compose.yaml ps --format "{{.Name}} {{.State}}"'
+# $profileArg matters here too: without it `ps` omits the gpio services entirely on a
+# -Layer1 gpio deploy, so a dead gpio-1 would sail through this check.
+$profileArg = if ($Layer1 -eq 'gpio') { '--profile gpio ' } else { '' }
+$state = ssh -o BatchMode=yes $PI "docker compose -f /opt/lapcounter/compose.yaml ${profileArg}ps --format '{{.Name}} {{.State}}'"
 $down  = $state | Where-Object { $_ -notmatch 'running' }
 if ($down) { $failed += "containers not running: $down" } else { Ok "all containers running" }
+
+# Exactly one Layer 1, and the one we asked for. Two publishers on car_timestamp
+# double-counts every lap, and the symptom at a meet looks like a timing fault
+# rather than a deploy fault - so fail the deploy here instead.
+$expected = if ($Layer1 -eq 'gpio') { @('gpio-1', 'gpio-2') } else { @('ble') }
+$running  = @(ssh -o BatchMode=yes $PI "docker ps --filter name='^ble$' --filter name='^gpio-1$' --filter name='^gpio-2$' --format '{{.Names}}'") |
+            Where-Object { $_ }
+if (Compare-Object $running $expected) {
+    $failed += "Layer 1 mismatch: expected '$expected' running, found '$running'"
+} else {
+    Ok "layer 1: $Layer1 ($running)"
+}
+
+# "running" is NOT the same as "can count a lap". A ble container that never finds
+# the powerbase sits there retrying forever and still reports as running, so without
+# this the script cheerfully prints "Deployment verified." for a stack that cannot
+# time a single lap. A WARNING not a failure: deploying from the workshop with the
+# powerbase switched off is entirely normal.
+if ($Layer1 -eq 'ble' -and $running -contains 'ble') {
+    $bleLog = ssh -o BatchMode=yes $PI 'docker logs --tail 50 ble 2>&1'
+    if ($bleLog -match 'Connected to Scalextric ARC powerbase') {
+        Ok 'ble: connected to the powerbase'
+    } else {
+        Warn 'ble is running but has NOT connected to a powerbase. Fine if it is powered'
+        Warn 'off; if not, check it is in range and awake - there will be no lap timing.'
+        Warn 'Last line: ' + ($bleLog | Select-Object -Last 1)
+    }
+}
 
 try {
     $routes = (Invoke-RestMethod "$API_URL/openapi.json" -TimeoutSec 30).paths.PSObject.Properties.Name.Count

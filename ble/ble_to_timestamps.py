@@ -49,7 +49,7 @@ SLOT_CHARACTERISTIC_UUID = "00003b0b-0000-1000-8000-00805f9b34fb"
 
 # Command characteristic (write-only, 20 bytes): byte 0 selects one of these overall
 # powerbase states (power + whether Slot characteristic timestamps tick/halt/reset);
-# bytes 1-19 are per-car power/rumble/brake/KERS overrides, unused so far — see
+# bytes 1-6 are the per-car power multiplier, 7-12 rumble, 13-18 brake, 19 KERS — see
 # ble/reference/Scalextric_ARC_BLE_Protocol.md for the full table.
 COMMAND_CHARACTERISTIC_UUID = "00003b0a-0000-1000-8000-00805f9b34fb"
 NO_POWER_TIMER_STOPPED = 0
@@ -59,9 +59,21 @@ POWER_ON_RACING = 3
 POWER_ON_TIMER_HALT = 4
 NO_POWER_REBOOT_PIC18 = 5
 
+# Per-car power multiplier (Command bytes 1-6). Under POWER_ON_RACING the protocol doc
+# is explicit that "power outputs follow the throttle levels *and* the car power bytes",
+# so these are NOT inert padding: leaving them at 0 caps every car at zero output and
+# no car moves however hard its trigger is pulled. 0x3f is the documented maximum, i.e.
+# "throttle passes through untouched" — the GPIO-parity behaviour this Layer 1 wants.
+# The 0x80 bit (app drives the car directly, ignoring its controller) stays clear; it's
+# what a future ghost-car or fuel-cut feature would set.
+FULL_POWER = 0x3F
+
 # Per car-ID (index 0..5 = car 1..6): last-seen raw StartFinish1/2 values, so a
 # notification only turns into a crossing when one of them actually changed —
 # the powerbase renotifies the full slot state on any field change, not just laps.
+# [None, None] means "not yet seeded since connecting", which is distinct from
+# [0, 0] ("seen, and the powerbase's timers are at zero") — see
+# handle_slot_notification().
 _last_start_finish = [[None, None] for _ in range(6)]
 
 # Set once BLE is connected (inside run()), cleared on disconnect. Lets
@@ -81,6 +93,14 @@ def publish_crossing(car_number: int, lane: int):
 
 
 def handle_slot_notification(_sender, data: bytearray):
+    # Python slices truncate silently rather than raising, so a short packet would
+    # yield a wrong int.from_bytes value that almost certainly differs from the stored
+    # previous one — i.e. a fabricated lap. Bail instead. (Documented length is 18;
+    # 10 is all we read, since the pitlane timestamps are unused.)
+    if len(data) < 10:
+        logger.warning(f"Ignoring short slot notification ({len(data)} bytes)")
+        return
+
     car_id = data[1]
     if not (1 <= car_id <= 6):
         return
@@ -89,30 +109,57 @@ def handle_slot_notification(_sender, data: bytearray):
     timestamp2 = int.from_bytes(data[6:10], 'little')
 
     previous1, previous2 = _last_start_finish[idx]
+    # Record even a zero — the powerbase really does reset its timers on commands 0/1,
+    # and storing that is what lets the next real crossing read as a change.
+    _last_start_finish[idx] = [timestamp1, timestamp2]
+
+    # First packet seen for this car since connecting: that was the baseline, publish
+    # nothing. The powerbase keeps counting while we're away (POWER_ON_RACING leaves
+    # timestamps ticking — only commands 0 and 1 zero them), so it hands us whatever
+    # each car's last crossing was. Comparing that against "unknown" would read as a
+    # change and fake a lap for every car — six phantom laps on a mid-race reconnect.
+    # Cost of seeding: a real crossing in the sub-second before this car's first
+    # round-robin packet is missed, which is the far cheaper failure.
+    if previous1 is None:
+        return
+
     if timestamp1 and timestamp1 != previous1:
-        _last_start_finish[idx][0] = timestamp1
         publish_crossing(car_id, 1)
     if timestamp2 and timestamp2 != previous2:
-        _last_start_finish[idx][1] = timestamp2
         publish_crossing(car_id, 2)
 
 
 async def _write_command_async(command: int):
+    """Never raises. The Command write is an optional extra on top of this container's
+    real job (publishing car_timestamp), so a powerbase that rejects it — no such
+    characteristic on ARC One, GATT permission error, bad length — must not be able to
+    tear down a working slot-notification subscription. Swallowing here also means the
+    fire-and-forget send_command() path can't lose an exception in a dropped future."""
     if not (_bleak_client and _bleak_client.is_connected):
         logger.warning(f"Cannot write command {command}: BLE not connected")
         return
-    payload = bytes([command]) + bytes(19)  # power/rumble/brake/KERS bytes unused so far
-    await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, payload)
+    # Full power multiplier per car; rumble/brake/KERS (bytes 7-19) genuinely unused.
+    payload = bytes([command]) + bytes([FULL_POWER] * 6) + bytes(13)
+    try:
+        await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, payload)
+    except Exception as e:
+        logger.error(f"Command characteristic write ({command}) failed: {e}")
+        return
     logger.info(f"Command characteristic <- {command}")
 
 
 def send_command(command: int):
     """Thread-safe entry point for scheduling a Command characteristic write from
     outside bleak's asyncio loop (e.g. paho's on_message thread)."""
-    if _ble_loop is None:
+    # Read the global ONCE into a local. This runs on paho's thread while run()'s
+    # finally clears _ble_loop on the bleak thread, so re-reading it after the None
+    # check can hand run_coroutine_threadsafe a None loop — an AttributeError from
+    # inside asyncio, plus a never-awaited coroutine.
+    loop = _ble_loop
+    if loop is None:
         logger.warning(f"Cannot write command {command}: BLE not connected")
         return
-    asyncio.run_coroutine_threadsafe(_write_command_async(command), _ble_loop)
+    asyncio.run_coroutine_threadsafe(_write_command_async(command), loop)
 
 
 def handle_race_control(data: dict):
@@ -171,17 +218,35 @@ def on_mqtt_connect(client, _userdata, _flags, _reason_code, _properties):
     client.subscribe('race_state')
 
 
+def _name_matches(device, adv) -> bool:
+    """Prefix match, whitespace-stripped, and NOT `==`.
+
+    The powerbase advertises "Scalextric ARC  " — with two trailing spaces, per the
+    spec's Advertising Packet and GAP Device Name (0x2A00) sections. An exact match
+    against 'Scalextric ARC' therefore never fires, and the container just loops
+    "no device found" forever. Prefix-matching also tolerates a model suffix.
+
+    d.name can be None when the name isn't cached (bleak >= 1.0), so fall back to the
+    advertisement's local_name.
+    """
+    for candidate in (getattr(device, 'name', None), getattr(adv, 'local_name', None)):
+        if candidate and candidate.strip().startswith(device_name.strip()):
+            return True
+    return False
+
+
 async def find_device_address() -> str:
     if device_address:
         return device_address
 
-    logger.info(f"Scanning for BLE device named '{device_name}'...")
-    device = await BleakScanner.find_device_by_filter(
-        lambda d, _adv: d.name == device_name,
-        timeout=scan_timeout,
-    )
+    logger.info(f"Scanning for a BLE device whose name starts with '{device_name.strip()}'...")
+    device = await BleakScanner.find_device_by_filter(_name_matches, timeout=scan_timeout)
     if device is None:
-        raise TimeoutError(f"No BLE device named '{device_name}' found within {scan_timeout}s")
+        raise TimeoutError(
+            f"No BLE device named '{device_name.strip()}*' found within {scan_timeout}s. "
+            f"Set BLE_ADDRESS to the powerbase's MAC to skip discovery."
+        )
+    logger.info(f"Discovered '{device.name}' at {device.address}")
     return device.address
 
 
@@ -193,9 +258,10 @@ async def run():
             logger.info(f"Connecting to {address}...")
             async with BleakClient(address) as client:
                 logger.info("Connected to Scalextric ARC powerbase.")
-                for car in _last_start_finish:
-                    car[0] = None
-                    car[1] = None
+                # Drop every car back to "not yet seeded" — values from before this
+                # connection can't be compared against what the powerbase reports now.
+                for i in range(len(_last_start_finish)):
+                    _last_start_finish[i] = [None, None]
 
                 await client.start_notify(SLOT_CHARACTERISTIC_UUID, handle_slot_notification)
                 logger.info("Subscribed to slot notifications — waiting for crossings.")
@@ -212,7 +278,12 @@ async def run():
                     await asyncio.sleep(1)
                 logger.warning("BLE connection dropped.")
         except Exception as e:
-            logger.error(f"BLE error: {e}")
+            # exc_info matters here: this wraps discovery, connection, start_notify and
+            # the whole connected lifetime, several bleak exceptions stringify to almost
+            # nothing, and a real programming error would otherwise look identical to
+            # "powerbase out of range" — on the only diagnostic surface available at a
+            # meet with no network.
+            logger.error(f"BLE error: {e}", exc_info=True)
         finally:
             _bleak_client = None
             _ble_loop = None
