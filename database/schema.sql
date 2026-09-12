@@ -126,7 +126,11 @@ CREATE TABLE races (
     id SERIAL PRIMARY KEY,
     session_id INT REFERENCES sessions(id),
     race_number INT,
-    state VARCHAR(255) CHECK (state IN ('NotStarted', 'Running', 'Finished'))
+    state VARCHAR(255) CHECK (state IN ('NotStarted', 'Running', 'Finished')),
+    -- The lights-out ("go go go") instant, as lapdata's race manager recorded it
+    -- (race_start_time) — not when this API call happened to be processed, since
+    -- the POST that sets it is fire-and-forget from a background thread.
+    started_at TIMESTAMPTZ NULL
 );
 
 CREATE TABLE lanes (

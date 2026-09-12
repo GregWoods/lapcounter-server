@@ -298,11 +298,13 @@ def handle_race_control(data: dict):
         logger.warning(f"Unknown race_control command: {command}")
 
 
-def _post_api(path: str):
+def _post_api(path: str, json_body: dict | None = None):
     """Fire-and-forget POST to the API in a daemon thread (never blocks MQTT)."""
     def _do():
         try:
-            req = urllib.request.Request(f"{api_url}{path}", method='POST')
+            data = json.dumps(json_body).encode('utf-8') if json_body is not None else None
+            headers = {'Content-Type': 'application/json'} if data is not None else {}
+            req = urllib.request.Request(f"{api_url}{path}", data=data, headers=headers, method='POST')
             with urllib.request.urlopen(req, timeout=5) as resp:
                 resp.read()
         except Exception as e:
@@ -320,7 +322,7 @@ def publish_race_state():
     state = race.state
     if state != _last_posted_state:
         if state == 'Running':
-            _post_api(f"/races/{race.race_id}/start")
+            _post_api(f"/races/{race.race_id}/start", {"started_at": race.race_start_time})
         elif state == 'Finished':
             _post_api(f"/races/{race.race_id}/finish")
         _last_posted_state = state

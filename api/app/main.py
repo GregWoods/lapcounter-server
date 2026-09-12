@@ -6,8 +6,9 @@ import traceback
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-from typing import Annotated
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from typing import Annotated, Optional
+from datetime import datetime, timezone
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from settings import Settings
@@ -386,11 +387,19 @@ def reinstate_driver(session_id: int, driver_id: int, dbsession: SessionDep):
 
 
 @app.post("/races/{race_id}/start")
-def start_race(race_id: int, dbsession: SessionDep):
+def start_race(
+    race_id: int, dbsession: SessionDep,
+    started_at: Optional[float] = Body(default=None, embed=True),
+):
+    """started_at is the lights-out unix timestamp from lapdata's authoritative
+    race_start_time — more precise than server time here, since this is a
+    fire-and-forget POST from a background thread, not called at the go instant."""
     race = dbsession.get(Race, race_id)
     if not race:
         raise HTTPException(status_code=404, detail="Race not found")
     race.state = 'Running'
+    if started_at is not None:
+        race.started_at = datetime.fromtimestamp(started_at, tz=timezone.utc)
     dbsession.add(race)
     session = dbsession.get(RaceSession, race.session_id)
     if session and session.state == 'NotStarted':

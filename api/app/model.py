@@ -114,6 +114,7 @@ class Race(SQLModel, table=True):
     session_id: Optional[int] = Field(default=None, foreign_key="sessions.id")
     race_number: Optional[int] = Field(default=None)
     state: str          # 'NotStarted', 'Running', 'Finished'
+    started_at: Optional[datetime] = Field(default=None)  # lights-out instant, from lapdata's race_start_time
 
 
 # Links drivers with their cars for a particular race,
