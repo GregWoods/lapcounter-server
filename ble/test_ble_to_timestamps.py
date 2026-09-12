@@ -162,6 +162,46 @@ def test_powerbase_timer_reset_reanchors(fresh_state, monkeypatch):
     assert published[-1] == pytest.approx(1105.0, abs=0.01)   # re-anchored to now
 
 
+# ------------------------------------------------------- 32-bit timer wraparound
+
+UINT32_MAX_MS = 2 ** 32 - 1      # ~49.7 days of milliseconds
+
+
+def test_counter_wrap_is_handled_as_a_reset(fresh_state, monkeypatch):
+    """The powerbase's ms counter is uint32, so it wraps ~49.7 days after its timer
+    was last zeroed — and we never send commands 0/1, so it runs from power-on.
+
+    A wrap looks exactly like a timer reset (value jumps backwards), so the reset path
+    catches it: re-anchor, and stamp this crossing at arrival. The wrap-spanning lap
+    carries arrival-level jitter; every lap after it is clean again.
+    """
+    clock = iter([1000.0, 1010.0, 1020.0, 1025.0])
+    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 10_000))   # seed
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 5_000))    # pre-wrap
+    ble.handle_slot_notification(None, packet(1, t1=120))                      # wrapped
+    ble.handle_slot_notification(None, packet(1, t1=5_120))                    # 5s later
+
+    published = stamps(fresh_state)
+    assert published[-2] == pytest.approx(1020.0, abs=0.01)   # stamped at arrival
+    # and normal device-accurate timing resumes immediately afterwards
+    assert published[-1] - published[-2] == pytest.approx(5.0, abs=1e-6)
+
+
+def test_wrap_does_not_emit_a_time_in_the_distant_past(fresh_state, monkeypatch):
+    """Without re-anchoring, a wrapped value against a pre-wrap anchor would date the
+    crossing ~49.7 days ago. lapdata would reject that outright."""
+    clock = iter([1000.0, 1010.0, 1020.0])
+    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 10_000))
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 5_000))
+    ble.handle_slot_notification(None, packet(1, t1=120))
+
+    assert stamps(fresh_state)[-1] > 1000.0    # not 49.7 days in the past
+
+
 # ------------------------------------------------------------ device discovery
 
 @pytest.mark.parametrize('name, expected', [
