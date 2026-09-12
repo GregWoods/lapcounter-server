@@ -63,6 +63,12 @@ DB Writer service    React apps        Any client
 **`lap`:** `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>}`  
 `car` is 1-based lane number. `lapTime` filtered by `MINIMUM_LAP_TIME` env var. Published for every crossing — does **not** mean a lap was counted.
 
+**`car_timestamp`:** `{"car":<1-6>,"timestamp":<unix_nanoseconds>,"lane":<1|2>}`
+
+⚠️ **`timestamp` is when the crossing HAPPENED, and lapdata trusts it — it is not decorative.** Every Layer 1 stamps it at detection: GPIO in its interrupt callback, mocked-gpio at generation, BLE from the powerbase's own millisecond sensor clock. lapdata's `_crossing_ns()` uses that value for lap timing and for the `MINIMUM_LAP_TIME` phantom filter, rather than re-stamping on arrival, so MQTT and queueing latency stay out of lap times. It falls back to arrival time if the stamp is missing, non-numeric, or more than 30s from lapdata's own clock (`HW_TIMESTAMP_TOLERANCE_NS`) — a Layer 1 with a broken clock must not be able to poison race timing, which matters on a Pi with no RTC whose clock is set by hand before a meet.
+
+This is why it matters for BLE specifically: the Slot characteristic is round-robin across all 6 cars, so a crossing is *reported* anywhere from ~0ms to a full cycle after it happened. Arrival time would fold that jitter into every lap — enough to make 3-decimal FastestLap rankings meaningless, and enough that a delayed notification could push two genuine crossings under `MINIMUM_LAP_TIME` and silently drop a real lap. A new Layer 1 **must** populate `timestamp` at detection time.
+
 **`driver_lap`:** `{"race_id":<id>,"driver_id":<id>,"lane":<1-6>,"lap_number":<n>,"lap_time":<seconds>}`  
 Emitted by lapdata only when `race_manager.on_lap` counts a real lap (so idle/non-running crossings and the discarded start-line crossing never produce one). The DB writer persists these verbatim — it re-derives no race logic.
 
@@ -87,6 +93,8 @@ docker compose --profile gpio up -d && docker stop ble     # -> gpio
 In dev the same trap exists in reverse: `mocked-gpio` is unprofiled, so a bare `docker compose --profile ble up` starts **both**. Stop `mocked-gpio` first, or name services explicitly.
 
 ⚠️ `ble` is the live default but has **not yet been validated against real powerbase hardware** — the first meet on it is the first real test. `-Layer1 gpio` is the fallback.
+
+**BLE anchors the powerbase's clock to ours rather than using arrival time.** The Slot characteristic reports crossings in milliseconds since the powerbase's timer was last reset, which has no reporting jitter in it but is not a wall clock. `_device_to_wall()` converts it using a running **minimum** of `(arrival - device_time)`: every sample is the true offset plus some transport delay, delay is never negative, so the smallest sample seen is the best estimate and it converges within a few crossings. The anchor is thrown away and rebuilt whenever a device timestamp moves **backwards** (the powerbase zeroes its timers on Command 0/1) or on reconnect (it may have been power-cycled). A constant error in the anchor would cancel out of lap-to-lap deltas anyway; keeping it small also keeps lap 1 honest, since that one is timed from `race_start_time` rather than a previous crossing.
 
 ⚠️ **BLE crossings are edge-detected, so the first Slot packet per car after connecting only *seeds* the baseline — it never publishes.** The powerbase reports each car's last start/finish timestamp as absolute state, and keeps counting while nothing is connected (`POWER_ON_RACING` leaves the timers ticking; only commands 0 and 1 zero them). So on connect it hands over whatever each car's last crossing was. Comparing that against "unknown" would read as a change and fake a lap for **every** car — six phantom laps on a mid-race reconnect, straight into the leaderboard. Hence `_last_start_finish` distinguishes `[None, None]` ("not yet seeded since connecting") from `[0, 0]` ("seen, timers at zero"), and `handle_slot_notification()` returns early on the first packet. The accepted cost is missing a real crossing in the sub-second before a car's first round-robin packet. Don't "simplify" this back into a plain `!= previous` check.
 
@@ -147,8 +155,16 @@ cd app && fastapi dev main.py
 Requires PostgreSQL running on localhost:5432 (the Docker `database` container works).
 
 ### Run Python tests
-A root `pytest.ini` sets `testpaths = api/app, lapdata`, so one command runs every
-DB-free pure-logic suite (lane assignment, points scoring, the lapdata race manager).
+A root `pytest.ini` sets `testpaths = api/app, lapdata, ble`, so one command runs every
+DB-free pure-logic suite (lane assignment, points scoring, the lapdata race manager,
+crossing-timestamp handling, the BLE slot decoder and clock anchoring).
+
+`ble/test_ble_to_timestamps.py` and `lapdata/test_timestamps.py` **stub `paho` and
+`bleak` into `sys.modules` before importing** the module under test — neither is
+installed in `api/.venv`, since those deps live in the containers' images. That works
+because both modules keep their broker/BLE I/O behind `if __name__ == '__main__'`;
+the containers still run them as `__main__`. Don't move that I/O back above the guard.
+
 Only the `api/.venv` has pytest installed, so invoke it explicitly:
 ```powershell
 ./api/.venv/Scripts/python.exe -m pytest

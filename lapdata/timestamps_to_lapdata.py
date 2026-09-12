@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 api_url = os.getenv('API_URL', 'http://api:8000')
 min_lap_time_ns = int(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000
+# How far a Layer 1's crossing timestamp may sit from our own clock before we stop
+# trusting it. Generous: every Layer 1 runs on this same machine, so a legitimate
+# stamp is milliseconds old, but a container that has just started while the Pi's
+# clock is being set by hand deserves some slack before we start shouting.
+HW_TIMESTAMP_TOLERANCE_NS = 30 * 1_000_000_000
 # lapdata owns the whole start-light sequence: the 5 lights come on at
 # START_LIGHT_INTERVAL spacing, then after a random hold all lights go out (race
 # goes). The lit-count is published in race_state.start_lights so every client
@@ -52,12 +57,45 @@ def fetch_pending_race() -> dict | None:
     return None
 
 
+def _crossing_ns(data: dict) -> int:
+    """When the crossing actually happened, per Layer 1 — not when we got told.
+
+    Every Layer 1 already stamps `timestamp` at detection: GPIO in its interrupt
+    callback, BLE from the powerbase's own millisecond sensor clock. Re-stamping on
+    arrival here would throw that away and fold MQTT/queueing latency into lap times.
+    That was tolerable for GPIO (interrupt-driven, so arrival ≈ crossing) but not for
+    BLE, whose Slot characteristic is round-robin across 6 cars and can report a
+    crossing up to a full cycle late.
+
+    Falls back to arrival time if the stamp is missing or implausible — a Layer 1 with
+    a broken clock must not be able to poison race timing, and on the Pi (no RTC, clock
+    set by hand before a meet) that is a real possibility. Same machine, same clock, so
+    a sane stamp is always within a second or two of now.
+    """
+    now_ns = time.time_ns()
+    stamp = data.get('timestamp')
+    if stamp is None:
+        return now_ns
+    try:
+        stamp = int(stamp)
+    except (TypeError, ValueError):
+        logger.warning(f"Ignoring non-numeric car_timestamp {stamp!r}")
+        return now_ns
+    if abs(now_ns - stamp) > HW_TIMESTAMP_TOLERANCE_NS:
+        logger.warning(
+            f"Ignoring implausible car_timestamp: {(now_ns - stamp) / 1e9:+.1f}s from now. "
+            f"Layer 1 clock out of step? Falling back to arrival time."
+        )
+        return now_ns
+    return stamp
+
+
 def handle_car_timestamp(data: dict):
     """Process a raw hardware crossing. Filters phantoms, publishes lap, updates race state."""
     lane = data['car']
     idx = lane - 1
 
-    now_ns = time.time_ns()
+    now_ns = _crossing_ns(data)
     elapsed_ns = now_ns - prev_crossing_ns[idx]
     if elapsed_ns <= min_lap_time_ns:
         return  # phantom trigger — too soon after last crossing
@@ -364,5 +402,10 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
 client.on_message = on_message
-client.connect(mqtt_hostname)
-client.loop_forever()
+
+# Constructing the client is pure, connecting is not — so only the I/O sits behind the
+# guard. That keeps this module importable by test_timestamps.py while the container
+# (CMD ["python", "timestamps_to_lapdata.py"]) still runs as __main__ and connects.
+if __name__ == '__main__':
+    client.connect(mqtt_hostname)
+    client.loop_forever()

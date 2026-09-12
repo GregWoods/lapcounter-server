@@ -76,6 +76,10 @@ FULL_POWER = 0x3F
 # handle_slot_notification().
 _last_start_finish = [[None, None] for _ in range(6)]
 
+# Wall-clock seconds minus powerbase-clock seconds, i.e. what to add to a device
+# timestamp to get a unix time on THIS machine's clock. See _device_to_wall().
+_clock_offset: float | None = None
+
 # Set once BLE is connected (inside run()), cleared on disconnect. Lets
 # handle_race_control(), which runs on paho's own MQTT thread, hand a GATT write
 # off to bleak's asyncio client safely via run_coroutine_threadsafe (see
@@ -86,13 +90,41 @@ _ble_loop: asyncio.AbstractEventLoop | None = None
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
 
-def publish_crossing(car_number: int, lane: int):
-    payload = {"car": car_number, "timestamp": time.time_ns(), "lane": lane}
+def _device_to_wall(device_ms: int, arrival: float) -> float:
+    """Convert a powerbase timestamp (ms since its timer was last reset) into unix
+    seconds on this machine's clock.
+
+    Why this exists: the Slot characteristic is round-robin across all 6 cars, so a
+    crossing is *reported* anywhere from ~0ms to a full cycle after it happened. Using
+    notification-arrival time puts all of that jitter straight into every lap time.
+    The powerbase measured the crossing itself, at the sensor, in ms — that number has
+    no jitter in it, it just needs anchoring to our clock.
+
+    The anchor is a running MINIMUM of (arrival - device_time). Every sample is the
+    true offset plus some transport delay, and delay is never negative, so the smallest
+    sample seen is the best estimate of the true offset and it converges within a few
+    crossings. A constant error in it would cancel out of lap-to-lap deltas anyway;
+    keeping it small also keeps lap 1 honest, since that one is timed from
+    race_start_time rather than from a previous crossing.
+    """
+    global _clock_offset
+    candidate = arrival - device_ms / 1000.0
+    if _clock_offset is None or candidate < _clock_offset:
+        _clock_offset = candidate
+    return device_ms / 1000.0 + _clock_offset
+
+
+def publish_crossing(car_number: int, lane: int, device_ms: int, arrival: float):
+    crossing = _device_to_wall(device_ms, arrival)
+    payload = {"car": car_number, "timestamp": int(crossing * 1e9), "lane": lane}
     mqtt_client.publish(MQTT_TIMESTAMP_TOPIC, payload=json.dumps(payload))
-    logger.info(f"car_timestamp: car={car_number} lane={lane}")
+    logger.info(f"car_timestamp: car={car_number} lane={lane} "
+                f"device={device_ms}ms reported {(arrival - crossing) * 1000:.0f}ms late")
 
 
 def handle_slot_notification(_sender, data: bytearray):
+    global _clock_offset
+
     # Python slices truncate silently rather than raising, so a short packet would
     # yield a wrong int.from_bytes value that almost certainly differs from the stored
     # previous one — i.e. a fabricated lap. Bail instead. (Documented length is 18;
@@ -101,6 +133,7 @@ def handle_slot_notification(_sender, data: bytearray):
         logger.warning(f"Ignoring short slot notification ({len(data)} bytes)")
         return
 
+    arrival = time.time()
     car_id = data[1]
     if not (1 <= car_id <= 6):
         return
@@ -109,6 +142,15 @@ def handle_slot_notification(_sender, data: bytearray):
     timestamp2 = int.from_bytes(data[6:10], 'little')
 
     previous1, previous2 = _last_start_finish[idx]
+
+    # A device timestamp moving BACKWARDS means the powerbase zeroed its timers
+    # (commands 0/1 do that). The old anchor now maps device time to a wall clock
+    # well in the past, so throw it away and re-anchor from the next crossing.
+    if (previous1 is not None
+            and (timestamp1 < previous1 or timestamp2 < previous2)):
+        logger.info("Powerbase timer reset detected — re-anchoring the clock offset")
+        _clock_offset = None
+
     # Record even a zero — the powerbase really does reset its timers on commands 0/1,
     # and storing that is what lets the next real crossing read as a change.
     _last_start_finish[idx] = [timestamp1, timestamp2]
@@ -124,9 +166,9 @@ def handle_slot_notification(_sender, data: bytearray):
         return
 
     if timestamp1 and timestamp1 != previous1:
-        publish_crossing(car_id, 1)
+        publish_crossing(car_id, 1, timestamp1, arrival)
     if timestamp2 and timestamp2 != previous2:
-        publish_crossing(car_id, 2)
+        publish_crossing(car_id, 2, timestamp2, arrival)
 
 
 async def _write_command_async(command: int):
@@ -251,7 +293,7 @@ async def find_device_address() -> str:
 
 
 async def run():
-    global _bleak_client, _ble_loop
+    global _bleak_client, _ble_loop, _clock_offset
     while True:
         try:
             address = await find_device_address()
@@ -260,8 +302,11 @@ async def run():
                 logger.info("Connected to Scalextric ARC powerbase.")
                 # Drop every car back to "not yet seeded" — values from before this
                 # connection can't be compared against what the powerbase reports now.
+                # Same for the clock anchor: the powerbase may have been power-cycled
+                # while we were away, which resets its timer to zero.
                 for i in range(len(_last_start_finish)):
                     _last_start_finish[i] = [None, None]
+                _clock_offset = None
 
                 await client.start_notify(SLOT_CHARACTERISTIC_UUID, handle_slot_notification)
                 logger.info("Subscribed to slot notifications — waiting for crossings.")
@@ -294,8 +339,13 @@ async def run():
 
 mqtt_client.on_connect = on_mqtt_connect
 mqtt_client.on_message = on_mqtt_message
-mqtt_client.connect(mqtt_hostname)
-# create a new thread to handle the network loop. Also handles reconnecting
-mqtt_client.loop_start()
 
-asyncio.run(run())
+# Only the I/O sits behind the guard, so this module stays importable by
+# test_ble_to_timestamps.py. The container (CMD ["python", "ble_to_timestamps.py"])
+# runs as __main__ and still connects exactly as before.
+if __name__ == '__main__':
+    mqtt_client.connect(mqtt_hostname)
+    # create a new thread to handle the network loop. Also handles reconnecting
+    mqtt_client.loop_start()
+
+    asyncio.run(run())
