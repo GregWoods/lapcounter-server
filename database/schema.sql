@@ -114,6 +114,7 @@ CREATE TABLE sessions (
     end_condition_info INT,
     races_per_driver INT NULL,
     max_sit_outs INT NULL,   -- skips before a driver is offered for disqualification (NULL = no limit)
+    yellow_grace_seconds INT NOT NULL DEFAULT 5,   -- full-power seconds after a yellow flag before power cuts
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,

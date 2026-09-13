@@ -207,11 +207,16 @@ def send_command(command: int):
 def handle_race_control(data: dict):
     """Translate a race_control command into a Command characteristic write.
 
-    Every transition currently maps to POWER_ON_RACING — Layer 1 stays dumb and
-    lapdata's race manager is the sole authority on what counts as a real lap, so
-    this only needs to keep the powerbase powered and ticking, matching what GPIO
-    always did (it has no ability to cut power at all). Differentiating pause/end/
-    yellow-flag states (POWER_ON_RACE_TRIGGER, POWER_ON_TIMER_HALT) is future work.
+    Most transitions map to POWER_ON_RACING — Layer 1 stays dumb and lapdata's race
+    manager is the sole authority on what counts as a real lap, so this only needs to
+    keep the powerbase powered and ticking, matching what GPIO always did (it has no
+    ability to cut power at all). 'yellow' also keeps full power: the grace period
+    (lapdata's race manager, see race_manager.yellow()) lets cars keep racing at
+    speed, and lapdata's own timer transitions Yellow -> Paused when the grace
+    expires — that transition is never announced over race_control, only race_state,
+    so the actual power cut happens in handle_race_state() below. 'pause' is the
+    immediate, no-grace stop and cuts power directly here. Differentiating further
+    states (POWER_ON_RACE_TRIGGER, a limp-mode power multiplier) is future work.
 
     Note 'arm' fires several seconds before the actual lights-out "go" (lapdata
     runs the start-light countdown internally, with no race_control message at the
@@ -219,28 +224,40 @@ def handle_race_control(data: dict):
     exactly then.
     """
     command = data.get('command')
-    if command in ('prepare', 'arm', 'start', 'pause', 'resume', 'end'):
+    if command == 'pause':
+        send_command(POWER_ON_TIMER_HALT)
+    elif command in ('prepare', 'arm', 'start', 'yellow', 'resume', 'end'):
         send_command(POWER_ON_RACING)
     elif command != 'status':
         logger.warning(f"Unknown race_control command: {command}")
 
 
-# Last state seen in a race_state message, so handle_race_state() can detect the
-# NotStarted/ArmedForStart -> Running edge instead of rewriting on every message
-# (race_state is republished on every single lap crossing).
+# Last state seen in a race_state message, so handle_race_state() can detect edges
+# instead of rewriting on every message (race_state is republished on every single
+# lap crossing).
 _last_seen_race_state: str | None = None
+
+# race_state.state -> the Command write it should produce, for states that need one.
+# Paused is the one state that actually cuts power (a yellow-flag grace expiry, or an
+# immediate manual pause, both land here) — Running and Yellow keep full power.
+_POWER_STATE_FOR_RACE_STATE = {
+    'Running': POWER_ON_RACING,
+    'Yellow': POWER_ON_RACING,
+    'Paused': POWER_ON_TIMER_HALT,
+}
 
 
 def handle_race_state(data: dict):
-    """Redundant, precisely-timed write: lapdata publishes race_state the instant
-    the start lights go out (race.start() sets race_start_time then publishes),
-    so reacting to the Running transition here lands a POWER_ON_RACING write right
-    at "go" — belt-and-braces alongside the earlier 'arm' write in
-    handle_race_control(), covering e.g. a BLE reconnect during the countdown."""
+    """Redundant, precisely-timed write reacting to a race_state transition lapdata
+    already computed — belt-and-braces alongside the immediate writes in
+    handle_race_control() (e.g. covers a BLE reconnect mid-transition), and the ONLY
+    place that reacts to the Yellow -> Paused grace-expiry, since lapdata drives that
+    transition with its own internal timer rather than a race_control message."""
     global _last_seen_race_state
     state = data.get('state')
-    if state == 'Running' and _last_seen_race_state != 'Running':
-        send_command(POWER_ON_RACING)
+    command = _POWER_STATE_FOR_RACE_STATE.get(state)
+    if command is not None and state != _last_seen_race_state:
+        send_command(command)
     _last_seen_race_state = state
 
 

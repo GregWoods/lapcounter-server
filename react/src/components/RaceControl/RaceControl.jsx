@@ -12,6 +12,7 @@ const STATE_LABELS = {
     NotStarted: 'Staged',
     ArmedForStart: 'Starting…',
     Running: 'Running',
+    Yellow: 'Yellow Flag',
     Paused: 'Paused',
     Finished: 'Finished',
 };
@@ -104,6 +105,19 @@ export default function RaceControl() {
 
     const live = state === 'Running' || state === 'ArmedForStart';
 
+    // Countdown to power-cut while a yellow flag's grace period is running — ticks
+    // locally against yellow_ends_at (a lapdata-computed unix time) rather than
+    // trusting a per-client timer, so every viewer agrees on when power actually cuts.
+    const [nowTick, setNowTick] = useState(() => Date.now() / 1000);
+    useEffect(() => {
+        if (state !== 'Yellow') return undefined;
+        const id = setInterval(() => setNowTick(Date.now() / 1000), 250);
+        return () => clearInterval(id);
+    }, [state]);
+    const yellowSecondsLeft = raceState?.yellow_ends_at != null
+        ? Math.max(0, Math.ceil(raceState.yellow_ends_at - nowTick))
+        : null;
+
     const apiPost = async (path) => {
         try { await fetch(`${API}${path}`, { method: 'POST' }); } catch { /* ignore */ }
     };
@@ -111,7 +125,7 @@ export default function RaceControl() {
     const nextRace = () => { publish('prepare', { race_id: info.pendingRaceId }); setTimeout(loadInfo, 300); };
     const startRace = () => publish('arm', { race_id: raceId, target_laps: info.targetLaps });
     const endRace = () => publish('end');
-    const pauseRace = () => publish('pause');
+    const yellowFlag = () => publish('yellow');
     const resumeRace = () => publish('resume');
 
     // "Next Session": begin the next NotStarted session and pre-populate its queue.
@@ -188,10 +202,24 @@ export default function RaceControl() {
                 {live && (
                     <>
                         {!isFastestLap && (
-                            <button className="rc-btn rc-btn--yellow" onClick={pauseRace}>
+                            <button className="rc-btn rc-btn--yellow" onClick={yellowFlag}>
                                 <Pause size={32} /> Yellow Flag
                             </button>
                         )}
+                        <button className="rc-btn rc-btn--end" onClick={endRace}>
+                            <ChequeredFlagIcon /> End Race
+                        </button>
+                    </>
+                )}
+
+                {state === 'Yellow' && (
+                    <>
+                        <div className="rc-yellow-countdown">
+                            Power cuts in {yellowSecondsLeft}s
+                        </div>
+                        <button className="rc-btn rc-btn--start" onClick={resumeRace}>
+                            <Play size={32} /> Resume Now
+                        </button>
                         <button className="rc-btn rc-btn--end" onClick={endRace}>
                             <ChequeredFlagIcon /> End Race
                         </button>
@@ -222,7 +250,7 @@ export default function RaceControl() {
 
                 {/* Idle (Finished / not connected): advance the race queue, start the
                     next session, or report completion. */}
-                {!live && state !== 'Paused' && state !== 'NotStarted' && (
+                {!live && state !== 'Yellow' && state !== 'Paused' && state !== 'NotStarted' && (
                     info.pendingRaceId ? (
                         <button className="rc-btn rc-btn--next" onClick={nextRace}>
                             <Flag size={32} /> Next Race

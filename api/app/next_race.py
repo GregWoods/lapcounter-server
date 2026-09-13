@@ -497,6 +497,7 @@ def _build_race_setup(dbsession, race):
         session_races_total=races_total,
         session_type=race_session.session_type,
         race_duration_seconds=race_duration_seconds,
+        yellow_grace_seconds=race_session.yellow_grace_seconds,
         session_drivers=session_drivers,
     )
 

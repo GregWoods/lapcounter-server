@@ -42,6 +42,8 @@ class RaceManager:
         self.start_lights: int = 0  # 0-5 start lights lit during the ArmedForStart countdown
         self.race_start_time: Optional[float] = None
         self.race_fastest_lap: float = 999.999
+        self.yellow_grace_seconds: float = 5.0
+        self.yellow_ends_at: Optional[float] = None  # set while state == 'Yellow'
         self.drivers: Dict[int, DriverState] = {}  # keyed by lane number
         self.session_type: str = 'Points'
         self.race_duration_seconds: Optional[float] = None
@@ -51,7 +53,7 @@ class RaceManager:
     def load_lineup(self, race_id: int, race_number: int, target_laps: int,
                     lane_assignments: list, count_first_crossing: bool = False,
                     session_type: str = 'Points', race_duration_seconds=None,
-                    session_drivers=None):
+                    session_drivers=None, yellow_grace_seconds: float = 5.0):
         """Load a pending race lineup. Call before start()."""
         self.race_id = race_id
         self.race_number = race_number
@@ -63,6 +65,8 @@ class RaceManager:
         self.race_fastest_lap = 999.999
         self.session_type = session_type
         self.race_duration_seconds = race_duration_seconds
+        self.yellow_grace_seconds = yellow_grace_seconds
+        self.yellow_ends_at = None
 
         # FastestLap: time-limited, so target_laps is irrelevant
         self.target_laps = target_laps if session_type != 'FastestLap' else 9999
@@ -137,16 +141,28 @@ class RaceManager:
         logger.info(f"Race {self.race_id} started — lights out at t={self.race_start_time:.3f}"
                     + (f", ends at t={self.race_end_time:.3f}" if self.race_end_time else ""))
 
+    def yellow(self):
+        """Yellow flag: cars keep racing at full power for yellow_grace_seconds (the
+        caller is responsible for scheduling the timer that then calls pause()) —
+        laps stop counting immediately, same as Paused, since on_lap() only counts
+        while state == 'Running'. See CLAUDE.md "Yellow flags: power-based handling"."""
+        self.state = 'Yellow'
+        self.yellow_ends_at = time.time() + self.yellow_grace_seconds
+        logger.info(f"Race {self.race_id} yellow flag — power cuts in {self.yellow_grace_seconds:.1f}s")
+
     def pause(self):
         self.state = 'Paused'
+        self.yellow_ends_at = None
         logger.info(f"Race {self.race_id} paused")
 
     def resume(self):
         self.state = 'Running'
+        self.yellow_ends_at = None
         logger.info(f"Race {self.race_id} resumed")
 
     def end(self):
         self.state = 'Finished'
+        self.yellow_ends_at = None
         logger.info(f"Race {self.race_id} ended by control signal")
 
     def on_lap(self, lane: int, crossing_time: float) -> bool:
@@ -279,6 +295,7 @@ class RaceManager:
             'count_first_crossing': self.count_first_crossing,
             'race_fastest_lap': round(self.race_fastest_lap, 3) if self.race_fastest_lap < 999 else None,
             'race_start_time': self.race_start_time,
+            'yellow_ends_at': self.yellow_ends_at,
             'drivers': driver_list,
         }
 

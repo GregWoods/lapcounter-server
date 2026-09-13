@@ -224,6 +224,62 @@ def test_name_falls_back_to_advertisement_local_name():
     assert ble._name_matches(device, adv) is True
 
 
+# ------------------------------------------------------ race lifecycle / power
+
+def sent_commands(monkeypatch):
+    """Patch send_command to record byte-0 command codes instead of writing GATT."""
+    sent = []
+    monkeypatch.setattr(ble, 'send_command', lambda command: sent.append(command))
+    return sent
+
+
+@pytest.mark.parametrize('command', ['prepare', 'arm', 'start', 'yellow', 'resume', 'end'])
+def test_race_control_keeps_full_power(monkeypatch, command):
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_control({'command': command})
+    assert sent == [ble.POWER_ON_RACING]
+
+
+def test_race_control_pause_sends_timer_halt(monkeypatch):
+    """'pause' is the no-grace immediate stop, distinct from 'yellow'."""
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_control({'command': 'pause'})
+    assert sent == [ble.POWER_ON_TIMER_HALT]
+
+
+def test_race_control_status_sends_nothing(monkeypatch):
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_control({'command': 'status'})
+    assert sent == []
+
+
+def test_race_state_paused_sends_timer_halt(monkeypatch):
+    """The Yellow -> Paused grace-expiry transition is only ever announced via
+    race_state (lapdata drives it with an internal timer, not a race_control
+    message), so this is the only place that can react to it."""
+    monkeypatch.setattr(ble, '_last_seen_race_state', 'Yellow')
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Paused'})
+    assert sent == [ble.POWER_ON_TIMER_HALT]
+    assert ble._last_seen_race_state == 'Paused'
+
+
+def test_race_state_yellow_keeps_full_power(monkeypatch):
+    monkeypatch.setattr(ble, '_last_seen_race_state', 'Running')
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Yellow'})
+    assert sent == [ble.POWER_ON_RACING]
+
+
+def test_race_state_repeated_same_state_does_not_resend(monkeypatch):
+    """race_state republishes on every lap crossing — a write per message would
+    spam the powerbase with redundant GATT writes."""
+    monkeypatch.setattr(ble, '_last_seen_race_state', 'Running')
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Running'})
+    assert sent == []
+
+
 # --------------------------------------------------------- command payload
 
 def test_command_payload_layout():

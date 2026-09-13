@@ -83,6 +83,7 @@
 }
 
 .rc-state--running { background: #14361c; color: #5be07a; }
+.rc-state--yellow { background: #4a3c0a; color: #d9a400; }
 .rc-state--paused { background: #4a3c0a; color: #ffd23f; }
 .rc-state--finished { background: #2a2a2a; color: #d0d0d0; }
 .rc-state--notstarted { background: #14233a; color: #6fb0ff; }
@@ -158,6 +159,16 @@
 .rc-btn--next { background: #1f6feb; }
 .rc-btn--yellow { background: #d9a400; color: #1a1a1a; }
 .rc-btn--end { background: #b3261e; }
+
+.rc-yellow-countdown {
+    text-align: center;
+    font-size: 1.3em;
+    font-weight: 700;
+    color: #d9a400;
+    background: #2c2408;
+    border-radius: 0.7em;
+    padding: 0.7em;
+}
 
 .rc-btn--ghost {
     background: transparent;

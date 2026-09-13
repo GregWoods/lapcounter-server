@@ -20,6 +20,7 @@ const DEFAULT_LAPS = 20;
 const DEFAULT_MINUTES = 5;
 const DEFAULT_RACES_PER_DRIVER = 3;
 const DEFAULT_MAX_SIT_OUTS = 2;
+const DEFAULT_YELLOW_GRACE_SECONDS = 5;
 const DEFAULT_POINTS = '10, 8, 6, 4, 3, 2';
 
 function parsePoints(str) {
@@ -91,6 +92,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
         end_condition_info: initial?.end_condition_info ?? DEFAULT_LAPS,
         races_per_driver: initial?.races_per_driver ?? DEFAULT_RACES_PER_DRIVER,
         max_sit_outs: initial?.max_sit_outs ?? DEFAULT_MAX_SIT_OUTS,
+        yellow_grace_seconds: initial?.yellow_grace_seconds ?? DEFAULT_YELLOW_GRACE_SECONDS,
         scoring_points: initial ? parsePoints(initial.scoring_points) : DEFAULT_POINTS,
     }));
     const [saving, setSaving] = useState(false);
@@ -120,6 +122,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
             end_condition_info: form.end_condition_info || null,
             races_per_driver: form.races_per_driver || null,
             max_sit_outs: form.max_sit_outs || null,
+            yellow_grace_seconds: form.yellow_grace_seconds || DEFAULT_YELLOW_GRACE_SECONDS,
             scoring_method: isFastestLap ? 'FastestLap' : 'PositionPoints',
             scoring_points: isFastestLap ? null : serializePoints(form.scoring_points),
         };
@@ -156,6 +159,23 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
                         onChange={e => set('scoring_points', e.target.value)}
                         placeholder={DEFAULT_POINTS}
                     />
+                </div>
+            )}
+            {!isFastestLap && (
+                <div className="admin-form-row">
+                    <label>Yellow flag grace</label>
+                    <div className="admin-form-inline">
+                        <input
+                            className="admin-input-narrow"
+                            type="number"
+                            value={form.yellow_grace_seconds || ''}
+                            onChange={e => set('yellow_grace_seconds', parseInt(e.target.value) || null)}
+                            min="1"
+                        />
+                        <span className="admin-form-suffix">
+                            seconds at full power before power cuts (BLE only)
+                        </span>
+                    </div>
                 </div>
             )}
             <div className="admin-form-row">

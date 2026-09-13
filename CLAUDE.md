@@ -116,30 +116,19 @@ BLE also subscribes to `race_state` and re-sends `POWER_ON_RACING` the instant i
 
 **Refuel** is still an open question, not just plumbing: does it belong in BLE at all? Per the split above, **LapData** owns `fuel_remaining` (it's the one diffing/thresholding `car_throttle`), so a refuel action is naturally just LapData resetting its own in-memory value — no round-trip to BLE required, unless BLE ends up needing to know the fuel level itself (e.g. to drive rumble directly from hardware state rather than being told discrete commands). Recommended default: keep BLE dumb, handle refuel entirely inside LapData, and only route a message to BLE if a future feature (like rumble-on-low-fuel) needs BLE to *act* on it.
 
-#### Yellow flags: proposed power-based handling
+#### Yellow flags: power-based handling
 
-**Today's yellow flag is bookkeeping only.** RaceControl's "Yellow Flag" button publishes `race_control` `pause` (`RaceControl.jsx:114`), which sets `state = 'Paused'` in `race_manager.py:140` so crossings stop counting. The cars keep running at **full power** — BLE currently maps *every* race_control command, `pause` included, to `POWER_ON_RACING` with `FULL_POWER` in bytes 1–6. So a car coming off the track means the marshal reaches over a live track while everyone else keeps racing at speed, and the only thing that stopped was the lap count.
+**Implemented: grace period, then power down.** RaceControl's "Yellow Flag" button (`RaceControl.jsx`) now publishes `race_control` `yellow` instead of `pause`. The race manager gains a `Yellow` state (`race_manager.py`'s `yellow()`): crossings stop counting immediately (`on_lap()` still only counts while `state == 'Running'`, same rule as `Paused`), but BLE keeps the powerbase at full power for `yellow_grace_seconds` — a per-session setting (`sessions.yellow_grace_seconds`, migration `002-sessions-yellow-grace-seconds.sql`, edited in the Admin session form, default 5s) — enough for the other drivers to finish the corner / get clear. `timestamps_to_lapdata.py` schedules a `threading.Timer` for that duration (the same internal-timer pattern as `_do_lights_out()`); on expiry it calls `race.pause()` directly and publishes the resulting `race_state` — **this transition is never announced as a `race_control` message**, only as the `race_state` edge into `Paused`, since lapdata drives it with its own timer. `race_state.yellow_ends_at` (unix seconds, `None` outside `Yellow`) lets RaceControl render a live "Power cuts in Ns" countdown; the operator can also cancel early with a "Resume Now" button (publishes `resume`, same as clearing a normal pause) before the timer fires.
 
-The proposed replacement has **two mechanics, which are independent and may be combined** (and the current intent is to do both):
+BLE maps power per state: `handle_race_control()` sends `POWER_ON_TIMER_HALT` immediately on an explicit `pause` command (the no-grace manual stop) and `POWER_ON_RACING` for `prepare`/`arm`/`start`/`yellow`/`resume`/`end`. `handle_race_state()` is the belt-and-braces counterpart (and the *only* path for the Yellow→Paused grace-expiry, per the above) via a small state→command table: `Running`/`Yellow` → `POWER_ON_RACING`, `Paused` → `POWER_ON_TIMER_HALT`. **Limp mode (capping power to ~30% instead of a hard stop) is deliberately not implemented** — it still needs the real-hardware tuning sweep described below, and combining it with the grace period is future work, not this pass.
 
-1. **Grace period, then power down.** On yellow, the other drivers get a fixed number of seconds to keep racing — enough to finish the corner / get clear — after which power is cut and everything stops until the off car is reslotted and the operator resumes.
-2. **Limp mode.** On yellow, cap every other car to a low power multiplier so they trundle round slowly rather than stopping dead, while the off car is reslotted. Ballpark **~30%** of full scale — Command bytes 1–6 are `0…0x3f`, so ~30% is `0x13`.
+The three design questions from the original proposal are now settled, for this pass:
 
-⚠️ **The multiplier is a power cap, not a speed setting, and needs empirical tuning.** Output isn't linear in the byte value and the mapping differs per car and per track voltage: too low and some cars stall or won't pull out of a corner at all (worse than stopping them cleanly), too high and it isn't a meaningful slow-down. So the limp value must be a **tunable setting, not a hardcoded constant**, and wants a real-hardware sweep before a number is committed to. Combining both mechanics — slow them *and* bound how long they may continue — is the safest default: limp mode alone has no end state if the off car can't be recovered.
+- **Do laps count under yellow?** No — `Yellow` excludes counting the same way `Paused` always has (consistency, not fairness, won by default; revisit if this proves unpopular at a meet).
+- **Does the race clock pause?** No change — `pause()`/`resume()` (and now `yellow()`) still leave `race_start_time`/`race_end_time` untouched, so a yellow period still eats into a timed FastestLap session's clock.
+- **Who clears it?** Operator-only: "Resume Now" during `Yellow`, or "Resume Race" after the grace expires into `Paused`. No auto-resume-on-reslot.
 
-**Ownership: lapdata owns the yellow-flag state machine and the grace timer; BLE only executes.** This follows the existing principle that lapdata's race manager is the sole authority on race rules — the alternative (BLE running its own countdown) would fork the rules by hardware and make the behaviour untestable in the DB-free `test_race_manager.py` suite. The grace period is seconds-scale while MQTT round-trips are milliseconds, so there is no latency argument for pushing the timer down into Layer 1. Sketch:
-
-- `race_control` gains a `yellow` command; the race manager gains a `Yellow` state alongside `Paused`, with `yellow_ends_at` published in `race_state` so React can show the countdown to power-down.
-- On grace expiry, lapdata itself transitions `Yellow → Paused` (the same internal-timer pattern as `_do_lights_out()`), and publishes the new `race_state`.
-- BLE's `handle_race_control()` / `handle_race_state()` stop collapsing everything to `POWER_ON_RACING`: `Yellow` maps to `POWER_ON_RACING` with the limp multiplier in bytes 1–6, `Paused` to a genuine stop (`POWER_ON_TIMER_HALT`, or `POWER_ON_RACING` with zero power bytes), `Running` back to `FULL_POWER`. **This is exactly the differentiation deliberately deferred in `handle_race_control()`'s docstring** — yellow flags are the feature that makes it necessary.
-
-Three design questions are genuinely open and should be decided before coding:
-
-- **Do laps count under yellow?** Non-`Running` crossings don't count today, and under limp mode cars are still moving and still crossing the line — so a driver who was mid-lap at the flag loses that lap through no fault of their own. Consistency with `Paused` says don't count; fairness says do, or credit the lap at the pre-yellow pace.
-- **Does the race clock pause?** It currently does **not** — `pause()`/`resume()` leave `race_start_time` and `race_end_time` untouched, so in a timed (FastestLap) session the yellow period eats into the session clock. That's tolerable for a bookkeeping pause of a few seconds; it is not obviously right for a limp-mode yellow that may run much longer.
-- **Who clears it?** Operator-only resume, or auto-resume once the reslotted car is detected crossing again.
-
-**Under GPIO this feature cannot work** — there is no power control at all, so yellow necessarily degrades to today's `Paused`. The per-session settings it needs (grace seconds, limp multiplier) are therefore operator-facing config that silently does nothing on one Layer 1, which is precisely the case the next section exists to handle.
+**Under GPIO this feature cannot work** — there is no power control at all, so `Yellow` still walks the clock down and stops counting laps (harmless bookkeeping), but nothing physically cuts power; it behaves exactly like today's `Paused` always did. `yellow_grace_seconds` is therefore operator-facing config that silently does nothing on one Layer 1 — the case the next section exists to handle. If limp mode is added later, the multiplier will need the same real-hardware sweep called out in the original proposal (output isn't linear in the byte value and differs per car/track voltage) before a number is committed to.
 
 #### Layer 1 capability advertising
 
@@ -162,7 +151,7 @@ GPIO publishes `["lap_timing"]`. lapdata passes the capability set through into 
 
 This keeps the principle intact in its useful form: *layers 2+ don't know which hardware is attached, only what it can do.*
 
-The throttle-driven features above it (fuel, power multiplier, throttle profiles, rumble, KERS, CarID), the power-based yellow flag, and capability advertising are all still unimplemented — `ble/` only does lap timing plus the race-lifecycle Command writes described above, to keep parity with GPIO while that swap gets validated on real hardware first.
+The throttle-driven features above it (fuel, power multiplier, throttle profiles, rumble, KERS, CarID), limp-mode yellow flags, and capability advertising are all still unimplemented — `ble/` does lap timing, the race-lifecycle Command writes, and the grace-period yellow flag described above, to keep parity with GPIO (which just never actually cuts power) while the BLE swap itself gets validated on real hardware first.
 
 ## Development Commands
 

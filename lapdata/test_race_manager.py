@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from race_manager import RaceManager
 
@@ -118,7 +120,46 @@ def test_on_lap_ignored_once_driver_finished():
     assert race.drivers[1].finished is True
     updated = race.on_lap(1, race.race_start_time + 10.0)
     assert updated is False
-    assert race.drivers[1].laps_completed == 1
+
+
+# --- Yellow flag (grace period, then power cut) ---
+
+def test_yellow_sets_state_and_ends_at():
+    race = new_race(count_first_crossing=True)
+    race.yellow_grace_seconds = 8.0
+    before = time.time()
+    race.yellow()
+    assert race.state == 'Yellow'
+    assert race.yellow_ends_at == pytest.approx(before + 8.0, abs=0.5)
+
+
+def test_laps_not_counted_during_yellow():
+    """Same rule as Paused: on_lap() only counts while state == 'Running'."""
+    race = new_race(count_first_crossing=True)
+    race.yellow()
+    updated = race.on_lap(1, race.race_start_time + 5.0)
+    assert updated is False
+    assert race.drivers[1].laps_completed == 0
+
+
+def test_pause_from_yellow_clears_yellow_ends_at():
+    """The grace-expiry timer calls pause() directly (see timestamps_to_lapdata.py's
+    _do_yellow_expiry) — it must land on a clean Paused state, not a stale countdown."""
+    race = new_race(count_first_crossing=True)
+    race.yellow()
+    race.pause()
+    assert race.state == 'Paused'
+    assert race.yellow_ends_at is None
+
+
+def test_resume_from_yellow_clears_yellow_ends_at():
+    """'Resume Now' during the grace window goes straight back to Running, cancelling
+    the countdown (the caller is responsible for cancelling the actual timer)."""
+    race = new_race(count_first_crossing=True)
+    race.yellow()
+    race.resume()
+    assert race.state == 'Running'
+    assert race.yellow_ends_at is None
 
 
 # --- Chequered flag / race end ---

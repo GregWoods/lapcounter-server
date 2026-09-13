@@ -113,6 +113,7 @@ class NextRaceSetup(SQLModel):
     session_races_total: Optional[int] = None  # None for non-RacesPerDriver sessions
     session_type: str = 'Points'
     race_duration_seconds: Optional[int] = None  # seconds; set for time-limited races
+    yellow_grace_seconds: int = 5  # full-power seconds after a yellow flag before power cuts
     session_drivers: list[SessionDriverFastestLap] = []  # FastestLap sessions only
 
 

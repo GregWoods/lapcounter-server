@@ -102,6 +102,7 @@ class RaceSession(SQLModel, table=True):
     end_condition_info: Optional[int]   #number of laps or time  in minutes
     races_per_driver: Optional[int] = Field(default=None)  # automatic session end: each driver races this many times (None = manual end)
     max_sit_outs: Optional[int] = Field(default=None)  # skips before a driver is offered up for disqualification (None = no limit)
+    yellow_grace_seconds: int = Field(default=5)  # full-power seconds after a yellow flag before power cuts (BLE only; no-op on GPIO)
     scoring_method: str             # 'PositionPoints' (Finishing Position) or 'FastestLap' (personal best)
     scoring_points: Optional[str]   # JSON string with points array used for PositionPoints
     start_time: Optional[time]
@@ -202,6 +203,7 @@ class RaceSessionUpdate(SQLModel):
     end_condition_info: Optional[int] = None
     races_per_driver: Optional[int] = None
     max_sit_outs: Optional[int] = None
+    yellow_grace_seconds: Optional[int] = None
     scoring_method: Optional[str] = None
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None
@@ -229,6 +231,7 @@ class RaceSessionCreate(SQLModel):
     end_condition_info: Optional[int] = None
     races_per_driver: Optional[int] = None
     max_sit_outs: Optional[int] = None
+    yellow_grace_seconds: int = 5
     scoring_method: str
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None
