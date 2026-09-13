@@ -32,3 +32,13 @@
 **/values.dev.yaml
 LICENSE
 README.md
+
+# Dev and test only, kept out of the production ble image. The dev mocked-ble service
+# bind-mounts ./ble over /app, so it still sees them. hardware_check.py deliberately
+# stays: it is run from this image on the Pi (see HARDWARE_VALIDATION.md).
+mock_*.py
+test_*.py
+.pytest_cache
+reference
+HARDWARE_VALIDATION.md
+build-and-push-ble.ps1

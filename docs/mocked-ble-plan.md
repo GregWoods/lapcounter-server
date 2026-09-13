@@ -1,6 +1,27 @@
 # Plan: mocked BLE Layer 1 for local dev
 
-**Status:** plan only, not started.
+**Status:** steps 1–3 done (2026-09-13): `ble/mock_powerbase.py`, `ble/mock_bleak.py`,
+`ble/mock_ble_to_timestamps.py`, the `mocked-ble` compose profile, and
+`ble/test_mock_powerbase.py` / `ble/test_mock_bleak.py`. Verified live against the dev
+stack: laps reach lapdata, no phantom laps on connect, `pause` cuts power (command 4) and
+`resume` re-anchors, and the double Layer 1 guard fires when `mocked-gpio` also runs.
+Steps 4–5 done the same day: `ble/test_mock_scenarios.py` (halt/resume stamps checked
+against the simulator's ground truth, reconnect while Paused with a power-restoring drop,
+a failed halt retried, a retry writing the current state rather than a stale halt), and
+CLAUDE.md. Only step 6 remains, after the hardware run.
+
+Decisions: `mocked-ble` **is now the dev default**; `mocked-gpio` sits behind
+`--profile mocked-gpio`, and lapdata's `depends_on` names no Layer 1. Also no throttle
+simulation, no UI badge. `ble/.dockerignore` keeps the mocks, tests and docs out of the
+production image (the dev volume mount supplies them).
+
+Deviations from the plan below:
+- The Slot round-robin covers all 6 IDs whatever `MOCK_CARS` is (tagged HW-02), so the
+  reporting delay stays hardware-like with fewer cars.
+- Cars move only under command 3. Whether command 2 follows the throttle isn't
+  documented, and ble never sends it.
+- `mock/powerbase` also carries `connected` and `timestamps_ticking`.
+- `power_cycle()` exists and is tested, but nothing triggers it from the running container yet.
 
 ## Why
 
