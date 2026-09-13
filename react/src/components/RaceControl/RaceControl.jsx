@@ -213,7 +213,7 @@ export default function RaceControl() {
                 {state === 'Yellow' && (
                     <>
                         <div className="rc-yellow-countdown">
-                            Power cuts in {yellowSecondsLeft}s
+                            Race pauses in {yellowSecondsLeft}s
                         </div>
                         <button className="rc-btn rc-btn--start" onClick={resumeRace}>
                             <Play size={32} /> Resume Now

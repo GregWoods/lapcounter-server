@@ -86,7 +86,7 @@ const YellowFlagRacePaused = ({showMe, secondsLeft, onRacePaused, onEndYellowFla
                         handleColor='#000' />
                     <h1>
                         {secondsLeft != null
-                            ? `Yellow Flag - Power Off in ${secondsLeft}s`
+                            ? `Yellow Flag - ${secondsLeft}s`
                             : 'Yellow Flag - Race Paused'}
                     </h1>
                 </div>
