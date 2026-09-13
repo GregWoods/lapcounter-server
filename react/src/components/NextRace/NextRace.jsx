@@ -52,6 +52,14 @@ function NextRaceSetupView({ next_race_setup }) {
         if (msg.command === 'prepare') refreshPendingRace();
     };
 
+    // Lineup edits go to the API only, so lapdata (and every display fed by its
+    // race_state) would keep the lineup it staged. Ask it to re-read; lapdata ignores
+    // this unless the staged race is still NotStarted.
+    const mqttClientRef = useRef(null);
+    const notifyLineupChanged = () => {
+        mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'reload_lineup' }));
+    };
+
     const lastRaceStateRef = useRef(null);
     const handleRaceState = (raceState) => {
         const prev = lastRaceStateRef.current;
@@ -75,6 +83,7 @@ function NextRaceSetupView({ next_race_setup }) {
         const data = await res.json();
         setLaneAssignments(data.lane_assignments);
         setOtherDrivers(data.other_drivers);
+        notifyLineupChanged();
     };
 
     const hasFreeSlot = laneAssignments.some(a => a.id === 0 && a.lane_enabled);
@@ -87,6 +96,7 @@ function NextRaceSetupView({ next_race_setup }) {
         const data = await res.json();
         setLaneAssignments(data.lane_assignments);
         setOtherDrivers(data.other_drivers);
+        notifyLineupChanged();
     };
 
     const handleAddDriver = async (driverId) => {
@@ -99,6 +109,7 @@ function NextRaceSetupView({ next_race_setup }) {
         const data = await res.json();
         setLaneAssignments(data.lane_assignments);
         setOtherDrivers(data.other_drivers);
+        notifyLineupChanged();
     };
 
     const handleCarSelected = async (car) => {
@@ -111,6 +122,7 @@ function NextRaceSetupView({ next_race_setup }) {
         const data = await res.json();
         setLaneAssignments(data.lane_assignments);
         setOtherDrivers(data.other_drivers);
+        notifyLineupChanged();
         setCarSelectorLane(null);
     };
 
@@ -120,6 +132,7 @@ function NextRaceSetupView({ next_race_setup }) {
                 mqttHost={import.meta.env.VITE_MQTT_URL}
                 onRaceStateMessage={handleRaceState}
                 onRaceControlMessage={handleRaceControl}
+                clientRef={mqttClientRef}
             />
             <PageHeader title={`Next - ${sessionNumber != null ? `Session ${sessionNumber}, ` : ''}Race ${raceNumber}${sessionRacesTotal != null ? ` of ${sessionRacesTotal}` : ''}`} />
             <div className="nr-columns">

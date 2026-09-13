@@ -313,6 +313,18 @@ def _schedule_start_sequence():
     )
 
 
+def _load_pending(pending: dict, target_laps: int):
+    """Load a /races/pending/ payload into the race manager (state becomes NotStarted)."""
+    race.load_lineup(
+        pending['race_id'], pending.get('race_number', 0), target_laps,
+        pending['lane_assignments'], pending.get('count_first_crossing', False),
+        session_type=pending.get('session_type', 'Points'),
+        race_duration_seconds=pending.get('race_duration_seconds'),
+        session_drivers=pending.get('session_drivers', []),
+        yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
+    )
+
+
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
     global pending_race_cache, prev_crossing_ns
@@ -327,23 +339,25 @@ def handle_race_control(data: dict):
         _cancel_yellow_timers()
         _cancel_end_timer()
 
-        if pending_race_cache and pending_race_cache.get('race_id') == race_id:
+        # Re-read rather than trust the cache: NextRace edits the queued lineup through
+        # the API after it was staged (add a driver, toggle a lane), and a cached lineup
+        # would silently leave those drivers' laps uncounted. The race is still
+        # NotStarted, so the queue head is this race. The cache is only the fallback
+        # for an API that is unreachable at the moment of arming.
+        fresh = fetch_pending_race()
+        if fresh and (race_id is None or fresh.get('race_id') == race_id):
+            pending = fresh
+        elif pending_race_cache and pending_race_cache.get('race_id') == race_id:
             pending = pending_race_cache
         else:
-            pending = fetch_pending_race()
+            pending = fresh
 
         if not pending:
             logger.error("Cannot arm: failed to load pending race from API")
             return
 
-        race.load_lineup(
-            pending['race_id'], pending.get('race_number', 0), target_laps,
-            pending['lane_assignments'], pending.get('count_first_crossing', False),
-            session_type=pending.get('session_type', 'Points'),
-            race_duration_seconds=pending.get('race_duration_seconds'),
-            session_drivers=pending.get('session_drivers', []),
-            yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
-        )
+        pending_race_cache = pending
+        _load_pending(pending, target_laps)
         race.arm()
         publish_race_state()
 
@@ -367,14 +381,7 @@ def handle_race_control(data: dict):
             logger.error("Cannot start: failed to load pending race from API")
             return
 
-        race.load_lineup(
-            pending['race_id'], pending.get('race_number', 0), target_laps,
-            pending['lane_assignments'], pending.get('count_first_crossing', False),
-            session_type=pending.get('session_type', 'Points'),
-            race_duration_seconds=pending.get('race_duration_seconds'),
-            session_drivers=pending.get('session_drivers', []),
-            yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
-        )
+        _load_pending(pending, target_laps)
         race.start()
         # Reset hardware crossing times so no phantom laps bleed across race start
         prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
@@ -395,14 +402,7 @@ def handle_race_control(data: dict):
         fresh = fetch_pending_race()
         if fresh:
             pending_race_cache = fresh
-            race.load_lineup(
-                fresh['race_id'], fresh.get('race_number', 0), 20,
-                fresh['lane_assignments'], fresh.get('count_first_crossing', False),
-                session_type=fresh.get('session_type', 'Points'),
-                race_duration_seconds=fresh.get('race_duration_seconds'),
-                session_drivers=fresh.get('session_drivers', []),
-                yellow_grace_seconds=fresh.get('yellow_grace_seconds', 5),
-            )
+            _load_pending(fresh, 20)
             publish_race_state()
             logger.info(f"Staged race {fresh.get('race_id')} on prepare (requested {race_id})")
         else:
@@ -413,6 +413,26 @@ def handle_race_control(data: dict):
     elif command == 'status':
         # A client (e.g. the race-control page) asking for the current state,
         # since race_state is not retained on the broker.
+        publish_race_state()
+
+    elif command == 'reload_lineup':
+        # NextRace edited the queued lineup through the API (added/removed a driver,
+        # toggled a lane, swapped a car). Re-stage it so race_state — and every display
+        # built from it — matches. Only while the staged race hasn't started: once it
+        # is armed the lineup is fixed, and mid-race the queue head is the *next* race,
+        # which must not replace the one running.
+        if race.state != 'NotStarted':
+            logger.info(f"reload_lineup ignored: race {race.race_id} is {race.state}")
+            return
+        fresh = fetch_pending_race()
+        if not fresh:
+            return
+        if race.race_id is not None and fresh.get('race_id') != race.race_id:
+            logger.info(f"reload_lineup ignored: queue head is race {fresh.get('race_id')}, "
+                        f"staged race is {race.race_id} (use prepare to advance)")
+            return
+        pending_race_cache = fresh
+        _load_pending(fresh, 20)
         publish_race_state()
 
     elif command == 'yellow':
@@ -508,14 +528,7 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     with _race_lock:
         if pending:
             pending_race_cache = pending
-            race.load_lineup(
-                pending['race_id'], pending.get('race_number', 0), 20,
-                pending['lane_assignments'], pending.get('count_first_crossing', False),
-                session_type=pending.get('session_type', 'Points'),
-                race_duration_seconds=pending.get('race_duration_seconds'),
-                session_drivers=pending.get('session_drivers', []),
-                yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
-            )
+            _load_pending(pending, 20)
             publish_race_state()
         else:
             logger.warning("No pending race found on startup — waiting for race_control start")

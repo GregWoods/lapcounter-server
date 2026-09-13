@@ -300,7 +300,7 @@ def handle_race_control(data: dict):
         send_command(POWER_ON_TIMER_HALT)
     elif command in ('prepare', 'arm', 'start', 'yellow', 'resume', 'end'):
         send_command(POWER_ON_RACING)
-    elif command != 'status':
+    elif command not in ('status', 'reload_lineup'):
         logger.warning(f"Unknown race_control command: {command}")
 
 

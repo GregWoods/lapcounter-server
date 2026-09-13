@@ -7,7 +7,9 @@ import DriverCardTime from './DriverCardTime';
 const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
     if (!driver) return null;
     let className = 'drivercard driver' + driver.number;
-    if (!underStartersOrders && (driver.hasStartedRacing || previewDriverCards)) {
+    // An empty lane (no driver assigned) stays as a placeholder in the viewmodel but is
+    // never previewed, or it would sit in a slot a real driver's card is using.
+    if (!underStartersOrders && (driver.hasStartedRacing || (previewDriverCards && driver.inLineup))) {
         //if (driver.suspended) {
         //    className += ' suspended';
         //} else {

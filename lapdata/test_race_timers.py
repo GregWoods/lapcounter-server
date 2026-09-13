@@ -231,3 +231,67 @@ def test_first_connect_loads_the_pending_race(lapdata, monkeypatch):
 
     assert fresh.race_id == 1
     assert fresh.state == 'NotStarted'
+
+
+# --- Lineup edited in NextRace after the race was staged ---
+
+EDITED = {**PENDING, 'lane_assignments': PENDING['lane_assignments'] + [
+    {'id': 2, 'driver_name': 'Driver2', 'lane_number': 5},
+]}
+
+
+@pytest.fixture
+def staged(lapdata, monkeypatch):
+    """Race 1 staged (NotStarted) with one driver, then a second added via the API."""
+    staged_race = tsl.RaceManager()
+    staged_race.load_lineup(1, 1, 20, PENDING['lane_assignments'])
+    monkeypatch.setattr(tsl, 'race', staged_race)
+    monkeypatch.setattr(tsl, 'pending_race_cache', PENDING)
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: EDITED)
+    lapdata.race = staged_race
+    return lapdata
+
+
+def test_arm_races_the_lineup_as_edited_not_as_cached(staged):
+    """A stale cache would leave the added driver's laps uncounted."""
+    with tsl._race_lock:
+        tsl.handle_race_control({'command': 'arm', 'race_id': 1})
+
+    assert sorted(staged.race.drivers) == [1, 5]
+    assert staged.race.state == 'ArmedForStart'
+
+
+def test_arm_falls_back_to_the_cache_when_the_api_is_down(staged, monkeypatch):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
+    with tsl._race_lock:
+        tsl.handle_race_control({'command': 'arm', 'race_id': 1})
+
+    assert sorted(staged.race.drivers) == [1]
+    assert staged.race.state == 'ArmedForStart'
+
+
+def test_reload_lineup_restages_a_not_started_race(staged):
+    control('reload_lineup')
+
+    assert sorted(staged.race.drivers) == [1, 5]
+    assert [d['lane'] for d in staged.published[-1]['drivers']] == [1, 5]
+    assert [d['position'] for d in staged.published[-1]['drivers']] == [1, 2]
+
+
+def test_reload_lineup_does_not_advance_to_a_different_race(staged, monkeypatch):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**EDITED, 'race_id': 2})
+    control('reload_lineup')
+
+    assert staged.race.race_id == 1
+    assert sorted(staged.race.drivers) == [1]
+
+
+def test_reload_lineup_never_touches_a_running_race(lapdata, monkeypatch):
+    """Mid-race the queue head is the next race; NextRace edits to it must not
+    replace the race being run."""
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**EDITED, 'race_id': 2})
+    control('reload_lineup')
+
+    assert lapdata.race.race_id == 1
+    assert lapdata.race.state == 'Running'
+    assert lapdata.published == []

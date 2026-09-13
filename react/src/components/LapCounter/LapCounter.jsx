@@ -38,6 +38,9 @@ const LapCounter = () => {
     const carImageUrl = (picture) => picture ? `${carMediaBase}/${picture}` : defaultCarImg;
     const initialDrivers = getInitialDrivers(lapsPerRace, defaultCarImg);
     const [drivers, setDrivers] = useState([...initialDrivers]);
+    // The MQTT handler is registered once, so it reads drivers through a ref.
+    const driversRef = useRef();
+    driversRef.current = drivers;
 
     const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
     const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
@@ -66,12 +69,18 @@ const LapCounter = () => {
     // are run; it falls back to the local race config when unknown.
     const applyRaceSetup = (setup, targetLaps) => {
         if (!setup?.lane_assignments) return;
+        // Positions are the fly-in slots, so number only the lanes that have a driver,
+        // 1..N in lane order — the same order lapdata gives a NotStarted race. Empty
+        // lanes stay as placeholders but are marked out of the lineup and never shown.
+        let slot = 0;
         setDrivers(
             getInitialDrivers(targetLaps ?? lapsPerRace, defaultCarImg).map(driver => {
                 const a = setup.lane_assignments.find(
                     a => a.lane_number === driver.number && a.id !== 0
                 );
-                return a ? { ...driver, name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture) } : driver;
+                return a
+                    ? { ...driver, name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture), inLineup: true, position: ++slot }
+                    : { ...driver, inLineup: false, position: null, hasStartedRacing: false };
             })
         );
         if (setup.race_id) setRaceId(setup.race_id);
@@ -249,13 +258,26 @@ const LapCounter = () => {
         const p1Driver = raceDrivers.find(d => d.position === 1);
         const p1LapsRemaining = p1Driver?.laps_remaining ?? 0;
 
+        // Same race, but NextRace changed who is in it (lapdata re-staged after a
+        // reload_lineup). race_state carries no car pictures, so re-fetch the setup
+        // for those; the positions below still apply straight away.
+        if (state === 'NotStarted') {
+            const shown = driversRef.current.filter(d => d?.inLineup).map(d => `${d.number}:${d.driverId}`).sort().join();
+            const staged = raceDrivers.map(d => `${d.lane}:${d.driver_id}`).sort().join();
+            if (shown !== staged) resyncCurrentRace(state, raceState.target_laps);
+        }
+
         setDrivers(currentDrivers =>
             currentDrivers.map(driver => {
                 if (!driver) return null;
                 const rd = raceDrivers.find(d => d.lane === driver.number);
-                if (!rd) return { ...driver, hasStartedRacing: false };
+                // Not in lapdata's lineup: take it out of the preview too, or its stale
+                // position puts it in a slot another driver's card now occupies.
+                if (!rd) return { ...driver, hasStartedRacing: false, inLineup: false, position: null };
                 return {
                     ...driver,
+                    inLineup: true,
+                    driverId: rd.driver_id,
                     name: rd.driver_name,
                     lastLap: rd.has_started ? rd.last_lap.toFixed(3) : '',
                     fastestLap: rd.best_lap != null ? rd.best_lap.toFixed(3) : '',
@@ -290,12 +312,12 @@ const LapCounter = () => {
     // centred by shifting the container left by (6 - N) * 160px, where N is the
     // number of cards on screen. race_state gives started drivers contiguous slots
     // 1..N, so N is simply the count of cards currently shown. The show-condition is
-    //   !underStartersOrders && (hasStartedRacing || previewDriverCards)
+    //   !underStartersOrders && (hasStartedRacing || (previewDriverCards && inLineup))
     // so N must be counted the same way. Falls back to 6 so the layout never
     // collapses to 0.
     const shownDriverCount = race.underStartersOrders
         ? 0
-        : (previewDriverCards ? drivers.filter(Boolean).length : drivers.filter(d => d?.hasStartedRacing).length);
+        : drivers.filter(d => d?.hasStartedRacing || (previewDriverCards && d?.inLineup)).length;
     const numberOfDriversRacingClassName = `numberOfDriversRacing${shownDriverCount || 6}`;
     return (
         <div id="top">

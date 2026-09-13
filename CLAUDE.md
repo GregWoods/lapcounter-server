@@ -42,9 +42,11 @@ DB Writer service    React apps        Any client
 | `lap` | LapData | React (optional) | Raw normalised crossing — published for **every** crossing (incl. idle, non-running, and the discarded start-line crossing), with no race context. **Not** used for DB persistence. |
 | `driver_lap` | LapData | DB Writer | Authoritative **counted** lap with full context — emitted only when the race manager actually counts a real lap. This is the DB-persistence contract. |
 | `race_state` | LapData | React apps, BLE | Full computed state after every crossing and lapdata timer tick (positions, lap counts, fastest laps, start lights, yellow countdown). BLE maps it to powerbase power. |
-| `race_control` | Any client | LapData, BLE | Commands: `prepare`, `arm`, `start`, `status`, `yellow`, `pause`, `resume`, `end` |
+| `race_control` | Any client | LapData, BLE | Commands: `prepare`, `arm`, `start`, `status`, `reload_lineup`, `yellow`, `pause`, `resume`, `end` |
 
 **`race_control`:** `{"command": "start", "race_id": 5}`
+
+⚠️ **NextRace edits the queued lineup through the API only, so lapdata doesn't see them unless told.** After every edit (add/remove driver, lane toggle, car swap) NextRace publishes `reload_lineup`; lapdata re-reads `/races/pending/` and re-stages it, but **only while the staged race is `NotStarted` and is still the queue head** — mid-race the head is the *next* race and must never replace the running one (advancing is `prepare`'s job). `arm` also re-reads the lineup rather than trusting `pending_race_cache` (the cache is only a fallback if the API is down), so an edit whose `reload_lineup` was missed still gets raced. Without both, an added driver's laps go uncounted and /currentrace shows the stale lineup (cards overlapping, since positions come from `race_state`).
 
 **`race_state`:**
 ```json
