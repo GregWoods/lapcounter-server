@@ -105,18 +105,9 @@ export default function RaceControl() {
 
     const live = state === 'Running' || state === 'ArmedForStart';
 
-    // Countdown to power-cut while a yellow flag's grace period is running — ticks
-    // locally against yellow_ends_at (a lapdata-computed unix time) rather than
-    // trusting a per-client timer, so every viewer agrees on when power actually cuts.
-    const [nowTick, setNowTick] = useState(() => Date.now() / 1000);
-    useEffect(() => {
-        if (state !== 'Yellow') return undefined;
-        const id = setInterval(() => setNowTick(Date.now() / 1000), 250);
-        return () => clearInterval(id);
-    }, [state]);
-    const yellowSecondsLeft = raceState?.yellow_ends_at != null
-        ? Math.max(0, Math.ceil(raceState.yellow_ends_at - nowTick))
-        : null;
+    // Seconds until a yellow flag's grace period cuts power. lapdata ticks this down and
+    // publishes it (like the start lights), so no viewer depends on its own clock.
+    const yellowSecondsLeft = raceState?.yellow_seconds_left ?? null;
 
     const apiPost = async (path) => {
         try { await fetch(`${API}${path}`, { method: 'POST' }); } catch { /* ignore */ }

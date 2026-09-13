@@ -33,7 +33,15 @@ race = RaceManager()
 pending_race_cache: dict | None = None
 _light_timers: list = []  # the start-light sequence timers (5 lights + lights-out)
 _end_timer: threading.Timer | None = None
-_yellow_timer: threading.Timer | None = None  # fires the Yellow -> Paused power-cut transition
+_yellow_timers: list = []  # yellow-flag countdown ticks + the grace-expiry power cut
+# Bumped every time the yellow sequence is cancelled. Timer.cancel() can't stop a
+# callback that has already started, so each yellow callback re-checks it still belongs
+# to the current sequence — otherwise a Resume Now landing at the instant of expiry
+# could be overwritten by that timer's pause(), cutting power on a running race.
+_yellow_generation = 0
+# Held while handling race_control and inside the yellow timer callbacks, so a
+# callback's check-then-act can't interleave with a command on paho's thread.
+_race_control_lock = threading.RLock()
 # Last race state we POSTed to the API, so we fire /start and /finish exactly once
 # per transition. lapdata (the race authority) owns these DB side-effects server-side
 # so persistence is browser-independent — no client needs to be open.
@@ -164,25 +172,63 @@ def _schedule_end_timer():
             logger.info(f"Race end timer set for {delay:.1f}s")
 
 
-def _do_yellow_expiry():
-    """Timer callback: once the yellow-flag grace period elapses, cut power by moving
-    to Paused. Calls race.pause() directly rather than routing through a race_control
-    message — BLE's handle_race_state() reacts to the resulting Paused race_state to
-    send POWER_ON_TIMER_HALT, since this transition is never announced any other way."""
-    global _yellow_timer
-    _yellow_timer = None
-    if race.state == 'Yellow':
-        race.pause()
-        publish_race_state()
-        logger.info(f"Race {race.race_id} yellow grace expired — power cut")
+def _yellow_tick(generation: int, seconds_left: int):
+    """Return a timer callback that ticks race_state.yellow_seconds_left down and
+    publishes it. lapdata owns the countdown for the same reason it owns the start
+    lights: every display — including a trackside phone whose clock is wrong — shows
+    the number it is sent instead of running its own timer."""
+    def _cb():
+        with _race_control_lock:
+            if generation != _yellow_generation or race.state != 'Yellow':
+                return
+            race.yellow_seconds_left = seconds_left
+            publish_race_state()
+    return _cb
 
 
-def _cancel_yellow_timer():
-    """Cancel a pending yellow-grace-expiry timer, if any."""
-    global _yellow_timer
-    if _yellow_timer and _yellow_timer.is_alive():
-        _yellow_timer.cancel()
-    _yellow_timer = None
+def _yellow_expiry(generation: int):
+    """Return the timer callback that ends the grace period by moving to Paused.
+    Calls race.pause() directly rather than routing through a race_control message —
+    BLE's handle_race_state() reacts to the resulting Paused race_state to send
+    POWER_ON_TIMER_HALT, since this transition is never announced any other way."""
+    def _cb():
+        with _race_control_lock:
+            if generation != _yellow_generation or race.state != 'Yellow':
+                return
+            race.pause()
+            publish_race_state()
+            logger.info(f"Race {race.race_id} yellow grace expired — power cut")
+    return _cb
+
+
+def _cancel_yellow_timers():
+    """Cancel the yellow countdown/expiry timers. Bumping the generation also disarms
+    a callback that has already started and is waiting on _race_control_lock."""
+    global _yellow_timers, _yellow_generation
+    _yellow_generation += 1
+    for t in _yellow_timers:
+        if t.is_alive():
+            t.cancel()
+    _yellow_timers = []
+
+
+def _schedule_yellow_sequence():
+    """After race.yellow(): tick yellow_seconds_left down once a second, then cut power
+    when yellow_grace_seconds is up. Call _cancel_yellow_timers() before race.yellow()."""
+    global _yellow_timers
+    generation = _yellow_generation
+    grace = race.yellow_grace_seconds
+    # Countdown shows k from (grace - k)s in, so a fractional grace still reaches 1
+    # exactly one second before the cut.
+    timers = [
+        threading.Timer(max(0.0, grace - k), _yellow_tick(generation, k))
+        for k in range(race.yellow_seconds_left - 1, 0, -1)
+    ]
+    timers.append(threading.Timer(max(0.0, grace), _yellow_expiry(generation)))
+    for t in timers:
+        t.daemon = True
+        t.start()
+    _yellow_timers = timers
 
 
 def _do_lights_out():
@@ -238,7 +284,7 @@ def _schedule_start_sequence():
 
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
-    global pending_race_cache, prev_crossing_ns, _end_timer, _yellow_timer
+    global pending_race_cache, prev_crossing_ns, _end_timer
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
@@ -247,7 +293,7 @@ def handle_race_control(data: dict):
         target_laps = data.get('target_laps', 20)
 
         _cancel_start_timers()
-        _cancel_yellow_timer()
+        _cancel_yellow_timers()
         if _end_timer and _end_timer.is_alive():
             _end_timer.cancel()
             _end_timer = None
@@ -344,30 +390,28 @@ def handle_race_control(data: dict):
 
     elif command == 'yellow':
         # Grace period, then power cut: cars keep racing at full power for
-        # yellow_grace_seconds, then this timer moves the race to Paused (BLE reacts
-        # to that race_state transition by cutting power). Operator can still cancel
-        # early with 'resume' ("Resume Now") before the timer fires.
-        _cancel_yellow_timer()
+        # yellow_grace_seconds while lapdata publishes a once-a-second countdown, then
+        # the race moves to Paused (BLE reacts to that race_state transition by cutting
+        # power). Operator can still cancel early with 'resume' ("Resume Now").
+        _cancel_yellow_timers()
         race.yellow()
         publish_race_state()
-        _yellow_timer = threading.Timer(race.yellow_grace_seconds, _do_yellow_expiry)
-        _yellow_timer.daemon = True
-        _yellow_timer.start()
+        _schedule_yellow_sequence()
 
     elif command == 'pause':
         # Immediate, no-grace stop — distinct from 'yellow', which delays the cut.
-        _cancel_yellow_timer()
+        _cancel_yellow_timers()
         race.pause()
         publish_race_state()
 
     elif command == 'resume':
-        _cancel_yellow_timer()
+        _cancel_yellow_timers()
         race.resume()
         publish_race_state()
 
     elif command == 'end':
         _cancel_start_timers()
-        _cancel_yellow_timer()
+        _cancel_yellow_timers()
         if _end_timer and _end_timer.is_alive():
             _end_timer.cancel()
             _end_timer = None
@@ -414,7 +458,8 @@ def on_message(_client, _userdata, msg):
         if msg.topic == 'car_timestamp':
             handle_car_timestamp(data)
         elif msg.topic == 'race_control':
-            handle_race_control(data)
+            with _race_control_lock:
+                handle_race_control(data)
     except Exception as e:
         logger.error(f"Error handling {msg.topic}: {e}", exc_info=True)
 

@@ -80,6 +80,20 @@ _last_start_finish = [[None, None] for _ in range(6)]
 # timestamp to get a unix time on THIS machine's clock. See _device_to_wall().
 _clock_offset: float | None = None
 
+# Commands that freeze the Slot timestamps. Per the protocol doc, 4 (POWER_ON_TIMER_HALT,
+# which a yellow flag's grace expiry sends) is "power off, but time stamps halt".
+_TIMESTAMP_HALTING_COMMANDS = {NO_POWER_TIMER_STOPPED, POWER_ON_RACE_TRIGGER, POWER_ON_TIMER_HALT}
+
+# Whether the powerbase's timestamps are (or may be) frozen. A halt of D seconds makes
+# every later (arrival - device_time) sample D bigger, and _device_to_wall()'s running
+# minimum would keep the smaller pre-halt offset forever: every crossing after the
+# resume stamped D seconds early, so laps read short or fall under lapdata's
+# MINIMUM_LAP_TIME and vanish. Timestamps never move backwards across a halt, so the
+# reset-detection in handle_slot_notification() can't catch it — _note_command_applied()
+# re-anchors instead. Starts True (and is reset on every connect) because we don't know
+# what state the powerbase was left in.
+_timestamps_halted = True
+
 # Set once BLE is connected (inside run()), cleared on disconnect. Lets
 # handle_race_control(), which runs on paho's own MQTT thread, hand a GATT write
 # off to bleak's asyncio client safely via run_coroutine_threadsafe (see
@@ -171,6 +185,19 @@ def handle_slot_notification(_sender, data: bytearray):
         publish_crossing(car_id, 2, timestamp2, arrival)
 
 
+def _note_command_applied(command: int):
+    """Track whether the powerbase's timestamps are halted, and throw the clock anchor
+    away when a write restarts them — see _timestamps_halted. Runs on bleak's loop, the
+    same thread as handle_slot_notification(), so it can't interleave with a crossing."""
+    global _timestamps_halted, _clock_offset
+    if command in _TIMESTAMP_HALTING_COMMANDS:
+        _timestamps_halted = True
+    elif _timestamps_halted:
+        logger.info("Powerbase timestamps restarting after a halt — re-anchoring the clock offset")
+        _clock_offset = None
+        _timestamps_halted = False
+
+
 async def _write_command_async(command: int):
     """Never raises. The Command write is an optional extra on top of this container's
     real job (publishing car_timestamp), so a powerbase that rejects it — no such
@@ -187,6 +214,7 @@ async def _write_command_async(command: int):
     except Exception as e:
         logger.error(f"Command characteristic write ({command}) failed: {e}")
         return
+    _note_command_applied(command)
     logger.info(f"Command characteristic <- {command}")
 
 
@@ -247,12 +275,22 @@ _POWER_STATE_FOR_RACE_STATE = {
 }
 
 
+def _command_for_race_state(state: str | None) -> int:
+    """The power state the powerbase should be in for a race_state. Anything not in the
+    table — no race, staged, armed, finished, or not yet heard from lapdata — is full
+    power, matching GPIO, which can never cut it."""
+    return _POWER_STATE_FOR_RACE_STATE.get(state, POWER_ON_RACING)
+
+
 def handle_race_state(data: dict):
     """Redundant, precisely-timed write reacting to a race_state transition lapdata
     already computed — belt-and-braces alongside the immediate writes in
-    handle_race_control() (e.g. covers a BLE reconnect mid-transition), and the ONLY
-    place that reacts to the Yellow -> Paused grace-expiry, since lapdata drives that
-    transition with its own internal timer rather than a race_control message."""
+    handle_race_control(), and the ONLY place that reacts to the Yellow -> Paused
+    grace-expiry, since lapdata drives that transition with its own internal timer
+    rather than a race_control message.
+
+    Edge-triggered, so a transition that lands while BLE is disconnected is dropped
+    here — run() makes up for it by writing _command_for_race_state() on every connect."""
     global _last_seen_race_state
     state = data.get('state')
     command = _POWER_STATE_FOR_RACE_STATE.get(state)
@@ -275,6 +313,10 @@ def on_mqtt_message(_client, _userdata, msg):
 def on_mqtt_connect(client, _userdata, _flags, _reason_code, _properties):
     client.subscribe('race_control')
     client.subscribe('race_state')
+    # race_state isn't retained, so ask lapdata for it. Without this, a container
+    # restart mid-pause would have no idea the race is Paused, and the connect-time
+    # power write in run() would put cars back on full power.
+    client.publish('race_control', json.dumps({'command': 'status'}))
 
 
 def _name_matches(device, adv) -> bool:
@@ -310,7 +352,7 @@ async def find_device_address() -> str:
 
 
 async def run():
-    global _bleak_client, _ble_loop, _clock_offset
+    global _bleak_client, _ble_loop, _clock_offset, _timestamps_halted
     while True:
         try:
             address = await find_device_address()
@@ -320,10 +362,13 @@ async def run():
                 # Drop every car back to "not yet seeded" — values from before this
                 # connection can't be compared against what the powerbase reports now.
                 # Same for the clock anchor: the powerbase may have been power-cycled
-                # while we were away, which resets its timer to zero.
+                # while we were away, which resets its timer to zero. Or it may still
+                # be halted from before we dropped, so treat its timestamps as frozen
+                # until our first write restarts them.
                 for i in range(len(_last_start_finish)):
                     _last_start_finish[i] = [None, None]
                 _clock_offset = None
+                _timestamps_halted = True
 
                 await client.start_notify(SLOT_CHARACTERISTIC_UUID, handle_slot_notification)
                 logger.info("Subscribed to slot notifications — waiting for crossings.")
@@ -334,7 +379,11 @@ async def run():
                 # run_coroutine_threadsafe.
                 _bleak_client = client
                 _ble_loop = asyncio.get_running_loop()
-                await _write_command_async(POWER_ON_RACING)
+                # Match the race, not a blanket POWER_ON_RACING: reconnecting while the
+                # race is Paused must not hand marshals on the track a live circuit.
+                # Read the state only after _ble_loop is set, so a race_state edge
+                # arriving from here on is written by handle_race_state() instead.
+                await _write_command_async(_command_for_race_state(_last_seen_race_state))
 
                 while client.is_connected:
                     await asyncio.sleep(1)

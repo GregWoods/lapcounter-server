@@ -35,6 +35,7 @@ def fresh_state(monkeypatch):
     """Each test starts disconnected: no seeded cars, no clock anchor."""
     monkeypatch.setattr(ble, '_last_start_finish', [[None, None] for _ in range(6)])
     monkeypatch.setattr(ble, '_clock_offset', None)
+    monkeypatch.setattr(ble, '_timestamps_halted', True)
     published = []
     monkeypatch.setattr(ble, 'mqtt_client',
                         types.SimpleNamespace(publish=lambda topic, payload: published.append(payload)))
@@ -162,6 +163,42 @@ def test_powerbase_timer_reset_reanchors(fresh_state, monkeypatch):
     assert published[-1] == pytest.approx(1105.0, abs=0.01)   # re-anchored to now
 
 
+def test_power_restored_after_a_halt_reanchors_the_clock(fresh_state, monkeypatch):
+    """POWER_ON_TIMER_HALT freezes the powerbase clock. Across a 10s halt the old anchor
+    is 10s stale, and a running minimum never corrects it upwards on its own."""
+    monkeypatch.setattr(ble, '_timestamps_halted', False)
+    clock = iter([1000.0, 1010.0, 1025.05])
+    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+
+    ble.handle_slot_notification(None, packet(1, t1=0))           # seed
+    ble.handle_slot_notification(None, packet(1, t1=10_000))      # crossing, wall 1010
+    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)            # halt at device 12s...
+    ble._note_command_applied(ble.POWER_ON_RACING)                # ...resumed 10s later
+    ble.handle_slot_notification(None, packet(1, t1=15_000))      # 3s after resume, wall 1025
+
+    published = stamps(fresh_state)
+    assert published[-1] == pytest.approx(1025.05, abs=0.01)      # not 1015: 10s early
+
+
+def test_halt_alone_keeps_the_anchor(fresh_state):
+    """Crossings reported mid-halt carry the frozen clock, so they only ever sample a
+    larger offset — the pre-halt anchor stays the right one until timestamps restart."""
+    ble._timestamps_halted = False
+    ble._clock_offset = 1000.0
+    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)
+    assert ble._clock_offset == 1000.0
+
+
+def test_repeated_restart_writes_reanchor_only_once(fresh_state):
+    """Resume produces two POWER_ON_RACING writes (race_control and race_state). The
+    second must not throw away an anchor rebuilt from real post-resume crossings."""
+    ble._note_command_applied(ble.POWER_ON_RACING)
+    assert ble._clock_offset is None
+    ble._clock_offset = 1000.0
+    ble._note_command_applied(ble.POWER_ON_RACING)
+    assert ble._clock_offset == 1000.0
+
+
 # ------------------------------------------------------- 32-bit timer wraparound
 
 UINT32_MAX_MS = 2 ** 32 - 1      # ~49.7 days of milliseconds
@@ -278,6 +315,33 @@ def test_race_state_repeated_same_state_does_not_resend(monkeypatch):
     sent = sent_commands(monkeypatch)
     ble.handle_race_state({'state': 'Running'})
     assert sent == []
+
+
+@pytest.mark.parametrize('state, expected', [
+    ('Paused', ble.POWER_ON_TIMER_HALT),
+    ('Yellow', ble.POWER_ON_RACING),
+    ('Running', ble.POWER_ON_RACING),
+    ('Finished', ble.POWER_ON_RACING),
+    ('NotStarted', ble.POWER_ON_RACING),
+    (None, ble.POWER_ON_RACING),
+])
+def test_connect_time_power_follows_the_race(state, expected):
+    """run() writes this on every BLE connect. Always POWER_ON_RACING would restore
+    power to a Paused race after a reconnect, since the Paused edge was already seen."""
+    assert ble._command_for_race_state(state) == expected
+
+
+def test_mqtt_connect_asks_lapdata_for_race_state():
+    """race_state isn't retained: after a container restart, this is how BLE learns the
+    race is Paused before its connect-time power write."""
+    import json
+    published = []
+    client = types.SimpleNamespace(
+        subscribe=lambda topic: None,
+        publish=lambda topic, payload: published.append((topic, json.loads(payload))),
+    )
+    ble.on_mqtt_connect(client, None, None, None, None)
+    assert ('race_control', {'command': 'status'}) in published
 
 
 # --------------------------------------------------------- command payload

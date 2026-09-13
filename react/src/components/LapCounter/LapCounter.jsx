@@ -131,6 +131,7 @@ const LapCounter = () => {
     const [startLightsShown, setStartLightsShown] = useState(false);
     const [lightsOut, setLightsOut] = useState(false);
     const [startLights, setStartLights] = useState(0); // lit count, driven by lapdata's race_state
+    const [yellowSecondsLeft, setYellowSecondsLeft] = useState(null); // grace countdown, driven by lapdata
     const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);
 
     const storeFastestLapToday = (lapTime) => {
@@ -209,6 +210,9 @@ const LapCounter = () => {
             setStartLights(raceState.start_lights);
         }
 
+        // Yellow-flag power-cut countdown, also ticked by lapdata; null outside Yellow.
+        setYellowSecondsLeft(raceState.yellow_seconds_left ?? null);
+
         // Header phase + (Points) staged-lineup preview, driven by the live state.
         if (state === 'Finished') setRacePhase('results');
         else if (state === 'NotStarted') setRacePhase('getready');
@@ -233,7 +237,7 @@ const LapCounter = () => {
             } else if (state === 'Running') {
                 setLightsOut(true);
                 setRace(r => ({ ...r, hasStarted: true, paused: false, underStartersOrders: false }));
-            } else if (state === 'Paused') {
+            } else if (state === 'Yellow' || state === 'Paused') {
                 setRace(r => ({ ...r, paused: true }));
             } else if (state === 'Finished') {
                 setRace(r => ({ ...r, hasStarted: false, paused: false }));
@@ -275,7 +279,7 @@ const LapCounter = () => {
         } else if (state === 'Running') {
             setLightsOut(true);
             setRace(r => ({ ...r, hasStarted: true, paused: false, underStartersOrders: false }));
-        } else if (state === 'Paused') {
+        } else if (state === 'Yellow' || state === 'Paused') {
             setRace(r => ({ ...r, paused: true }));
         } else if (state === 'Finished') {
             setRace(r => ({ ...r, hasStarted: false, paused: false }));
@@ -309,8 +313,11 @@ const LapCounter = () => {
                     sessionRacesTotal={sessionRacesTotal}
                     racePhase={racePhase}
                 />
+                {/* Shown through the whole yellow flag — the grace period (Yellow) and the
+                    power cut after it (Paused) — hiding positions until it clears. */}
                 <YellowFlagRacePaused
                     showMe={race.paused}
+                    secondsLeft={yellowSecondsLeft}
                     onRacePaused={() => {}}
                     onEndYellowFlag={() => {}}
                 />

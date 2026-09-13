@@ -1,3 +1,4 @@
+import math
 import time
 import logging
 from dataclasses import dataclass, field
@@ -43,7 +44,11 @@ class RaceManager:
         self.race_start_time: Optional[float] = None
         self.race_fastest_lap: float = 999.999
         self.yellow_grace_seconds: float = 5.0
-        self.yellow_ends_at: Optional[float] = None  # set while state == 'Yellow'
+        # Whole seconds until a yellow flag's grace period cuts power; None outside
+        # Yellow. Ticked down by lapdata's own timers, like start_lights, so a display
+        # renders the number it's given instead of comparing a deadline against its
+        # own clock — which on an old phone around the track can't be trusted.
+        self.yellow_seconds_left: Optional[int] = None
         self.drivers: Dict[int, DriverState] = {}  # keyed by lane number
         self.session_type: str = 'Points'
         self.race_duration_seconds: Optional[float] = None
@@ -66,7 +71,7 @@ class RaceManager:
         self.session_type = session_type
         self.race_duration_seconds = race_duration_seconds
         self.yellow_grace_seconds = yellow_grace_seconds
-        self.yellow_ends_at = None
+        self.yellow_seconds_left = None
 
         # FastestLap: time-limited, so target_laps is irrelevant
         self.target_laps = target_laps if session_type != 'FastestLap' else 9999
@@ -147,22 +152,22 @@ class RaceManager:
         laps stop counting immediately, same as Paused, since on_lap() only counts
         while state == 'Running'. See CLAUDE.md "Yellow flags: power-based handling"."""
         self.state = 'Yellow'
-        self.yellow_ends_at = time.time() + self.yellow_grace_seconds
+        self.yellow_seconds_left = math.ceil(self.yellow_grace_seconds)
         logger.info(f"Race {self.race_id} yellow flag — power cuts in {self.yellow_grace_seconds:.1f}s")
 
     def pause(self):
         self.state = 'Paused'
-        self.yellow_ends_at = None
+        self.yellow_seconds_left = None
         logger.info(f"Race {self.race_id} paused")
 
     def resume(self):
         self.state = 'Running'
-        self.yellow_ends_at = None
+        self.yellow_seconds_left = None
         logger.info(f"Race {self.race_id} resumed")
 
     def end(self):
         self.state = 'Finished'
-        self.yellow_ends_at = None
+        self.yellow_seconds_left = None
         logger.info(f"Race {self.race_id} ended by control signal")
 
     def on_lap(self, lane: int, crossing_time: float) -> bool:
@@ -295,7 +300,7 @@ class RaceManager:
             'count_first_crossing': self.count_first_crossing,
             'race_fastest_lap': round(self.race_fastest_lap, 3) if self.race_fastest_lap < 999 else None,
             'race_start_time': self.race_start_time,
-            'yellow_ends_at': self.yellow_ends_at,
+            'yellow_seconds_left': self.yellow_seconds_left,
             'drivers': driver_list,
         }
 
@@ -342,5 +347,6 @@ class RaceManager:
             'race_start_time': self.race_start_time,
             'race_end_time': self.race_end_time,
             'race_fastest_lap': round(self.race_fastest_lap, 3) if self.race_fastest_lap < 999 else None,
+            'yellow_seconds_left': self.yellow_seconds_left,
             'session_drivers': all_driver_data,
         }
