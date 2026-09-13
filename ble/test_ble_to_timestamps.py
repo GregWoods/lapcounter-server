@@ -401,7 +401,7 @@ def test_retry_backs_off_to_a_cap(monkeypatch):
 
 def test_command_payload_layout():
     """Bytes 1-6 are a POWER MULTIPLIER, not padding — zeros mean no car moves."""
-    payload = bytes([ble.POWER_ON_RACING]) + bytes([ble.FULL_POWER] * 6) + bytes(13)
+    payload = ble.command_payload(ble.POWER_ON_RACING)
     assert len(payload) == 20
     assert payload[0] == 3
     assert list(payload[1:7]) == [0x3F] * 6      # full throttle pass-through

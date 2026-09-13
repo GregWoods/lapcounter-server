@@ -146,24 +146,32 @@ def publish_crossing(car_number: int, lane: int, device_ms: int, arrival: float)
                 f"device={device_ms}ms reported {(arrival - crossing) * 1000:.0f}ms late")
 
 
-def handle_slot_notification(_sender, data: bytearray):
-    global _clock_offset
-
+def decode_slot(data: bytearray) -> tuple[int, int, int] | None:
+    """(car_id, StartFinish1 ms, StartFinish2 ms) from a Slot notification, or None for a
+    packet to ignore. Shared with hardware_check.py, so the real powerbase is validated
+    against exactly this decoding."""
     # Python slices truncate silently rather than raising, so a short packet would
     # yield a wrong int.from_bytes value that almost certainly differs from the stored
     # previous one — i.e. a fabricated lap. Bail instead. (Documented length is 18;
     # 10 is all we read, since the pitlane timestamps are unused.)
     if len(data) < 10:
         logger.warning(f"Ignoring short slot notification ({len(data)} bytes)")
-        return
-
-    arrival = time.time()
+        return None
     car_id = data[1]
     if not (1 <= car_id <= 6):
+        return None
+    return car_id, int.from_bytes(data[2:6], 'little'), int.from_bytes(data[6:10], 'little')
+
+
+def handle_slot_notification(_sender, data: bytearray):
+    global _clock_offset
+
+    decoded = decode_slot(data)
+    if decoded is None:
         return
+    arrival = time.time()
+    car_id, timestamp1, timestamp2 = decoded
     idx = car_id - 1
-    timestamp1 = int.from_bytes(data[2:6], 'little')
-    timestamp2 = int.from_bytes(data[6:10], 'little')
 
     previous1, previous2 = _last_start_finish[idx]
 
@@ -193,6 +201,13 @@ def handle_slot_notification(_sender, data: bytearray):
         publish_crossing(car_id, 1, timestamp1, arrival)
     if timestamp2 and timestamp2 != previous2:
         publish_crossing(car_id, 2, timestamp2, arrival)
+
+
+def command_payload(command: int) -> bytes:
+    """The 20-byte Command write: byte 0 is the powerbase state, bytes 1-6 the per-car
+    power multiplier at FULL_POWER (not padding — see FULL_POWER), and rumble/brake/KERS
+    (bytes 7-19) are genuinely unused. Shared with hardware_check.py."""
+    return bytes([command]) + bytes([FULL_POWER] * 6) + bytes(13)
 
 
 def _note_command_applied(command: int):
@@ -235,10 +250,8 @@ async def _write_command_async(command: int):
     if not (_bleak_client and _bleak_client.is_connected):
         logger.warning(f"Cannot write command {command}: BLE not connected")
         return
-    # Full power multiplier per car; rumble/brake/KERS (bytes 7-19) genuinely unused.
-    payload = bytes([command]) + bytes([FULL_POWER] * 6) + bytes(13)
     try:
-        await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, payload)
+        await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, command_payload(command))
     except Exception as e:
         logger.error(f"Command characteristic write ({command}) failed: {e}")
         _schedule_power_retry()
