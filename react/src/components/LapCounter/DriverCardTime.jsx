@@ -1,5 +1,3 @@
-import React from 'react';
-
 const DriverCardTime = ({fastestLapClass, label, lapTime}) => {
     const fltTime = parseFloat(lapTime);
 

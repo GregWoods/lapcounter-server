@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
 import { House, LogOut } from 'lucide-react';
-import { useAdminAuth } from '../../contexts/AdminAuthContext';
+import { useAdminAuth } from '../../contexts/adminAuth';
 import '../Admin/Admin.css';
 
 const API_URL = import.meta.env.VITE_API_URL;

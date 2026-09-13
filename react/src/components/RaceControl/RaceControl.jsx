@@ -91,9 +91,16 @@ export default function RaceControl() {
         clientRef.current?.publish('race_control', JSON.stringify({ command, ...extra }));
     };
 
+    // Session / next-race details only move when the race changes or transitions — not
+    // on every lap crossing or yellow countdown tick — so refetch (4 requests) only then.
+    const lastRaceKeyRef = useRef(null);
     const onRaceState = (rs) => {
         setRaceState(rs);
-        loadInfo(); // race number / next-race may have advanced
+        const raceKey = `${rs.race_id}:${rs.state}`;
+        if (raceKey !== lastRaceKeyRef.current) {
+            lastRaceKeyRef.current = raceKey;
+            loadInfo();
+        }
     };
 
     // Live values win; fall back to the API snapshot before the first MQTT message.

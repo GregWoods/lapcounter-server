@@ -1,6 +1,5 @@
-import { createContext, useContext, useState } from 'react';
-
-const AdminAuthContext = createContext(null);
+import { useState } from 'react';
+import { AdminAuthContext } from './adminAuth';
 
 export function AdminAuthProvider({ children }) {
     const pinRequired = !!import.meta.env.VITE_ADMIN_PIN;
@@ -27,8 +26,4 @@ export function AdminAuthProvider({ children }) {
             {children}
         </AdminAuthContext.Provider>
     );
-}
-
-export function useAdminAuth() {
-    return useContext(AdminAuthContext);
 }

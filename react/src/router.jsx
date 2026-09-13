@@ -7,13 +7,7 @@ import Register from './components/Register/Register.jsx'
 import Admin from './components/Admin/Admin.jsx'
 import Drivers from './components/Drivers/Drivers.jsx'
 import RaceControl from './components/RaceControl/RaceControl.jsx'
-import PinPrompt from './components/PinPrompt/PinPrompt.jsx'
-import { useAdminAuth } from './contexts/AdminAuthContext.jsx'
-
-function RequireAdmin({ children }) {
-    const { isAdmin } = useAdminAuth();
-    return isAdmin ? children : <PinPrompt />;
-}
+import RequireAdmin from './components/RequireAdmin/RequireAdmin.jsx'
 
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([

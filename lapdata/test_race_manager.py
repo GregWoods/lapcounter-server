@@ -118,6 +118,7 @@ def test_on_lap_ignored_once_driver_finished():
     assert race.drivers[1].finished is True
     updated = race.on_lap(1, race.race_start_time + 10.0)
     assert updated is False
+    assert race.drivers[1].laps_completed == 1
 
 
 # --- Yellow flag (grace period, then power cut) ---

@@ -4,6 +4,7 @@ paho and bleak are not installed in the test venv (only api/.venv has pytest, an
 container's deps live in its image), so they are stubbed before import. The module only
 uses them for I/O, which sits behind an `if __name__ == '__main__'` guard.
 """
+import asyncio
 import struct
 import sys
 import types
@@ -36,6 +37,8 @@ def fresh_state(monkeypatch):
     monkeypatch.setattr(ble, '_last_start_finish', [[None, None] for _ in range(6)])
     monkeypatch.setattr(ble, '_clock_offset', None)
     monkeypatch.setattr(ble, '_timestamps_halted', True)
+    monkeypatch.setattr(ble, '_power_retry_at', None)
+    monkeypatch.setattr(ble, '_power_retry_delay', ble.POWER_RETRY_INITIAL_DELAY)
     published = []
     monkeypatch.setattr(ble, 'mqtt_client',
                         types.SimpleNamespace(publish=lambda topic, payload: published.append(payload)))
@@ -342,6 +345,56 @@ def test_mqtt_connect_asks_lapdata_for_race_state():
     )
     ble.on_mqtt_connect(client, None, None, None, None)
     assert ('race_control', {'command': 'status'}) in published
+
+
+class FakeBleakClient:
+    is_connected = True
+
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.written = []
+
+    async def write_gatt_char(self, _uuid, payload):
+        if self.fail:
+            raise RuntimeError('GATT write rejected')
+        self.written.append(payload[0])
+
+
+def test_failed_power_write_is_retried_with_the_current_race_state(monkeypatch):
+    """Never the command that failed: it may be stale by the time the retry runs, and
+    a retried HALT landing after a resume would cut power on a running race."""
+    client = FakeBleakClient(fail=True)
+    monkeypatch.setattr(ble, '_bleak_client', client)
+    monkeypatch.setattr(ble, '_last_seen_race_state', 'Paused')
+    asyncio.run(ble._write_command_async(ble.POWER_ON_TIMER_HALT))
+    assert ble._power_retry_at is not None
+
+    ble._last_seen_race_state = 'Running'     # operator resumed in the meantime
+    client.fail = False
+    ble._power_retry_at = 0.0                 # due now
+    asyncio.run(ble._retry_power_if_due())
+
+    assert client.written == [ble.POWER_ON_RACING]
+    assert ble._power_retry_at is None
+
+
+def test_retry_waits_until_it_is_due(monkeypatch):
+    client = FakeBleakClient()
+    monkeypatch.setattr(ble, '_bleak_client', client)
+    monkeypatch.setattr(ble, '_power_retry_at', float('inf'))
+    asyncio.run(ble._retry_power_if_due())
+    assert client.written == []
+
+
+def test_retry_backs_off_to_a_cap(monkeypatch):
+    """A powerbase with no Command characteristic (ARC One) rejects every write."""
+    monkeypatch.setattr(ble, '_bleak_client', FakeBleakClient(fail=True))
+    delays = []
+    for _ in range(8):
+        before = ble.time.monotonic()
+        asyncio.run(ble._write_command_async(ble.POWER_ON_RACING))
+        delays.append(round(ble._power_retry_at - before))
+    assert delays == [1, 2, 4, 8, 16, 30, 30, 30]
 
 
 # --------------------------------------------------------- command payload

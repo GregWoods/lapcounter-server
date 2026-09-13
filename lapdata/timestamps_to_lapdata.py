@@ -34,14 +34,18 @@ pending_race_cache: dict | None = None
 _light_timers: list = []  # the start-light sequence timers (5 lights + lights-out)
 _end_timer: threading.Timer | None = None
 _yellow_timers: list = []  # yellow-flag countdown ticks + the grace-expiry power cut
-# Bumped every time the yellow sequence is cancelled. Timer.cancel() can't stop a
-# callback that has already started, so each yellow callback re-checks it still belongs
-# to the current sequence — otherwise a Resume Now landing at the instant of expiry
-# could be overwritten by that timer's pause(), cutting power on a running race.
+# One generation per timer sequence, bumped whenever that sequence is cancelled.
+# Timer.cancel() can't stop a callback that has already started, so every callback
+# re-checks it still belongs to the current sequence. Otherwise: a Resume Now landing at
+# the instant of yellow expiry is overwritten by that timer's pause(), cutting power on a
+# running race; an End during the countdown is undone by lights-out; a re-arm is started
+# early by the previous arm's lights-out.
+_start_generation = 0
+_end_generation = 0
 _yellow_generation = 0
-# Held while handling race_control and inside the yellow timer callbacks, so a
-# callback's check-then-act can't interleave with a command on paho's thread.
-_race_control_lock = threading.RLock()
+# Every mutation of `race` holds this — MQTT messages on paho's thread and lapdata's own
+# timers on theirs — so a timer's check-then-act can't interleave with a message.
+_race_lock = threading.RLock()
 # Last race state we POSTed to the API, so we fire /start and /finish exactly once
 # per transition. lapdata (the race authority) owns these DB side-effects server-side
 # so persistence is browser-independent — no client needs to be open.
@@ -147,26 +151,40 @@ def handle_car_timestamp(data: dict):
             logger.info("Race finished — waiting for next race_control start")
 
 
-def _do_time_expiry():
-    """Timer callback: auto-end a time-limited race when race_end_time is reached."""
-    global _end_timer
+def _time_expiry(generation: int):
+    """Return the timer callback that auto-ends a time-limited race at race_end_time.
+
+    Ends a Yellow or Paused race too: a yellow flag doesn't stop the race clock (see
+    CLAUDE.md), and this timer fires only once, so skipping those states would leave a
+    timed race with no end at all."""
+    def _cb():
+        with _race_lock:
+            if generation != _end_generation or race.state not in ('Running', 'Yellow', 'Paused'):
+                return
+            _cancel_yellow_timers()
+            race.end()
+            publish_race_state()
+            logger.info(f"Race {race.race_id} ended by time expiry")
+    return _cb
+
+
+def _cancel_end_timer():
+    """Cancel the time-expiry timer, disarming it even if its callback has started."""
+    global _end_timer, _end_generation
+    _end_generation += 1
+    if _end_timer and _end_timer.is_alive():
+        _end_timer.cancel()
     _end_timer = None
-    if race.state == 'Running':
-        race.end()
-        publish_race_state()
-        logger.info(f"Race {race.race_id} ended by time expiry")
 
 
 def _schedule_end_timer():
     """Start the time-expiry timer if this race has a race_end_time."""
     global _end_timer
-    if _end_timer and _end_timer.is_alive():
-        _end_timer.cancel()
-        _end_timer = None
+    _cancel_end_timer()
     if race.race_end_time:
         delay = race.race_end_time - time.time()
         if delay > 0:
-            _end_timer = threading.Timer(delay, _do_time_expiry)
+            _end_timer = threading.Timer(delay, _time_expiry(_end_generation))
             _end_timer.daemon = True
             _end_timer.start()
             logger.info(f"Race end timer set for {delay:.1f}s")
@@ -178,7 +196,7 @@ def _yellow_tick(generation: int, seconds_left: int):
     lights: every display — including a trackside phone whose clock is wrong — shows
     the number it is sent instead of running its own timer."""
     def _cb():
-        with _race_control_lock:
+        with _race_lock:
             if generation != _yellow_generation or race.state != 'Yellow':
                 return
             race.yellow_seconds_left = seconds_left
@@ -192,7 +210,7 @@ def _yellow_expiry(generation: int):
     BLE's handle_race_state() reacts to the resulting Paused race_state to send
     POWER_ON_TIMER_HALT, since this transition is never announced any other way."""
     def _cb():
-        with _race_control_lock:
+        with _race_lock:
             if generation != _yellow_generation or race.state != 'Yellow':
                 return
             race.pause()
@@ -203,7 +221,7 @@ def _yellow_expiry(generation: int):
 
 def _cancel_yellow_timers():
     """Cancel the yellow countdown/expiry timers. Bumping the generation also disarms
-    a callback that has already started and is waiting on _race_control_lock."""
+    a callback that has already started and is waiting on _race_lock."""
     global _yellow_timers, _yellow_generation
     _yellow_generation += 1
     for t in _yellow_timers:
@@ -231,30 +249,42 @@ def _schedule_yellow_sequence():
     _yellow_timers = timers
 
 
-def _do_lights_out():
-    """Timer callback: fires lights out, transitions race to Running."""
-    global pending_race_cache, prev_crossing_ns
-    race.start()
-    prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
-    _schedule_end_timer()
-    publish_race_state()
-    pending_race_cache = fetch_pending_race()
+def _lights_out(generation: int):
+    """Return the timer callback that fires lights out, transitioning the race to Running."""
+    def _cb():
+        global pending_race_cache, prev_crossing_ns
+        with _race_lock:
+            if generation != _start_generation or race.state != 'ArmedForStart':
+                return
+            race.start()
+            prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+            _schedule_end_timer()
+            publish_race_state()
+        # Outside the lock: an HTTP call (5s timeout) must not hold up the crossings
+        # arriving in the first seconds after lights out.
+        pending_race_cache = fetch_pending_race()
+    return _cb
 
 
 def _cancel_start_timers():
-    """Cancel any pending start-light/lights-out timers."""
-    global _light_timers
+    """Cancel any pending start-light/lights-out timers, disarming them even if a
+    callback has already started."""
+    global _light_timers, _start_generation
+    _start_generation += 1
     for t in _light_timers:
         if t.is_alive():
             t.cancel()
     _light_timers = []
 
 
-def _set_start_lights(n):
+def _set_start_lights(generation: int, n: int):
     """Return a timer callback that lights the Nth start light and publishes state."""
     def _cb():
-        race.start_lights = n
-        publish_race_state()
+        with _race_lock:
+            if generation != _start_generation or race.state != 'ArmedForStart':
+                return
+            race.start_lights = n
+            publish_race_state()
     return _cb
 
 
@@ -266,12 +296,13 @@ def _schedule_start_sequence():
     """
     global _light_timers
     _cancel_start_timers()
+    generation = _start_generation
     timers = [
-        threading.Timer(light_interval * i, _set_start_lights(i)) for i in range(1, 6)
+        threading.Timer(light_interval * i, _set_start_lights(generation, i)) for i in range(1, 6)
     ]
     hold = random.uniform(lights_out_hold_min, lights_out_hold_max)
     lights_out_at = light_interval * 5 + hold
-    timers.append(threading.Timer(lights_out_at, _do_lights_out))
+    timers.append(threading.Timer(lights_out_at, _lights_out(generation)))
     for t in timers:
         t.daemon = True
         t.start()
@@ -284,7 +315,7 @@ def _schedule_start_sequence():
 
 def handle_race_control(data: dict):
     """Process a race_control command from any client (browser, button box, etc.)."""
-    global pending_race_cache, prev_crossing_ns, _end_timer
+    global pending_race_cache, prev_crossing_ns
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
@@ -294,9 +325,7 @@ def handle_race_control(data: dict):
 
         _cancel_start_timers()
         _cancel_yellow_timers()
-        if _end_timer and _end_timer.is_alive():
-            _end_timer.cancel()
-            _end_timer = None
+        _cancel_end_timer()
 
         if pending_race_cache and pending_race_cache.get('race_id') == race_id:
             pending = pending_race_cache
@@ -324,9 +353,7 @@ def handle_race_control(data: dict):
         race_id = data.get('race_id')
         target_laps = data.get('target_laps', 20)
 
-        if _end_timer and _end_timer.is_alive():
-            _end_timer.cancel()
-            _end_timer = None
+        _cancel_end_timer()
 
         # Use the pre-cached lineup when the race_id matches — avoids the timing
         # issue where POST /races/N/start has already run by the time we fetch,
@@ -412,9 +439,7 @@ def handle_race_control(data: dict):
     elif command == 'end':
         _cancel_start_timers()
         _cancel_yellow_timers()
-        if _end_timer and _end_timer.is_alive():
-            _end_timer.cancel()
-            _end_timer = None
+        _cancel_end_timer()
         race.end()
         publish_race_state()
 
@@ -455,10 +480,10 @@ def publish_race_state():
 def on_message(_client, _userdata, msg):
     try:
         data = json.loads(msg.payload.decode('utf-8', 'ignore'))
-        if msg.topic == 'car_timestamp':
-            handle_car_timestamp(data)
-        elif msg.topic == 'race_control':
-            with _race_control_lock:
+        with _race_lock:
+            if msg.topic == 'car_timestamp':
+                handle_car_timestamp(data)
+            elif msg.topic == 'race_control':
                 handle_race_control(data)
     except Exception as e:
         logger.error(f"Error handling {msg.topic}: {e}", exc_info=True)
@@ -469,22 +494,31 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     _client.subscribe('race_control')
     logger.info("Connected to MQTT broker")
 
-    # Load pending race on startup so race state is available immediately
+    # on_connect fires on every broker *re*connect too, not just startup. Reloading the
+    # pending race then would replace a running race with the next one in the queue, so
+    # once a race is loaded just republish it — race_state isn't retained on the broker.
     global pending_race_cache
+    with _race_lock:
+        if race.race_id:
+            publish_race_state()
+            return
+
+    # Load pending race on startup so race state is available immediately
     pending = fetch_pending_race()
-    if pending:
-        pending_race_cache = pending
-        race.load_lineup(
-            pending['race_id'], pending.get('race_number', 0), 20,
-            pending['lane_assignments'], pending.get('count_first_crossing', False),
-            session_type=pending.get('session_type', 'Points'),
-            race_duration_seconds=pending.get('race_duration_seconds'),
-            session_drivers=pending.get('session_drivers', []),
-            yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
-        )
-        publish_race_state()
-    else:
-        logger.warning("No pending race found on startup — waiting for race_control start")
+    with _race_lock:
+        if pending:
+            pending_race_cache = pending
+            race.load_lineup(
+                pending['race_id'], pending.get('race_number', 0), 20,
+                pending['lane_assignments'], pending.get('count_first_crossing', False),
+                session_type=pending.get('session_type', 'Points'),
+                race_duration_seconds=pending.get('race_duration_seconds'),
+                session_drivers=pending.get('session_drivers', []),
+                yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
+            )
+            publish_race_state()
+        else:
+            logger.warning("No pending race found on startup — waiting for race_control start")
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)

@@ -94,6 +94,16 @@ _TIMESTAMP_HALTING_COMMANDS = {NO_POWER_TIMER_STOPPED, POWER_ON_RACE_TRIGGER, PO
 # what state the powerbase was left in.
 _timestamps_halted = True
 
+# Retry for a Command write that fails while connected (a disconnect is covered instead
+# by run()'s connect-time write). Without it a rejected POWER_ON_TIMER_HALT would leave
+# cars powered until the next race_state transition. Backs off so a powerbase that
+# rejects every write (ARC One: no Command characteristic) isn't hammered. Only ever
+# touched on bleak's loop.
+POWER_RETRY_INITIAL_DELAY = 1.0
+POWER_RETRY_MAX_DELAY = 30.0
+_power_retry_at: float | None = None   # time.monotonic() at which a retry is due
+_power_retry_delay = POWER_RETRY_INITIAL_DELAY
+
 # Set once BLE is connected (inside run()), cleared on disconnect. Lets
 # handle_race_control(), which runs on paho's own MQTT thread, hand a GATT write
 # off to bleak's asyncio client safely via run_coroutine_threadsafe (see
@@ -198,12 +208,30 @@ def _note_command_applied(command: int):
         _timestamps_halted = False
 
 
+def _schedule_power_retry():
+    global _power_retry_at, _power_retry_delay
+    _power_retry_at = time.monotonic() + _power_retry_delay
+    logger.warning(f"Retrying the power command in {_power_retry_delay:.0f}s")
+    _power_retry_delay = min(_power_retry_delay * 2, POWER_RETRY_MAX_DELAY)
+
+
+async def _retry_power_if_due():
+    """Called once a second from run()'s connected loop. Retries with the power state
+    the race calls for NOW, never the command that failed: by the time the retry runs
+    that may be stale, and a retried POWER_ON_TIMER_HALT landing after a resume would
+    cut power on a running race."""
+    if _power_retry_at is None or time.monotonic() < _power_retry_at:
+        return
+    await _write_command_async(_command_for_race_state(_last_seen_race_state))
+
+
 async def _write_command_async(command: int):
     """Never raises. The Command write is an optional extra on top of this container's
     real job (publishing car_timestamp), so a powerbase that rejects it — no such
     characteristic on ARC One, GATT permission error, bad length — must not be able to
     tear down a working slot-notification subscription. Swallowing here also means the
     fire-and-forget send_command() path can't lose an exception in a dropped future."""
+    global _power_retry_at, _power_retry_delay
     if not (_bleak_client and _bleak_client.is_connected):
         logger.warning(f"Cannot write command {command}: BLE not connected")
         return
@@ -213,8 +241,11 @@ async def _write_command_async(command: int):
         await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, payload)
     except Exception as e:
         logger.error(f"Command characteristic write ({command}) failed: {e}")
+        _schedule_power_retry()
         return
     _note_command_applied(command)
+    _power_retry_at = None
+    _power_retry_delay = POWER_RETRY_INITIAL_DELAY
     logger.info(f"Command characteristic <- {command}")
 
 
@@ -352,7 +383,7 @@ async def find_device_address() -> str:
 
 
 async def run():
-    global _bleak_client, _ble_loop, _clock_offset, _timestamps_halted
+    global _bleak_client, _ble_loop, _clock_offset, _timestamps_halted, _power_retry_at, _power_retry_delay
     while True:
         try:
             address = await find_device_address()
@@ -369,6 +400,10 @@ async def run():
                     _last_start_finish[i] = [None, None]
                 _clock_offset = None
                 _timestamps_halted = True
+                # A retry left over from the last connection is superseded by the
+                # connect-time write below.
+                _power_retry_at = None
+                _power_retry_delay = POWER_RETRY_INITIAL_DELAY
 
                 await client.start_notify(SLOT_CHARACTERISTIC_UUID, handle_slot_notification)
                 logger.info("Subscribed to slot notifications — waiting for crossings.")
@@ -387,6 +422,7 @@ async def run():
 
                 while client.is_connected:
                     await asyncio.sleep(1)
+                    await _retry_power_if_due()
                 logger.warning("BLE connection dropped.")
         except Exception as e:
             # exc_info matters here: this wraps discovery, connection, start_notify and
