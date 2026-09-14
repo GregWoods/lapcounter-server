@@ -36,6 +36,8 @@ def fresh_state(monkeypatch):
     """Each test starts disconnected: no seeded cars, no clock anchor."""
     monkeypatch.setattr(ble, '_last_start_finish', [[None, None] for _ in range(6)])
     monkeypatch.setattr(ble, '_clock_offset', None)
+    monkeypatch.setattr(ble, '_step_run_since', None)
+    monkeypatch.setattr(ble, '_step_run_min', None)
     monkeypatch.setattr(ble, '_timestamps_halted', True)
     monkeypatch.setattr(ble, '_power_retry_at', None)
     monkeypatch.setattr(ble, '_power_retry_delay', ble.POWER_RETRY_INITIAL_DELAY)
@@ -148,6 +150,43 @@ def test_anchor_never_drifts_upward(fresh_state, monkeypatch):
     ble.handle_slot_notification(None, packet(1, t1=10_000))
     ble.handle_slot_notification(None, packet(1, t1=20_000))
     assert ble._clock_offset == pytest.approx(1000.1)
+
+
+def test_forward_clock_step_reanchors_once_sustained(fresh_state, monkeypatch):
+    """Our clock jumps forward an hour (NTP on the Pi; in dev, the host waking from sleep
+    while the simulator's monotonic clock stood still). Every sample is now 3600s above
+    the anchor, which a running minimum never follows. Once that has held for
+    CLOCK_STEP_CONFIRM_S, re-anchor to the least-delayed sample of the run."""
+    clock = iter([1000.0, 1010.0, 4620.0, 4623.2, 4625.1])
+    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+
+    ble.handle_slot_notification(None, packet(1, t1=0))           # seed
+    ble.handle_slot_notification(None, packet(1, t1=10_000))
+    assert ble._clock_offset == pytest.approx(1000.0)
+
+    ble.handle_slot_notification(None, packet(1, t1=20_000))      # clock stepped +3600s
+    ble.handle_slot_notification(None, packet(1, t1=23_000))      # 3.2s into the run
+    assert ble._clock_offset == pytest.approx(1000.0)             # not confirmed yet
+
+    ble.handle_slot_notification(None, packet(1, t1=25_000))      # 5.1s into the run
+    assert ble._clock_offset == pytest.approx(4600.0)
+    assert stamps(fresh_state)[-1] == pytest.approx(4625.0, abs=0.01)
+
+
+def test_a_delayed_burst_does_not_move_the_anchor(fresh_state, monkeypatch):
+    """A BLE stall delivers a few crossings seconds late, then prompt ones again. Any
+    prompt sample ends the run, so two late samples 17s apart never add up to a step."""
+    clock = iter([1000.0, 1000.0, 1010.0, 1026.0, 1026.2, 1043.0])
+    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+
+    ble.handle_slot_notification(None, packet(1, t1=0))           # seed car 1
+    ble.handle_slot_notification(None, packet(2, t1=0))           # seed car 2
+    ble.handle_slot_notification(None, packet(1, t1=10_000))      # anchor 1000.0
+    ble.handle_slot_notification(None, packet(1, t1=20_000))      # 6s late
+    ble.handle_slot_notification(None, packet(2, t1=26_000))      # 0.2s late: ends the run
+    ble.handle_slot_notification(None, packet(1, t1=37_000))      # 6s late again, 17s on
+
+    assert ble._clock_offset == pytest.approx(1000.0)
 
 
 def test_powerbase_timer_reset_reanchors(fresh_state, monkeypatch):

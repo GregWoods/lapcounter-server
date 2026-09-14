@@ -80,6 +80,28 @@ _last_start_finish = [[None, None] for _ in range(6)]
 # timestamp to get a unix time on THIS machine's clock. See _device_to_wall().
 _clock_offset: float | None = None
 
+# A forward step in THIS machine's clock makes every later (arrival - device_time)
+# sample bigger by the step, and _device_to_wall()'s running minimum never follows it
+# upward. On the Pi that's the clock being set (NTP, or by hand) after ble connected; in
+# dev it's the Docker VM's wall clock catching up after the host sleeps, while the
+# simulator's monotonic clock stood still. A normal sample only exceeds the true offset
+# by its reporting delay — at most one round-robin rotation, i.e. one Slot packet for
+# each of the 6 car IDs in turn. So when every sample for CLOCK_STEP_CONFIRM_S sits more
+# than CLOCK_STEP_THRESHOLD_S above the anchor, it isn't delay: re-anchor to the
+# smallest of them. The confirmation matters — a BLE stall delivers a late burst and
+# then prompt samples again, and re-anchoring on the burst would stamp crossings late
+# until a prompt sample dragged the anchor back. It only has to outlast a stall: a long
+# enough one drops the connection, and run() re-anchors on reconnect.
+# Steps smaller than the threshold go uncorrected. Lap-to-lap deltas don't change, but
+# lap 1 is timed from lapdata's clock and reads short by the step, which at ~5s laps
+# (under 2s on a test circuit) argues for a threshold as low as the rotation allows.
+# 3s is provisional: the protocol doc only says "several times per second", so HW-02
+# measures the real rotation — aim for ~2x its worst case.
+CLOCK_STEP_THRESHOLD_S = 3.0
+CLOCK_STEP_CONFIRM_S = 5.0
+_step_run_since: float | None = None   # arrival of the first sample in the current run
+_step_run_min: float | None = None     # smallest sample in that run
+
 # Commands that freeze the Slot timestamps. Per the protocol doc, 4 (POWER_ON_TIMER_HALT,
 # which a yellow flag's grace expiry sends) is "power off, but time stamps halt".
 _TIMESTAMP_HALTING_COMMANDS = {NO_POWER_TIMER_STOPPED, POWER_ON_RACE_TRIGGER, POWER_ON_TIMER_HALT}
@@ -130,11 +152,27 @@ def _device_to_wall(device_ms: int, arrival: float) -> float:
     crossings. A constant error in it would cancel out of lap-to-lap deltas anyway;
     keeping it small also keeps lap 1 honest, since that one is timed from
     race_start_time rather than from a previous crossing.
+
+    A minimum can only move down, so a forward step in our own clock is caught
+    separately — see CLOCK_STEP_THRESHOLD_S.
     """
-    global _clock_offset
+    global _clock_offset, _step_run_since, _step_run_min
     candidate = arrival - device_ms / 1000.0
     if _clock_offset is None or candidate < _clock_offset:
         _clock_offset = candidate
+
+    if candidate - _clock_offset <= CLOCK_STEP_THRESHOLD_S:
+        _step_run_since = _step_run_min = None
+    else:
+        if _step_run_since is None:
+            _step_run_since, _step_run_min = arrival, candidate
+        else:
+            _step_run_min = min(_step_run_min, candidate)
+        if arrival - _step_run_since >= CLOCK_STEP_CONFIRM_S:
+            logger.info(f"Clock stepped forward {_step_run_min - _clock_offset:.1f}s since "
+                        "anchoring — re-anchoring the clock offset")
+            _clock_offset = _step_run_min
+            _step_run_since = _step_run_min = None
     return device_ms / 1000.0 + _clock_offset
 
 

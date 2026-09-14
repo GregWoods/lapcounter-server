@@ -72,6 +72,8 @@ def harness(monkeypatch):
     # Disconnected, never-connected module state, as at container start.
     monkeypatch.setattr(ble, '_last_start_finish', [[None, None] for _ in range(6)])
     monkeypatch.setattr(ble, '_clock_offset', None)
+    monkeypatch.setattr(ble, '_step_run_since', None)
+    monkeypatch.setattr(ble, '_step_run_min', None)
     monkeypatch.setattr(ble, '_timestamps_halted', True)
     monkeypatch.setattr(ble, '_power_retry_at', None)
     monkeypatch.setattr(ble, '_power_retry_delay', ble.POWER_RETRY_INITIAL_DELAY)

@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 api_url = os.getenv('API_URL', 'http://api:8000')
-min_lap_time_ns = int(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000
+# Seconds, fractional allowed (a small test circuit can lap in under 2s).
+min_lap_time_ns = round(float(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000)
 # How far a Layer 1's crossing timestamp may sit from our own clock before we stop
 # trusting it. Generous: every Layer 1 runs on this same machine, so a legitimate
 # stamp is milliseconds old, but a container that has just started while the Pi's

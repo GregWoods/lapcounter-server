@@ -88,7 +88,7 @@ services:
     pull_policy: missing
     environment:
       - MQTT_HOSTNAME=mosquitto
-      - MINIMUM_LAP_TIME=4
+      - MINIMUM_LAP_TIME=3
       - API_URL=http://api:8000
     container_name: lapdata
     restart: unless-stopped
