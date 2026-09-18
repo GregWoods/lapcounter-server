@@ -6,12 +6,15 @@ behaves the way the code *assumes*. This file lists exactly those assumptions, a
 `hardware_check.py` tests each one against the hardware.
 
 **Do this before the first meet on BLE.** HW-06 and HW-07 matter most: they decide
-whether yellow-flag power cuts keep lap times right and whether they're safe.
+whether yellow-flag power cuts keep lap times right and whether they're safe. HW-11 and
+HW-12 decide how lap 1 is timed in the lap-timing redesign (`docs/lap-timing-plan.md`).
 
 ## 1. Run the scripted checks
 
-Takes about 20 minutes. You need one car per controller, and ideally a stopwatch. Never
-run it during a race: it cuts track power, and HW-09 zeroes the lap timers.
+Takes about 30 minutes. You need one car per controller, and ideally a stopwatch. Never
+run it during a race: it cuts track power, and HW-09, HW-11 and HW-12 zero the lap timers.
+Run HW-12 in the same run as HW-06 and HW-11 (a full run does), because it compares
+against their results.
 
 **On the Pi.** The script ships in the ble image once `ble/build-and-push-ble.ps1` has
 been run after this change.
@@ -39,6 +42,59 @@ check ends with a verdict:
 - `review`: the answer changes code or race-day procedure; see `code_impact` in the report.
 - `info`: a measurement, not a yes/no.
 
+## First run: 2026-09-18 (Pi Zero 2 W, one car, ID 5)
+
+The protocol doc is wrong about units: **Slot and throttle timestamps count 10 ms ticks,
+not ms** (`DEVICE_TICK_S`). Read as ms, every lap came out ~10x short and fell under
+`MINIMUM_LAP_TIME`, so BLE would have counted nothing at a meet. That run's HW-06, HW-11,
+HW-12 verdicts and HW-10's lateness/drift were computed in the wrong unit. Re-read in ticks:
+
+- HW-01, HW-05, HW-09 pass. HW-06: power cut and restore pass, and the clock **pauses**
+  through a halt, as `_note_command_applied()` assumes.
+- HW-11: command 1 zeroes the Slot timers and holds them at 0 until command 3, but does
+  **not** hold the cars still.
+- HW-12's `different_clock` came from the unit error: throttleTimestamp also runs at the
+  0.1x rate, froze through the halt and zeroed with the Slot timers. Re-run it.
+- HW-02: **no Slot packets at all until the first Command write** (after HW-08's power
+  cycle too). Slot packets came every ~300 ms, so a **~1.8 s rotation** over 6 car IDs:
+  the worst-case delay before a crossing reaches the leaderboard. Throttle notifications
+  also came every 300 ms, much slower than the doc's 20–40 ms connection interval
+  suggests. Unexplained so far: it may be the Pi Zero's link, not the powerbase.
+- HW-07 needs re-running. The racing case's "timestamps not retained" was probably the car
+  being driven while disconnected.
+
+Re-run with one car, no drift test: `--only HW-02,HW-06,HW-07,HW-11,HW-12,HW-13`.
+
+## Second run: 2026-09-18, after the tick fix
+
+- **HW-06 pass**: power cut/restore work, and the clock pauses through a halt.
+- **HW-07 pass**: disconnected while halted, the track **stays unpowered**, even after reconnecting
+  before any write (the safety case). Disconnected while racing, power stays on. Timestamps are
+  kept across a reconnect.
+- **HW-11**: command 1 zeroes the timers and holds them at 0 until command 3 (`started_at_go`), so
+  plan B's zero is the command-3 write. Command 1 does **not** hold the cars. Re-sending command 3
+  mid-race leaves the clock alone.
+- **HW-12**: throttleTimestamp runs at 1.0x in ticks, **advances at rest**, halts and zeroes with
+  the Slot clock. The offset comparison wasn't gathered (no crossings in the driving window), but
+  everything else says same clock, so plan A is back in play. Re-run HW-12 to settle it.
+- **HW-02**: Slot packets are **20 bytes**, not 18. They also arrived before any Command write
+  this time, but the base had been left in `POWER_ON_RACING`. The cadence is confirmed: one packet
+  every 300 ms, all 6 IDs whether or not a car is present, so **1.8 s per car**. `btmon` shows
+  a 37.5 ms connection interval (inside the doc's 20–40 ms), Slot and Throttle notifying in
+  lockstep, and asking BlueZ for 20 ms changed nothing. The pace is the powerbase's, not the link's.
+- **HW-13**: the base buttons have no documented field. The only change while pressing was
+  Throttle byte 18 (car 5's `ctrlVersion`) reading 0xFF, and the button LEDs flashed
+  inconsistently even on single clicks. It looks like a side effect of pairing mode, not a
+  button report, so it is not usable as a race-control input.
+
+## HW-14: polling the Slot characteristic (2026-09-18)
+
+No faster. Reads came back ~13/s (two 37.5 ms connection events each) with no errors, but a
+read returns whichever car the powerbase's 300 ms round-robin is on, so each car still refreshed
+every ~1.6–1.8 s at worst. All 12 crossings were seen by both streams, and polling saw them ~73 ms
+*later* than notifications (the read round trip). Bytes 18–19 were always `0000`. The Slot value
+itself only changes every 300 ms, so no client-side approach gets a crossing sooner.
+
 ## 2. What we need to know
 
 | ID | Question | Code that assumes it | If the answer differs |
@@ -54,8 +110,13 @@ check ends with a verdict:
 | **HW-09** | Does command 0 (`NO_POWER_TIMER_STOPPED`) zero the Slot timestamps, with the next crossing counting from zero? | The backwards-timestamp path in `handle_slot_notification()` | Not zeroed: the "commands 0/1 zero the timers" comments are wrong. The reset path still holds for power-cycles. |
 | **HW-10** | Over a long run, what is the reporting delay (median, p95, max)? How far does the powerbase clock drift, in ppm? | Running-minimum clock anchor, lapdata's 30s `HW_TIMESTAMP_TOLERANCE_NS` | Large positive drift, i.e. a slow powerbase clock: the anchor can't follow it, so it needs a slow decay. A p95 delay near a lap time: rethink `MINIMUM_LAP_TIME`. |
 
-Not tested, because it isn't practical: the uint32 millisecond counter wrapping after
-~49.7 days of uptime. Unit tests already cover it as a timer reset.
+| **HW-11** | Plan B for lap 1: commands 1 then 3, sent at arm. With the cars stationary, does command 1 (`NO_POWER_TIMER_TICKING`) hold them still and zero the Slot timers? Does the clock tick from command 1, or hold at zero until command 3? How long do back-to-back 1 → 3 writes take, and how soon after them is the clock's zero? (`plan_b.zero_lag_upper_bound_ms` also includes one crossing's reporting delay.) Does re-sending command 3 mid-race reset anything? | Nothing yet: plan B is the lap-timing plan's fallback if HW-12 fails. Re-sending 3 is what `handle_race_state()` and resume already do. | `not_reset`: plan B is out, and the "commands 0/1 zero the timers" comments are wrong. Cars not held: a reset at arm lets a car creep, and a jump-start hold can't use command 1. Re-sending 3 resets the clock: `ble` must stop re-sending it, or start a new clock epoch each time. |
+| **HW-12** | Plan A for lap 1: is `throttleTimestamp` (Throttle `0x3B09`, bytes 7–10) a live reading of the **same** clock as the Slot timestamps? The evidence is threefold. Its anchor offset agrees with the Slot crossings' anchor. It halts on command 4 the way the Slot clock did in HW-06. It zeroes on command 1 the way the Slot timers did in HW-11. Does it also advance while the triggers are released, and how late do its notifications arrive? It also records each controller's highest throttle reading at rest (`throttle_at_rest_max`), the noise floor a jump-start threshold must sit above. | Nothing yet: plan A is a clock heartbeat published by `ble`; jump-start detection reads throttle. | `different_clock`: plan A is out; use plan B (HW-11). Same clock but not advancing at rest: no heartbeat on a stationary grid, so still plan B. |
+| **HW-13** | Do the **six buttons on the powerbase itself** show up anywhere over BLE? The doc only covers controller buttons (brake `0x40`, lane change `0x80` in Throttle bytes 1–6, lane-change double-tap in byte 11). Lift cars off the track first: a base button may re-program a car's ID. | Nothing: this is to find out whether they could drive race control (e.g. start, yellow) from the base. | `visible_over_ble: false`: they can't be used from software. Otherwise `new_bytes_while_pressing` names the characteristic and byte. |
+| **HW-14** | Does **reading** Slot (it is readable, HW-01) see crossings sooner than its 300 ms round-robin notifications? Does each read return the next car ID, or repeat the last notification? What are the two undocumented bytes 18–19? Drive car 5 in steady laps for 30 s. | Nothing yet: lap *position* needs to reach the leaderboard fast; last-lap times can wait ~1 s. | `polling_earlier_ms` median well above 300: add a polling mode to `ble_to_timestamps`. About 0, or reads repeat the notified car: the 1.8 s rotation stands. |
+
+Not tested, because it isn't practical: the uint32 tick counter wrapping after
+~497 days of uptime. Unit tests already cover it as a timer reset.
 
 ## 3. Full-stack checks
 
@@ -81,3 +142,4 @@ Bring `hw-report.json` and the E1–E8 results to the next session. Then:
 - Fix any `fail`s.
 - Make the `code_impact` notes from `review` checks into code or race-day procedure.
 - Update the simulated behaviour in `docs/mocked-ble-plan.md`, so the dev mock copies the real hardware rather than today's assumptions.
+- Record HW-11 and HW-12's conclusions in `docs/lap-timing-plan.md`, which picks plan A or plan B for lap 1 from them.

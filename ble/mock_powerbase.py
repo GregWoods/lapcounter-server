@@ -31,6 +31,10 @@ SLOT_IDS = 6                    # the Slot characteristic reports car IDs 1-6
 COMMAND_PACKET_LENGTH = 20
 MAX_POWER = 0x3F                # Command bytes 1-6: power multiplier 0...0x3f
 UINT32_MASK = 0xFFFFFFFF
+# The device clock counts 10ms ticks, not the milliseconds the protocol doc claims:
+# measured on a real ARC Pro (HW-04, HW-10, HW-12, 2026-09-18). Deliberately its own
+# constant, not ble_to_timestamps.DEVICE_TICK_S - see the module docstring.
+TICK_S = 0.01
 
 NO_POWER_TIMER_STOPPED = 0
 NO_POWER_TIMER_TICKING = 1
@@ -95,7 +99,7 @@ class SimulatedCar:
         # the lap stops every car crossing in the same instant.
         self.remaining_s = rng.uniform(0, self.base_lap_s)
         self.laps = 0
-        # Last StartFinish1/StartFinish2 stamps, device ms (lane 1, lane 2).
+        # Last StartFinish1/StartFinish2 stamps, device ticks (lane 1, lane 2).
         self.start_finish = [0, 0]
 
 
@@ -125,8 +129,8 @@ class SimulatedPowerbase:
         self._sequence = 0
         self._next_slot_index = 0
         self._listeners = []
-        # Ground truth for tests: (car, lane, clock() at the crossing, device ms stamped).
-        # (car, lane, device ms) identifies a crossing, since stamps only move forward.
+        # Ground truth for tests: (car, lane, clock() at the crossing, device ticks stamped).
+        # (car, lane, device ticks) identifies a crossing, since stamps only move forward.
         self.crossings = collections.deque(maxlen=1000)
         self.cars = [SimulatedCar(i + 1, lane=1 + i % 2, lap_model=self.lap_model, rng=self._rng)
                      for i in range(cars)]
@@ -140,9 +144,9 @@ class SimulatedPowerbase:
         return _COMMANDS[self.command]
 
     @property
-    def device_ms(self) -> int:
+    def device_ticks(self) -> int:
         self.advance()
-        return round(self._device_s * 1000) & UINT32_MASK
+        return round(self._device_s / TICK_S) & UINT32_MASK
 
     def add_listener(self, callback):
         """callback() after every command, connect, disconnect or power cycle. Crossings
@@ -164,7 +168,7 @@ class SimulatedPowerbase:
             'command': self.command,
             'track_power': self.behaviour.track_power,
             'timestamps_ticking': self.behaviour.timestamps_tick,
-            'device_ms': self.device_ms,
+            'device_ticks': self.device_ticks,
             'cars': [{'car': c.car_id, 'lane': c.lane, 'laps': c.laps, 'moving': self.speed(c) > 0}
                      for c in self.cars],
         }
@@ -199,11 +203,11 @@ class SimulatedPowerbase:
             self._device_s += dt
 
     def _cross(self, car: SimulatedCar, device_s: float, at: float):
-        stamp = round(device_s * 1000) & UINT32_MASK
+        stamp = round(device_s / TICK_S) & UINT32_MASK
         car.start_finish[car.lane - 1] = stamp
         car.laps += 1
         self.crossings.append((car.car_id, car.lane, at, stamp))
-        logger.debug(f'car {car.car_id} crossed lane {car.lane} at device {device_s * 1000:.0f}ms')
+        logger.debug(f'car {car.car_id} crossed lane {car.lane} at device {device_s:.2f}s')
         if self._rng.random() < self.lap_model.lane_change_chance:
             car.lane = 3 - car.lane
 
@@ -219,7 +223,7 @@ class SimulatedPowerbase:
         self._device_s = self._rng.uniform(60, 600)
         for car in self.cars:
             last = max(0.0, self._device_s - self._rng.uniform(0, 30))
-            car.start_finish[car.lane - 1] = round(last * 1000)
+            car.start_finish[car.lane - 1] = round(last / TICK_S)
 
     def _zero_timestamps(self):
         self._device_s = 0.0
@@ -233,7 +237,7 @@ class SimulatedPowerbase:
     # ----------------------------------------------------------------- BLE side
 
     def next_slot_packet(self) -> bytes:
-        """The next 18-byte Slot notification: sequence, car ID, StartFinish1/2 (uint32 ms,
+        """The next 18-byte Slot notification: sequence, car ID, StartFinish1/2 (uint32 ticks,
         little-endian), then pitlane1/2, which this project never reads.
 
         HW-02: round-robin over all 6 car IDs whether or not a car is on the track, so the

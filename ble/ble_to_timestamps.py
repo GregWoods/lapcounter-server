@@ -42,10 +42,36 @@ MQTT_TIMESTAMP_TOPIC = "car_timestamp"
 # little-endian):
 #   byte[0]      packet sequence
 #   byte[1]      CarId, 1-6 — already the digital car ID, no CARCODE bit-decode needed
-#   byte[2:6]    TimestampStartFinish1 (uint32) — physical lane 1 sensor
-#   byte[6:10]   TimestampStartFinish2 (uint32) — physical lane 2 sensor
+#   byte[2:6]    TimestampStartFinish1 (uint32 ticks) — physical lane 1 sensor
+#   byte[6:10]   TimestampStartFinish2 (uint32 ticks) — physical lane 2 sensor
 #   byte[10:18]  pitlane timestamps — unused, this project has no pit lane feature
 SLOT_CHARACTERISTIC_UUID = "00003b0b-0000-1000-8000-00805f9b34fb"
+
+# ⚠️ Powerbase timestamps count in 10ms ticks, NOT the milliseconds the protocol doc says.
+# Measured on a real ARC Pro on 2026-09-18 (hardware_check.py): four independent checks
+# put the device clock at 0.1x wall time when read as ms — HW-04 lap deltas (a 54.08s
+# lap read "5.296s"), HW-10's drift over 125 crossings (902,424 ppm = 0.098x), and
+# HW-12's throttleTimestamp rate (0.1x), with HW-06's halt arithmetic only consistent in
+# ticks. Read as ms, every lap came out ~10x short and fell under MINIMUM_LAP_TIME. It
+# applies to both the Slot and the throttleTimestamp values. Every conversion of a device
+# value to seconds goes through device_seconds(), including hardware_check.py and the
+# mock powerbase, so this is the one place the unit lives.
+DEVICE_TICK_S = 0.01
+
+
+def device_seconds(ticks: int) -> float:
+    return ticks * DEVICE_TICK_S
+
+# Throttle characteristic (notify, 20 bytes, "many times per second"):
+#   byte[0]      packet sequence
+#   byte[1:7]    throttle per car, 0...0x3f, +0x40 brake button, +0x80 lane-change button
+#   byte[7:11]   throttleTimestamp (uint32 ticks, see DEVICE_TICK_S) — "when the throttle
+#                packet was last updated"
+#   byte[11]     isDigital flags, then firmware versions — unused
+# Not subscribed to yet. HW-12 in hardware_check.py finds out whether throttleTimestamp is
+# a live reading of the same clock as the Slot timestamps; if it is, the lap-timing
+# redesign (docs/lap-timing-plan.md) uses it as a clock heartbeat.
+THROTTLE_CHARACTERISTIC_UUID = "00003b09-0000-1000-8000-00805f9b34fb"
 
 # Command characteristic (write-only, 20 bytes): byte 0 selects one of these overall
 # powerbase states (power + whether Slot characteristic timestamps tick/halt/reset);
@@ -95,8 +121,9 @@ _clock_offset: float | None = None
 # Steps smaller than the threshold go uncorrected. Lap-to-lap deltas don't change, but
 # lap 1 is timed from lapdata's clock and reads short by the step, which at ~5s laps
 # (under 2s on a test circuit) argues for a threshold as low as the rotation allows.
-# 3s is provisional: the protocol doc only says "several times per second", so HW-02
-# measures the real rotation — aim for ~2x its worst case.
+# The first hardware run (2026-09-18, Pi Zero 2 W) measured one Slot packet every
+# ~300ms, so a ~1.8s rotation over 6 car IDs: 3s clears it, but ~2x would be 3.6s. Don't
+# lower this without a rotation measurement from the hardware the meet runs on.
 CLOCK_STEP_THRESHOLD_S = 3.0
 CLOCK_STEP_CONFIRM_S = 5.0
 _step_run_since: float | None = None   # arrival of the first sample in the current run
@@ -136,15 +163,15 @@ _ble_loop: asyncio.AbstractEventLoop | None = None
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
 
-def _device_to_wall(device_ms: int, arrival: float) -> float:
-    """Convert a powerbase timestamp (ms since its timer was last reset) into unix
-    seconds on this machine's clock.
+def _device_to_wall(device_ticks: int, arrival: float) -> float:
+    """Convert a powerbase timestamp (ticks since its timer was last reset, see
+    DEVICE_TICK_S) into unix seconds on this machine's clock.
 
     Why this exists: the Slot characteristic is round-robin across all 6 cars, so a
     crossing is *reported* anywhere from ~0ms to a full cycle after it happened. Using
     notification-arrival time puts all of that jitter straight into every lap time.
-    The powerbase measured the crossing itself, at the sensor, in ms — that number has
-    no jitter in it, it just needs anchoring to our clock.
+    The powerbase measured the crossing itself, at the sensor — that number has no
+    jitter in it, it just needs anchoring to our clock.
 
     The anchor is a running MINIMUM of (arrival - device_time). Every sample is the
     true offset plus some transport delay, and delay is never negative, so the smallest
@@ -157,7 +184,8 @@ def _device_to_wall(device_ms: int, arrival: float) -> float:
     separately — see CLOCK_STEP_THRESHOLD_S.
     """
     global _clock_offset, _step_run_since, _step_run_min
-    candidate = arrival - device_ms / 1000.0
+    device_s = device_seconds(device_ticks)
+    candidate = arrival - device_s
     if _clock_offset is None or candidate < _clock_offset:
         _clock_offset = candidate
 
@@ -173,19 +201,18 @@ def _device_to_wall(device_ms: int, arrival: float) -> float:
                         "anchoring — re-anchoring the clock offset")
             _clock_offset = _step_run_min
             _step_run_since = _step_run_min = None
-    return device_ms / 1000.0 + _clock_offset
+    return device_s + _clock_offset
 
 
-def publish_crossing(car_number: int, lane: int, device_ms: int, arrival: float):
-    crossing = _device_to_wall(device_ms, arrival)
+def publish_crossing(car_number: int, lane: int, device_ticks: int, arrival: float):
+    crossing = _device_to_wall(device_ticks, arrival)
     payload = {"car": car_number, "timestamp": int(crossing * 1e9), "lane": lane}
     mqtt_client.publish(MQTT_TIMESTAMP_TOPIC, payload=json.dumps(payload))
-    logger.info(f"car_timestamp: car={car_number} lane={lane} "
-                f"device={device_ms}ms reported {(arrival - crossing) * 1000:.0f}ms late")
+    logger.info(f"car_timestamp: car={car_number} lane={lane} device={device_seconds(device_ticks):.2f}s")
 
 
 def decode_slot(data: bytearray) -> tuple[int, int, int] | None:
-    """(car_id, StartFinish1 ms, StartFinish2 ms) from a Slot notification, or None for a
+    """(car_id, StartFinish1, StartFinish2) in raw ticks from a Slot notification, or None for a
     packet to ignore. Shared with hardware_check.py, so the real powerbase is validated
     against exactly this decoding."""
     # Python slices truncate silently rather than raising, so a short packet would
@@ -199,6 +226,16 @@ def decode_slot(data: bytearray) -> tuple[int, int, int] | None:
     if not (1 <= car_id <= 6):
         return None
     return car_id, int.from_bytes(data[2:6], 'little'), int.from_bytes(data[6:10], 'little')
+
+
+def decode_throttle(data: bytearray) -> tuple[int, tuple[int, ...]] | None:
+    """(throttleTimestamp in raw ticks, the six raw per-car throttle bytes) from a Throttle
+    notification, or None for a packet too short to hold them. Shared with
+    hardware_check.py. Doesn't log a short packet: this characteristic notifies many times
+    a second, so a misbehaving base would flood the log."""
+    if len(data) < 11:
+        return None
+    return int.from_bytes(data[7:11], 'little'), tuple(data[1:7])
 
 
 def handle_slot_notification(_sender, data: bytearray):

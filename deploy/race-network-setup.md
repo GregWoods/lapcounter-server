@@ -212,6 +212,10 @@ loops rely on exactly that non-zero exit to terminate.
 
 ## Part 2 — Raspberry Pi fresh install
 
+> Building the **Pi Zero 2 W BLE box** instead? Its extra steps (passwordless sudo, the NTP
+> kick, Bluetooth rfkill, side-loading the `ble` image, the Postgres seed race) are in
+> **[pi-zero-ble-setup.md](pi-zero-ble-setup.md)**.
+
 Hardware: **Raspberry Pi 3 Model A+**, armv7l, **512 MB RAM** (~424 MB usable).
 OS: **Raspberry Pi OS Lite 32-bit (Debian 13 "trixie")**.
 

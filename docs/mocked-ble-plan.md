@@ -56,7 +56,7 @@ logic instead of exercising it, and the copy would pass while the real code fail
 
 A pure simulation with an injectable clock, so tests can run it faster than real time.
 
-- **Device clock** in ms, driven by the Command state machine:
+- **Device clock** in 10 ms ticks (the protocol doc says ms; the hardware disagrees, see `TICK_S`), driven by the Command state machine:
 
   | Command | Track power | Timestamps |
   |---|---|---|

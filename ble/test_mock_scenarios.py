@@ -63,9 +63,9 @@ def harness(monkeypatch):
     records = []
     real_publish_crossing = ble.publish_crossing
 
-    def recording_publish_crossing(car, lane, device_ms, arrival):
-        real_publish_crossing(car, lane, device_ms, arrival)
-        records.append((car, lane, device_ms, sent[-1]['timestamp'] / 1e9))
+    def recording_publish_crossing(car, lane, device_ticks, arrival):
+        real_publish_crossing(car, lane, device_ticks, arrival)
+        records.append((car, lane, device_ticks, sent[-1]['timestamp'] / 1e9))
 
     monkeypatch.setattr(ble, 'publish_crossing', recording_publish_crossing)
 
@@ -130,19 +130,20 @@ def from_paho(handler, data: dict):
 def stamp_errors(h) -> list[float]:
     """Published stamp minus when the car really crossed, for every published crossing.
     A crossing the simulator never made is a phantom lap and fails outright."""
-    truth = {(car, lane, device_ms): at for car, lane, at, device_ms in h.powerbase.crossings}
+    truth = {(car, lane, device_ticks): at for car, lane, at, device_ticks in h.powerbase.crossings}
     errors = []
-    for car, lane, device_ms, stamp in h.records:
-        assert (car, lane, device_ms) in truth, \
-            f'Phantom lap: car {car} lane {lane} at device {device_ms}ms never crossed since connecting'
-        errors.append(stamp - truth[(car, lane, device_ms)])
+    for car, lane, device_ticks, stamp in h.records:
+        assert (car, lane, device_ticks) in truth, \
+            f'Phantom lap: car {car} lane {lane} at device tick {device_ticks} never crossed since connecting'
+        errors.append(stamp - truth[(car, lane, device_ticks)])
     return errors
 
 
 def assert_stamps_true(h):
     errors = stamp_errors(h)
-    # Never early (beyond ms rounding), and late by at most a reporting cycle.
-    bad = [round(e, 3) for e in errors if not -0.005 <= e <= MAX_STAMP_LATE_S]
+    # Never early beyond one device tick (stamps are rounded to 10ms ticks, and the anchor
+    # can sit up to a tick off), and late by at most a reporting cycle.
+    bad = [round(e, 3) for e in errors if not -mp.TICK_S <= e <= MAX_STAMP_LATE_S]
     assert not bad, f'{len(bad)} of {len(errors)} stamps off by (s): {bad}'
 
 

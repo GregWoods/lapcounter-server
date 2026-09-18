@@ -125,6 +125,8 @@ The commands include:
 
 This characteristic is sent once per car in a round-robin fashion, to update the app about the details of when each car has most recently passed the start/finish sensor or the end-of-pitlane sensor for each track. Timestamps are relative to when the timer was reset, are in milliseconds, and are stored little-endian.
 
+> ⚠️ **Not milliseconds on real hardware.** A real ARC Pro counts **10 ms ticks** (measured 2026-09-18 by `ble/hardware_check.py`, HW-04/HW-10/HW-12), and so does `throttleTimestamp`. The code uses `DEVICE_TICK_S` in `ble_to_timestamps.py`. This copy of the doc is left as Scalextric wrote it.
+
 | **Byte** | **Type** | **Name** | **Description** |
 | --- | --- | --- | --- |
 | 0 | uint8 | sequence | Number that updates every packet (0...255) |

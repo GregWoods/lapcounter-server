@@ -94,12 +94,12 @@ def test_crossings_are_stamped_when_they_happen_not_when_polled(clock):
 
     clock.tick(1.7)                 # crossed at 1.0s, nobody polled until 1.7s
     pb.advance()
-    assert car.start_finish == [1_000, 0]
+    assert car.start_finish == [100, 0]
     assert car.laps == 1
 
     clock.tick(1.5)                 # next crossing 2s after the last, at 3.0s
     pb.advance()
-    assert car.start_finish == [3_000, 0]
+    assert car.start_finish == [300, 0]
 
 
 def test_several_crossings_in_one_step_keep_only_the_latest(clock):
@@ -109,7 +109,7 @@ def test_several_crossings_in_one_step_keep_only_the_latest(clock):
     clock.tick(7.5)                 # crossings at 1, 3, 5, 7
     pb.advance()
     assert pb.cars[0].laps == 4
-    assert pb.cars[0].start_finish == [7_000, 0]
+    assert pb.cars[0].start_finish == [700, 0]
 
 
 def test_lane_change_stamps_the_other_start_finish_field(clock):
@@ -118,15 +118,15 @@ def test_lane_change_stamps_the_other_start_finish_field(clock):
     pb.cars[0].remaining_s = 1.0
     clock.tick(3.5)                 # crossing at 1 on lane 1, then at 3 on lane 2
     pb.advance()
-    assert pb.cars[0].start_finish == [1_000, 3_000]
+    assert pb.cars[0].start_finish == [100, 300]
 
 
 def test_retained_timestamps_look_like_a_used_powerbase(clock):
     """So every connect exercises ble's seeding instead of starting from zero."""
     pb = mp.SimulatedPowerbase(cars=6, clock=clock, rng=random.Random(7))
-    assert pb.device_ms > 0
+    assert pb.device_ticks > 0
     for car in pb.cars:
-        assert 0 < max(car.start_finish) <= pb.device_ms
+        assert 0 < max(car.start_finish) <= pb.device_ticks
 
 
 # ----------------------------------------------------------------- commands
@@ -143,14 +143,14 @@ def test_timer_halt_freezes_the_clock_and_stops_cars(clock):
     assert pb.snapshot()['track_power'] is False
 
     clock.tick(10.0)
-    assert pb.device_ms == 1_000
+    assert pb.device_ticks == 100
     assert car.laps == 0
 
     pb.apply_command(command(mp.POWER_ON_RACING))
     clock.tick(4.5)                 # 4s of lap left at the halt
     pb.advance()
-    assert car.start_finish == [5_000, 0]
-    assert pb.device_ms == 5_500
+    assert car.start_finish == [500, 0]
+    assert pb.device_ticks == 550
 
 
 def test_command_0_zeroes_and_stops_the_timers(clock):
@@ -159,7 +159,7 @@ def test_command_0_zeroes_and_stops_the_timers(clock):
     pb.apply_command(command(mp.NO_POWER_TIMER_STOPPED))
     assert all(car.start_finish == [0, 0] for car in pb.cars)
     clock.tick(5.0)
-    assert pb.device_ms == 0
+    assert pb.device_ticks == 0
     assert pb.snapshot()['track_power'] is False
 
 
@@ -167,7 +167,7 @@ def test_command_1_zeroes_then_ticks_with_cars_stationary(clock):
     pb = mp.SimulatedPowerbase(cars=2, clock=clock, rng=random.Random(3), lap_model=STEADY)
     pb.apply_command(command(mp.NO_POWER_TIMER_TICKING))
     clock.tick(5.0)
-    assert pb.device_ms == 5_000
+    assert pb.device_ticks == 500
     assert all(car.laps == 0 and car.start_finish == [0, 0] for car in pb.cars)
 
 
@@ -182,7 +182,7 @@ def test_zero_multiplier_bytes_stop_every_car_and_warn(clock, caplog):
     clock.tick(10.0)
     pb.advance()
     assert pb.cars[0].laps == 0
-    assert pb.device_ms == 10_000       # clock still ticks, cars just can't move
+    assert pb.device_ticks == 1_000       # clock still ticks, cars just can't move
 
 
 def test_half_multiplier_halves_the_pace(clock):
@@ -257,5 +257,5 @@ def test_power_cycle_zeroes_timers_and_drops_the_connection(clock):
     pb.power_cycle()
     assert not pb.connected
     assert pb.command == mp.POWER_ON_RACING
-    assert pb.device_ms == 0
+    assert pb.device_ticks == 0
     assert all(car.start_finish == [0, 0] for car in pb.cars)

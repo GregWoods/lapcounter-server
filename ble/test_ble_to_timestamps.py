@@ -48,7 +48,7 @@ def fresh_state(monkeypatch):
 
 
 def packet(car, t1=0, t2=0):
-    """An 18-byte Slot notification: seq, car, track1 ms, track2 ms, pitlane (unused)."""
+    """An 18-byte Slot notification: seq, car, track1/track2 in raw ticks, pitlane (unused)."""
     return bytearray(bytes([0, car]) + struct.pack('<II', t1, t2) + bytes(8))
 
 
@@ -60,6 +60,11 @@ def crossings(published):
 def stamps(published):
     import json
     return [json.loads(p)['timestamp'] / 1e9 for p in published]
+
+
+def ticks(seconds):
+    """Device seconds as raw powerbase ticks (10ms on real hardware, see DEVICE_TICK_S)."""
+    return round(seconds / ble.DEVICE_TICK_S)
 
 
 # --------------------------------------------------------------- seeding
@@ -111,7 +116,31 @@ def test_short_packet_ignored(fresh_state):
     assert ble._last_start_finish[0] == [None, None]
 
 
+def test_decode_throttle_layout():
+    """20 bytes: seq, six throttles, uint32 throttleTimestamp, isDigital, versions."""
+    data = bytearray(bytes([9, 0x3F, 0x40, 0x80, 0, 1, 2]) + struct.pack('<I', 897_122) + bytes(9))
+    assert ble.decode_throttle(data) == (897_122, (0x3F, 0x40, 0x80, 0, 1, 2))
+
+
+def test_decode_throttle_short_packet():
+    assert ble.decode_throttle(bytearray(10)) is None
+
+
 # ------------------------------------------------------- device clock anchoring
+
+def test_slot_timestamps_are_10ms_ticks(fresh_state, monkeypatch):
+    """The protocol doc says ms; a real ARC Pro counts 10ms ticks (hardware run,
+    2026-09-18). A 3.66s lap arrives as 366, and must publish as 3.66s, not 0.366s,
+    which lapdata's MINIMUM_LAP_TIME would silently drop."""
+    clock = iter([1000.0, 1000.0, 1003.66])
+    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+    ble.handle_slot_notification(None, packet(5, t1=0))       # seed
+    ble.handle_slot_notification(None, packet(5, t1=1_000))   # 10.00s on the device
+    ble.handle_slot_notification(None, packet(5, t1=1_366))   # 13.66s
+    t1, t2 = stamps(fresh_state)
+    assert t2 - t1 == pytest.approx(3.66, abs=1e-6)
+
+
 
 def test_lap_delta_comes_from_the_device_not_arrival(fresh_state, monkeypatch):
     """The whole point: round-robin reporting jitter must not reach lap times.
@@ -123,8 +152,8 @@ def test_lap_delta_comes_from_the_device_not_arrival(fresh_state, monkeypatch):
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
     ble.handle_slot_notification(None, packet(1, t1=0))          # seed
-    ble.handle_slot_notification(None, packet(1, t1=10_000))     # crossing at device 10.000s
-    ble.handle_slot_notification(None, packet(1, t1=15_000))     # crossing at device 15.000s
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))     # crossing at device 10.000s
+    ble.handle_slot_notification(None, packet(1, t1=ticks(15)))     # crossing at device 15.000s
 
     t1, t2 = stamps(fresh_state)
     assert t2 - t1 == pytest.approx(5.0, abs=1e-6)
@@ -135,9 +164,9 @@ def test_anchor_converges_on_the_least_delayed_sample(fresh_state, monkeypatch):
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
     ble.handle_slot_notification(None, packet(1, t1=0))
-    ble.handle_slot_notification(None, packet(1, t1=10_000))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
     assert ble._clock_offset == pytest.approx(1000.5)
-    ble.handle_slot_notification(None, packet(1, t1=20_000))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))
     assert ble._clock_offset == pytest.approx(1000.1)
 
 
@@ -147,8 +176,8 @@ def test_anchor_never_drifts_upward(fresh_state, monkeypatch):
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
     ble.handle_slot_notification(None, packet(1, t1=0))
-    ble.handle_slot_notification(None, packet(1, t1=10_000))
-    ble.handle_slot_notification(None, packet(1, t1=20_000))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))
     assert ble._clock_offset == pytest.approx(1000.1)
 
 
@@ -161,14 +190,14 @@ def test_forward_clock_step_reanchors_once_sustained(fresh_state, monkeypatch):
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
     ble.handle_slot_notification(None, packet(1, t1=0))           # seed
-    ble.handle_slot_notification(None, packet(1, t1=10_000))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
     assert ble._clock_offset == pytest.approx(1000.0)
 
-    ble.handle_slot_notification(None, packet(1, t1=20_000))      # clock stepped +3600s
-    ble.handle_slot_notification(None, packet(1, t1=23_000))      # 3.2s into the run
+    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))      # clock stepped +3600s
+    ble.handle_slot_notification(None, packet(1, t1=ticks(23)))      # 3.2s into the run
     assert ble._clock_offset == pytest.approx(1000.0)             # not confirmed yet
 
-    ble.handle_slot_notification(None, packet(1, t1=25_000))      # 5.1s into the run
+    ble.handle_slot_notification(None, packet(1, t1=ticks(25)))      # 5.1s into the run
     assert ble._clock_offset == pytest.approx(4600.0)
     assert stamps(fresh_state)[-1] == pytest.approx(4625.0, abs=0.01)
 
@@ -181,10 +210,10 @@ def test_a_delayed_burst_does_not_move_the_anchor(fresh_state, monkeypatch):
 
     ble.handle_slot_notification(None, packet(1, t1=0))           # seed car 1
     ble.handle_slot_notification(None, packet(2, t1=0))           # seed car 2
-    ble.handle_slot_notification(None, packet(1, t1=10_000))      # anchor 1000.0
-    ble.handle_slot_notification(None, packet(1, t1=20_000))      # 6s late
-    ble.handle_slot_notification(None, packet(2, t1=26_000))      # 0.2s late: ends the run
-    ble.handle_slot_notification(None, packet(1, t1=37_000))      # 6s late again, 17s on
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))      # anchor 1000.0
+    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))      # 6s late
+    ble.handle_slot_notification(None, packet(2, t1=ticks(26)))      # 0.2s late: ends the run
+    ble.handle_slot_notification(None, packet(1, t1=ticks(37)))      # 6s late again, 17s on
 
     assert ble._clock_offset == pytest.approx(1000.0)
 
@@ -196,11 +225,11 @@ def test_powerbase_timer_reset_reanchors(fresh_state, monkeypatch):
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
     ble.handle_slot_notification(None, packet(1, t1=0))
-    ble.handle_slot_notification(None, packet(1, t1=10_000))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
     assert ble._clock_offset == pytest.approx(1000.0)
 
-    ble.handle_slot_notification(None, packet(1, t1=100))     # timer went backwards
-    ble.handle_slot_notification(None, packet(1, t1=5_100))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(0.1)))     # timer went backwards
+    ble.handle_slot_notification(None, packet(1, t1=ticks(5.1)))
     published = stamps(fresh_state)
     assert published[-1] == pytest.approx(1105.0, abs=0.01)   # re-anchored to now
 
@@ -213,10 +242,10 @@ def test_power_restored_after_a_halt_reanchors_the_clock(fresh_state, monkeypatc
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
     ble.handle_slot_notification(None, packet(1, t1=0))           # seed
-    ble.handle_slot_notification(None, packet(1, t1=10_000))      # crossing, wall 1010
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))      # crossing, wall 1010
     ble._note_command_applied(ble.POWER_ON_TIMER_HALT)            # halt at device 12s...
     ble._note_command_applied(ble.POWER_ON_RACING)                # ...resumed 10s later
-    ble.handle_slot_notification(None, packet(1, t1=15_000))      # 3s after resume, wall 1025
+    ble.handle_slot_notification(None, packet(1, t1=ticks(15)))      # 3s after resume, wall 1025
 
     published = stamps(fresh_state)
     assert published[-1] == pytest.approx(1025.05, abs=0.01)      # not 1015: 10s early
@@ -243,11 +272,11 @@ def test_repeated_restart_writes_reanchor_only_once(fresh_state):
 
 # ------------------------------------------------------- 32-bit timer wraparound
 
-UINT32_MAX_MS = 2 ** 32 - 1      # ~49.7 days of milliseconds
+UINT32_MAX_TICKS = 2 ** 32 - 1    # ~497 days of 10ms ticks
 
 
 def test_counter_wrap_is_handled_as_a_reset(fresh_state, monkeypatch):
-    """The powerbase's ms counter is uint32, so it wraps ~49.7 days after its timer
+    """The powerbase's tick counter is uint32, so it wraps ~497 days after its timer
     was last zeroed — and we never send commands 0/1, so it runs from power-on.
 
     A wrap looks exactly like a timer reset (value jumps backwards), so the reset path
@@ -257,10 +286,10 @@ def test_counter_wrap_is_handled_as_a_reset(fresh_state, monkeypatch):
     clock = iter([1000.0, 1010.0, 1020.0, 1025.0])
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 10_000))   # seed
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 5_000))    # pre-wrap
-    ble.handle_slot_notification(None, packet(1, t1=120))                      # wrapped
-    ble.handle_slot_notification(None, packet(1, t1=5_120))                    # 5s later
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(10)))   # seed
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(5)))    # pre-wrap
+    ble.handle_slot_notification(None, packet(1, t1=ticks(0.12)))                      # wrapped
+    ble.handle_slot_notification(None, packet(1, t1=ticks(5.12)))                    # 5s later
 
     published = stamps(fresh_state)
     assert published[-2] == pytest.approx(1020.0, abs=0.01)   # stamped at arrival
@@ -270,15 +299,15 @@ def test_counter_wrap_is_handled_as_a_reset(fresh_state, monkeypatch):
 
 def test_wrap_does_not_emit_a_time_in_the_distant_past(fresh_state, monkeypatch):
     """Without re-anchoring, a wrapped value against a pre-wrap anchor would date the
-    crossing ~49.7 days ago. lapdata would reject that outright."""
+    crossing ~497 days ago. lapdata would reject that outright."""
     clock = iter([1000.0, 1010.0, 1020.0])
     monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
 
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 10_000))
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_MS - 5_000))
-    ble.handle_slot_notification(None, packet(1, t1=120))
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(10)))
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(5)))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(0.12)))
 
-    assert stamps(fresh_state)[-1] > 1000.0    # not 49.7 days in the past
+    assert stamps(fresh_state)[-1] > 1000.0    # not ~497 days in the past
 
 
 # ------------------------------------------------------------ device discovery
