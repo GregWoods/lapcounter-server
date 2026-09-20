@@ -12,10 +12,13 @@
 # (bind-mount /var/run/dbus) and a working Bluetooth adapter on the host.
 
 import asyncio
+import itertools
 import json
 import logging
 import os
+import secrets
 import time
+from typing import NamedTuple
 
 import paho.mqtt.client as mqtt      # uses >= 2.0.0
 from bleak import BleakClient, BleakScanner
@@ -35,6 +38,15 @@ scan_timeout = float(os.getenv('BLE_SCAN_TIMEOUT', '10'))
 reconnect_delay = float(os.getenv('BLE_RECONNECT_DELAY', '5'))
 
 MQTT_TIMESTAMP_TOPIC = "car_timestamp"
+MQTT_CLOCK_TOPIC = "layer1_clock"
+
+# Plan A (docs/lap-timing-plan.md), confirmed by HW-12 on 2026-09-20: the Throttle
+# characteristic's throttleTimestamp is a live reading of the same clock the Slot
+# crossings are stamped on, so notifying it gives lapdata a steady stream of
+# (clock, counter) samples to anchor against — including while the cars are sitting on
+# the grid, which is when lap 1's anchor has to be right. 'none' turns it off, leaving
+# only crossings to anchor from (plan C).
+clock_heartbeat = os.getenv('BLE_CLOCK_HEARTBEAT', 'throttle').strip().lower()
 
 # Scalextric ARC "slot" GATT characteristic (notify-only). Confirmed against
 # github.com/RazManager/ScalextricArcBleProtocolExplorer, which implements
@@ -93,6 +105,43 @@ NO_POWER_REBOOT_PIC18 = 5
 # The 0x80 bit (app drives the car directly, ignoring its controller) stays clear; it's
 # what a future ghost-car or fuel-cut feature would set.
 FULL_POWER = 0x3F
+NO_POWER = 0x00
+
+
+class PowerState(NamedTuple):
+    """One Command characteristic write: the powerbase state byte and the per-car power
+    multiplier that goes with it. The pair travels together because either one alone is
+    ambiguous — POWER_ON_RACING means "cars race" or "cars stand still" depending
+    entirely on the multiplier."""
+    command: int
+    power: int
+
+
+# ⚠️ Stopping the cars must NEVER stop the powerbase's counter (Greg, 2026-09-20).
+#
+# The protocol offers no state that cuts power and leaves the timestamps ticking: 0 and 1
+# zero them, 2 and 4 freeze them. So stopping the cars via the state byte would break the
+# counter mid-race, forcing a new clock at the cut and another at the restart, and every
+# lap spanning the stoppage would go through lapdata's anchor instead of being an exact
+# counter subtraction.
+#
+# Holding the multiplier at zero under POWER_ON_RACING instead leaves the counter running
+# throughout, so the counter never breaks, no clock changes, and the lap either side of a
+# yellow flag is one long lap measured exactly — which is what it really was. Cars sat
+# still for 30s of it; that is expected and correct.
+#
+# ✅ CONFIRMED on a real ARC Pro, 2026-09-20 (HW-03): with a trigger held flat, the car ran
+# at 0x3f, slowed distinctly at 0x2f and again at 0x20, and STOPPED at 0x00 — and the
+# counter advanced at rate 1.0 through every step, the 0x00 one included. So both halves
+# hold: a zero multiplier really does stop the car, and it does it without breaking the
+# counter. PowerState(POWER_ON_TIMER_HALT, NO_POWER) remains the fallback if a different
+# powerbase or firmware ever disagrees.
+#
+# Note this leaves the track energised (command 3 keeps power on the rails, which digital
+# Scalextric needs for its data signal anyway) — it stops the cars, it does not kill the
+# track.
+TRACK_RACING = PowerState(POWER_ON_RACING, FULL_POWER)
+CARS_STOPPED = PowerState(POWER_ON_RACING, NO_POWER)
 
 # Per car-ID (index 0..5 = car 1..6): last-seen raw StartFinish1/2 values, so a
 # notification only turns into a crossing when one of them actually changed —
@@ -101,51 +150,62 @@ FULL_POWER = 0x3F
 # [0, 0] ("seen, and the powerbase's timers are at zero") — see
 # handle_slot_notification().
 _last_start_finish = [[None, None] for _ in range(6)]
+# Which clock each car's baseline above was recorded on. Without this, a timer reset
+# would start SIX new clocks rather than one: each car's zeroed packet over the next
+# rotation reads as "went backwards" in turn. See handle_slot_notification().
+_baseline_clock: list = [None] * 6
 
-# Wall-clock seconds minus powerbase-clock seconds, i.e. what to add to a device
-# timestamp to get a unix time on THIS machine's clock. See _device_to_wall().
-_clock_offset: float | None = None
+# The clock id published alongside every counter. lapdata compares these for equality
+# and never parses them, so the shape is ours alone — but the rules are not:
+#
+#   1. Within one clock, counter_ms advances at real-time rate.
+#   2. We start a new clock whenever that stops being true, OR MIGHT HAVE.
+#   3. A clock value is never reused, across container restarts included — hence the
+#      random per-process part. A restarted ble publishing "ble:1" again would have
+#      lapdata comparing its counters against the dead process's.
+#
+# ⚠️ Rule 2 is now the thing that can go wrong. Missing an event that breaks the counter
+# reproduces the old post-halt bug in a new place: lapdata would subtract counters
+# across a discontinuity and believe the answer. Every such event needs a test.
+_PROCESS_ID = secrets.token_hex(3)
+_clock_sequence = itertools.count(1)
+_clock = ''
 
-# A forward step in THIS machine's clock makes every later (arrival - device_time)
-# sample bigger by the step, and _device_to_wall()'s running minimum never follows it
-# upward. On the Pi that's the clock being set (NTP, or by hand) after ble connected; in
-# dev it's the Docker VM's wall clock catching up after the host sleeps, while the
-# simulator's monotonic clock stood still. A normal sample only exceeds the true offset
-# by its reporting delay — at most one round-robin rotation, i.e. one Slot packet for
-# each of the 6 car IDs in turn. So when every sample for CLOCK_STEP_CONFIRM_S sits more
-# than CLOCK_STEP_THRESHOLD_S above the anchor, it isn't delay: re-anchor to the
-# smallest of them. The confirmation matters — a BLE stall delivers a late burst and
-# then prompt samples again, and re-anchoring on the burst would stamp crossings late
-# until a prompt sample dragged the anchor back. It only has to outlast a stall: a long
-# enough one drops the connection, and run() re-anchors on reconnect.
-# Steps smaller than the threshold go uncorrected. Lap-to-lap deltas don't change, but
-# lap 1 is timed from lapdata's clock and reads short by the step, which at ~5s laps
-# (under 2s on a test circuit) argues for a threshold as low as the rotation allows.
-# The first hardware run (2026-09-18, Pi Zero 2 W) measured one Slot packet every
-# ~300ms, so a ~1.8s rotation over 6 car IDs: 3s clears it, but ~2x would be 3.6s. Don't
-# lower this without a rotation measurement from the hardware the meet runs on.
-CLOCK_STEP_THRESHOLD_S = 3.0
-CLOCK_STEP_CONFIRM_S = 5.0
-_step_run_since: float | None = None   # arrival of the first sample in the current run
-_step_run_min: float | None = None     # smallest sample in that run
 
-# Commands that freeze the Slot timestamps. Per the protocol doc, 4 (POWER_ON_TIMER_HALT,
-# which a yellow flag's grace expiry sends) is "power off, but time stamps halt".
-_TIMESTAMP_HALTING_COMMANDS = {NO_POWER_TIMER_STOPPED, POWER_ON_RACE_TRIGGER, POWER_ON_TIMER_HALT}
+def _new_clock(reason: str) -> str:
+    """Start a new clock: the counter has broken continuity, or may have."""
+    global _clock
+    _clock = f"ble:{_PROCESS_ID}:{next(_clock_sequence)}"
+    logger.info(f"New Layer 1 clock {_clock} — {reason}")
+    return _clock
 
-# Whether the powerbase's timestamps are (or may be) frozen. A halt of D seconds makes
-# every later (arrival - device_time) sample D bigger, and _device_to_wall()'s running
-# minimum would keep the smaller pre-halt offset forever: every crossing after the
-# resume stamped D seconds early, so laps read short or fall under lapdata's
-# MINIMUM_LAP_TIME and vanish. Timestamps never move backwards across a halt, so the
-# reset-detection in handle_slot_notification() can't catch it — _note_command_applied()
-# re-anchors instead. Starts True (and is reset on every connect) because we don't know
-# what state the powerbase was left in.
+
+_new_clock('process start')
+
+# Commands that break the Slot timestamps' continuity: 0 and 1 zero them, 2 and 4 freeze
+# them. Freezing is the easy one to miss — it stops the clock WITHOUT moving it backwards,
+# so the backwards-detection in handle_slot_notification() can never catch it.
+#
+# ⚠️ This project no longer sends any of them: stopping the cars is CARS_STOPPED (command
+# 3 at a zero multiplier), which leaves the counter running. The machinery stays because
+# it is cheap and the alternative is silent, wrong lap times — a future limp mode, an
+# operator's external ARC app, or the HW-03 fallback could all put one of these on the
+# wire, and lapdata must see a new clock if any of them does.
+#
+# ⚠️ HW-11 settles whether command 1 zeroes once and then ticks (its name says so) or
+# holds at zero until command 3. It is in this set on the assumption it may hold; if the
+# hardware says it ticks, move it out — it then starts a new clock at the write, and
+# command 3 after it is not a restart.
+_TIMESTAMP_BREAKING_COMMANDS = {NO_POWER_TIMER_STOPPED, NO_POWER_TIMER_TICKING,
+                                POWER_ON_RACE_TRIGGER, POWER_ON_TIMER_HALT}
+
+# Whether the powerbase's timestamps are (or may be) frozen. Starts True (and is reset
+# on every connect) because we don't know what state the powerbase was left in.
 _timestamps_halted = True
 
 # Retry for a Command write that fails while connected (a disconnect is covered instead
-# by run()'s connect-time write). Without it a rejected POWER_ON_TIMER_HALT would leave
-# cars powered until the next race_state transition. Backs off so a powerbase that
+# by run()'s connect-time write). Without it a rejected CARS_STOPPED would leave cars
+# racing until the next race_state transition. Backs off so a powerbase that
 # rejects every write (ARC One: no Command characteristic) isn't hammered. Only ever
 # touched on bleak's loop.
 POWER_RETRY_INITIAL_DELAY = 1.0
@@ -163,52 +223,26 @@ _ble_loop: asyncio.AbstractEventLoop | None = None
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
 
-def _device_to_wall(device_ticks: int, arrival: float) -> float:
-    """Convert a powerbase timestamp (ticks since its timer was last reset, see
-    DEVICE_TICK_S) into unix seconds on this machine's clock.
+def counter_ms(device_ticks: int) -> int:
+    """A raw powerbase tick count as the milliseconds the car_timestamp contract carries.
+    Goes through device_seconds() so DEVICE_TICK_S stays the one place the unit lives."""
+    return round(device_seconds(device_ticks) * 1000)
 
-    Why this exists: the Slot characteristic is round-robin across all 6 cars, so a
-    crossing is *reported* anywhere from ~0ms to a full cycle after it happened. Using
-    notification-arrival time puts all of that jitter straight into every lap time.
-    The powerbase measured the crossing itself, at the sensor — that number has no
-    jitter in it, it just needs anchoring to our clock.
 
-    The anchor is a running MINIMUM of (arrival - device_time). Every sample is the
-    true offset plus some transport delay, and delay is never negative, so the smallest
-    sample seen is the best estimate of the true offset and it converges within a few
-    crossings. A constant error in it would cancel out of lap-to-lap deltas anyway;
-    keeping it small also keeps lap 1 honest, since that one is timed from
-    race_start_time rather than from a previous crossing.
+def publish_crossing(car_number: int, lane: int, device_ticks: int):
+    """Publish the crossing as the powerbase's OWN counter, unconverted.
 
-    A minimum can only move down, so a forward step in our own clock is caught
-    separately — see CLOCK_STEP_THRESHOLD_S.
+    Nothing here anchors it to anyone's wall clock any more. The powerbase measured this
+    crossing at the sensor, and that number has no reporting jitter in it — the Slot
+    characteristic's round-robin delay is in when we HEAR about it, not in the value.
+    lapdata subtracts two of these to get a lap time, so the delay cancels out entirely
+    and never reaches a lap. The anchor it keeps is only for lap 1.
     """
-    global _clock_offset, _step_run_since, _step_run_min
-    device_s = device_seconds(device_ticks)
-    candidate = arrival - device_s
-    if _clock_offset is None or candidate < _clock_offset:
-        _clock_offset = candidate
-
-    if candidate - _clock_offset <= CLOCK_STEP_THRESHOLD_S:
-        _step_run_since = _step_run_min = None
-    else:
-        if _step_run_since is None:
-            _step_run_since, _step_run_min = arrival, candidate
-        else:
-            _step_run_min = min(_step_run_min, candidate)
-        if arrival - _step_run_since >= CLOCK_STEP_CONFIRM_S:
-            logger.info(f"Clock stepped forward {_step_run_min - _clock_offset:.1f}s since "
-                        "anchoring — re-anchoring the clock offset")
-            _clock_offset = _step_run_min
-            _step_run_since = _step_run_min = None
-    return device_s + _clock_offset
-
-
-def publish_crossing(car_number: int, lane: int, device_ticks: int, arrival: float):
-    crossing = _device_to_wall(device_ticks, arrival)
-    payload = {"car": car_number, "timestamp": int(crossing * 1e9), "lane": lane}
+    payload = {"car": car_number, "lane": lane,
+               "counter_ms": counter_ms(device_ticks), "clock": _clock}
     mqtt_client.publish(MQTT_TIMESTAMP_TOPIC, payload=json.dumps(payload))
-    logger.info(f"car_timestamp: car={car_number} lane={lane} device={device_seconds(device_ticks):.2f}s")
+    logger.info(f"car_timestamp: car={car_number} lane={lane} "
+                f"counter={counter_ms(device_ticks)}ms clock={_clock}")
 
 
 def decode_slot(data: bytearray) -> tuple[int, int, int] | None:
@@ -239,28 +273,32 @@ def decode_throttle(data: bytearray) -> tuple[int, tuple[int, ...]] | None:
 
 
 def handle_slot_notification(_sender, data: bytearray):
-    global _clock_offset
-
     decoded = decode_slot(data)
     if decoded is None:
         return
-    arrival = time.time()
     car_id, timestamp1, timestamp2 = decoded
     idx = car_id - 1
 
     previous1, previous2 = _last_start_finish[idx]
 
     # A device timestamp moving BACKWARDS means the powerbase zeroed its timers
-    # (commands 0/1 do that). The old anchor now maps device time to a wall clock
-    # well in the past, so throw it away and re-anchor from the next crossing.
-    if (previous1 is not None
+    # (commands 0/1, or a power cycle), so counters either side of it can't be compared:
+    # a new clock.
+    #
+    # ⚠️ Only when this car's baseline is from the CURRENT clock. A reset zeroes all six
+    # cars, and we see their zeroed packets one at a time over the next round-robin
+    # rotation. Without this guard each of the remaining five would read as another
+    # backwards jump and start another clock — six clocks for one reset, and every lap
+    # that spanned any of them downgraded from an exact counter subtraction to an
+    # anchored one.
+    if (previous1 is not None and _baseline_clock[idx] == _clock
             and (timestamp1 < previous1 or timestamp2 < previous2)):
-        logger.info("Powerbase timer reset detected — re-anchoring the clock offset")
-        _clock_offset = None
+        _new_clock(f"powerbase timers went backwards (car {car_id})")
 
     # Record even a zero — the powerbase really does reset its timers on commands 0/1,
     # and storing that is what lets the next real crossing read as a change.
     _last_start_finish[idx] = [timestamp1, timestamp2]
+    _baseline_clock[idx] = _clock
 
     # First packet seen for this car since connecting: that was the baseline, publish
     # nothing. The powerbase keeps counting while we're away (POWER_ON_RACING leaves
@@ -272,29 +310,100 @@ def handle_slot_notification(_sender, data: bytearray):
     if previous1 is None:
         return
 
+    # Compared against the baseline whatever clock it came from: the powerbase's values
+    # run on continuously across a halt, so "changed" still means "crossed". Only the
+    # clock the crossing is PUBLISHED on has to be the current one.
     if timestamp1 and timestamp1 != previous1:
-        publish_crossing(car_id, 1, timestamp1, arrival)
+        publish_crossing(car_id, 1, timestamp1)
     if timestamp2 and timestamp2 != previous2:
-        publish_crossing(car_id, 2, timestamp2, arrival)
+        publish_crossing(car_id, 2, timestamp2)
 
 
-def command_payload(command: int) -> bytes:
+# At most one layer1_clock sample per this many seconds. The measured Throttle cadence
+# is one notification per ~300ms (3.3/s, HW-12 on real hardware 2026-09-20), so on this
+# powerbase nothing is ever actually dropped — this only bounds a future firmware that
+# notifies faster.
+#
+# ⚠️ Deliberately a rate limit, NOT the "buffer a 100ms window and publish its
+# least-delayed sample" the plan describes. Buffering would hold every sample back by up
+# to a window before lapdata could stamp its arrival, which makes every sample LATER —
+# and lateness is the only thing that degrades the anchor. Publishing promptly and
+# dropping the excess is strictly better for the one job this has.
+HEARTBEAT_MIN_INTERVAL_S = 0.1
+_last_heartbeat_at: float | None = None
+
+
+def publish_clock_sample(device_ticks: int):
+    """Publish a bare reading of the powerbase's counter, for lapdata to pair with its
+    own arrival time.
+
+    This is what makes lap 1 accurate. Crossings anchor the clock too, but a car has to
+    cross before they do — and lap 1 is timed from lights-out, which happens before any
+    car has crossed anything. Throttle notifications arrive continuously, cars moving or
+    not, so by the time the lights go out the anchor has long since converged.
+
+    ⚠️ Published on the SLOT clock, because HW-12 measured throttleTimestamp to be a live
+    reading of that same clock (same_clock, live_at_rest, the two anchors agreeing to
+    148ms over 10 crossings). If a later powerbase or firmware ever keeps throttle on a
+    clock of its own, these samples must carry their own clock id instead — a heartbeat
+    from a different clock with a smaller offset would silently drag lapdata's anchor
+    down, and a running minimum cannot notice that.
+    """
+    global _last_heartbeat_at
+    now = time.monotonic()
+    if _last_heartbeat_at is not None and now - _last_heartbeat_at < HEARTBEAT_MIN_INTERVAL_S:
+        return
+    _last_heartbeat_at = now
+    mqtt_client.publish(MQTT_CLOCK_TOPIC, payload=json.dumps(
+        {"clock": _clock, "counter_ms": counter_ms(device_ticks)}))
+
+
+def handle_throttle_notification(_sender, data: bytearray):
+    """Throttle notifications are used ONLY as a clock heartbeat here. The throttle
+    positions themselves are decoded and discarded — they belong to the fuel and
+    jump-start features, which are not implemented (see CLAUDE.md)."""
+    decoded = decode_throttle(data)
+    if decoded is None:
+        return
+    publish_clock_sample(decoded[0])
+
+
+def command_payload(command: int, power: int = FULL_POWER) -> bytes:
     """The 20-byte Command write: byte 0 is the powerbase state, bytes 1-6 the per-car
-    power multiplier at FULL_POWER (not padding — see FULL_POWER), and rumble/brake/KERS
-    (bytes 7-19) are genuinely unused. Shared with hardware_check.py."""
-    return bytes([command]) + bytes([FULL_POWER] * 6) + bytes(13)
+    power multiplier (not padding — see FULL_POWER), and rumble/brake/KERS (bytes 7-19)
+    are genuinely unused. Shared with hardware_check.py, which only ever wants full
+    power, hence the default."""
+    return bytes([command]) + bytes([power] * 6) + bytes(13)
 
 
 def _note_command_applied(command: int):
-    """Track whether the powerbase's timestamps are halted, and throw the clock anchor
-    away when a write restarts them — see _timestamps_halted. Runs on bleak's loop, the
-    same thread as handle_slot_notification(), so it can't interleave with a crossing."""
-    global _timestamps_halted, _clock_offset
-    if command in _TIMESTAMP_HALTING_COMMANDS:
+    """Start a new clock when our own write breaks the timestamps' continuity — at the
+    halt AND again at the restart. Runs on bleak's loop, the same thread as
+    handle_slot_notification(), so it can't interleave with a crossing.
+
+    ⚠️ In normal operation nothing here fires after the connect-time write: a yellow flag
+    or a pause sends CARS_STOPPED, which is command 3 at a zero multiplier and does not
+    touch the counter (see TRACK_RACING/CARS_STOPPED). This is the safety net for a
+    halting command reaching the powerbase some other way.
+
+    Both ends matter, for different reasons. At the **restart**: a halt of D seconds
+    leaves the counter D behind real time forever after, so counters either side of it
+    are D apart in a way no subtraction can see. At the **halt**: the counter is frozen,
+    so heartbeat samples during the halt would keep reporting the same value at later
+    and later arrival times — on a fresh clock those are harmless, but on the pre-halt
+    clock they would corrupt the anchor that pre-halt laps were timed on.
+
+    Only on a transition. Re-sending POWER_ON_RACING while already racing (which
+    handle_race_state does on several transitions) must not burn a clock: the counter
+    never stopped, so nothing is discontinuous.
+    """
+    global _timestamps_halted
+    if command in _TIMESTAMP_BREAKING_COMMANDS:
+        if not _timestamps_halted:
+            _new_clock(f"command {command} halted or zeroed the powerbase timestamps")
         _timestamps_halted = True
     elif _timestamps_halted:
-        logger.info("Powerbase timestamps restarting after a halt — re-anchoring the clock offset")
-        _clock_offset = None
+        _new_clock(f"command {command} restarted the powerbase timestamps after a halt")
         _timestamps_halted = False
 
 
@@ -307,15 +416,15 @@ def _schedule_power_retry():
 
 async def _retry_power_if_due():
     """Called once a second from run()'s connected loop. Retries with the power state
-    the race calls for NOW, never the command that failed: by the time the retry runs
-    that may be stale, and a retried POWER_ON_TIMER_HALT landing after a resume would
-    cut power on a running race."""
+    the race calls for NOW, never the state that failed: by the time the retry runs that
+    may be stale, and a retried CARS_STOPPED landing after a resume would hold the cars
+    on a running race."""
     if _power_retry_at is None or time.monotonic() < _power_retry_at:
         return
     await _write_command_async(_command_for_race_state(_last_seen_race_state))
 
 
-async def _write_command_async(command: int):
+async def _write_command_async(state: PowerState):
     """Never raises. The Command write is an optional extra on top of this container's
     real job (publishing car_timestamp), so a powerbase that rejects it — no such
     characteristic on ARC One, GATT permission error, bad length — must not be able to
@@ -323,21 +432,22 @@ async def _write_command_async(command: int):
     fire-and-forget send_command() path can't lose an exception in a dropped future."""
     global _power_retry_at, _power_retry_delay
     if not (_bleak_client and _bleak_client.is_connected):
-        logger.warning(f"Cannot write command {command}: BLE not connected")
+        logger.warning(f"Cannot write command {state.command}: BLE not connected")
         return
     try:
-        await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID, command_payload(command))
+        await _bleak_client.write_gatt_char(COMMAND_CHARACTERISTIC_UUID,
+                                            command_payload(*state))
     except Exception as e:
-        logger.error(f"Command characteristic write ({command}) failed: {e}")
+        logger.error(f"Command characteristic write ({state.command}) failed: {e}")
         _schedule_power_retry()
         return
-    _note_command_applied(command)
+    _note_command_applied(state.command)
     _power_retry_at = None
     _power_retry_delay = POWER_RETRY_INITIAL_DELAY
-    logger.info(f"Command characteristic <- {command}")
+    logger.info(f"Command characteristic <- {state.command} at power 0x{state.power:02x}")
 
 
-def send_command(command: int):
+def send_command(state: PowerState):
     """Thread-safe entry point for scheduling a Command characteristic write from
     outside bleak's asyncio loop (e.g. paho's on_message thread)."""
     # Read the global ONCE into a local. This runs on paho's thread while run()'s
@@ -346,24 +456,24 @@ def send_command(command: int):
     # inside asyncio, plus a never-awaited coroutine.
     loop = _ble_loop
     if loop is None:
-        logger.warning(f"Cannot write command {command}: BLE not connected")
+        logger.warning(f"Cannot write command {state.command}: BLE not connected")
         return
-    asyncio.run_coroutine_threadsafe(_write_command_async(command), loop)
+    asyncio.run_coroutine_threadsafe(_write_command_async(state), loop)
 
 
 def handle_race_control(data: dict):
     """Translate a race_control command into a Command characteristic write.
 
-    Most transitions map to POWER_ON_RACING — Layer 1 stays dumb and lapdata's race
+    Most transitions map to TRACK_RACING — Layer 1 stays dumb and lapdata's race
     manager is the sole authority on what counts as a real lap, so this only needs to
     keep the powerbase powered and ticking, matching what GPIO always did (it has no
     ability to cut power at all). 'yellow' also keeps full power: the grace period
     (lapdata's race manager, see race_manager.yellow()) lets cars keep racing at
-    speed, and lapdata's own timer transitions Yellow -> Paused when the grace
-    expires — that transition is never announced over race_control, only race_state,
-    so the actual power cut happens in handle_race_state() below. 'pause' is the
-    immediate, no-grace stop and cuts power directly here. Differentiating further
-    states (POWER_ON_RACE_TRIGGER, a limp-mode power multiplier) is future work.
+    speed — and their laps keep counting — while lapdata's own timer transitions
+    Yellow -> Paused when the grace expires. That transition is never announced over
+    race_control, only race_state, so the actual power cut happens in
+    handle_race_state() below. 'pause' is the immediate, no-grace stop and stops the
+    cars directly here. A limp-mode multiplier between the two is future work.
 
     Note 'arm' fires several seconds before the actual lights-out "go" (lapdata
     runs the start-light countdown internally, with no race_control message at the
@@ -372,9 +482,9 @@ def handle_race_control(data: dict):
     """
     command = data.get('command')
     if command == 'pause':
-        send_command(POWER_ON_TIMER_HALT)
+        send_command(CARS_STOPPED)
     elif command in ('prepare', 'arm', 'start', 'yellow', 'resume', 'end'):
-        send_command(POWER_ON_RACING)
+        send_command(TRACK_RACING)
     elif command not in ('status', 'reload_lineup'):
         logger.warning(f"Unknown race_control command: {command}")
 
@@ -385,20 +495,21 @@ def handle_race_control(data: dict):
 _last_seen_race_state: str | None = None
 
 # race_state.state -> the Command write it should produce, for states that need one.
-# Paused is the one state that actually cuts power (a yellow-flag grace expiry, or an
-# immediate manual pause, both land here) — Running and Yellow keep full power.
+# Paused is the one state that stops the cars (a yellow-flag grace expiry, or an
+# immediate manual pause, both land here) — Running and Yellow race at full power, and
+# laps count in both.
 _POWER_STATE_FOR_RACE_STATE = {
-    'Running': POWER_ON_RACING,
-    'Yellow': POWER_ON_RACING,
-    'Paused': POWER_ON_TIMER_HALT,
+    'Running': TRACK_RACING,
+    'Yellow': TRACK_RACING,
+    'Paused': CARS_STOPPED,
 }
 
 
-def _command_for_race_state(state: str | None) -> int:
+def _command_for_race_state(state: str | None) -> PowerState:
     """The power state the powerbase should be in for a race_state. Anything not in the
     table — no race, staged, armed, finished, or not yet heard from lapdata — is full
     power, matching GPIO, which can never cut it."""
-    return _POWER_STATE_FOR_RACE_STATE.get(state, POWER_ON_RACING)
+    return _POWER_STATE_FOR_RACE_STATE.get(state, TRACK_RACING)
 
 
 def handle_race_state(data: dict):
@@ -412,9 +523,9 @@ def handle_race_state(data: dict):
     here — run() makes up for it by writing _command_for_race_state() on every connect."""
     global _last_seen_race_state
     state = data.get('state')
-    command = _POWER_STATE_FOR_RACE_STATE.get(state)
-    if command is not None and state != _last_seen_race_state:
-        send_command(command)
+    power = _POWER_STATE_FOR_RACE_STATE.get(state)
+    if power is not None and state != _last_seen_race_state:
+        send_command(power)
     _last_seen_race_state = state
 
 
@@ -470,8 +581,27 @@ async def find_device_address() -> str:
     return device.address
 
 
+async def _subscribe_clock_heartbeat(client):
+    """Subscribe to Throttle purely as a clock heartbeat (plan A). Never raises: a
+    powerbase without this characteristic (or one that refuses the subscription) must
+    still count laps, exactly as it does with BLE_CLOCK_HEARTBEAT=none. The cost of
+    losing it is a less accurate lap 1, not a broken race."""
+    if clock_heartbeat != 'throttle':
+        logger.info(f"Clock heartbeat disabled (BLE_CLOCK_HEARTBEAT={clock_heartbeat!r}) — "
+                    f"lap 1 will be anchored from crossings alone.")
+        return
+    try:
+        await client.start_notify(THROTTLE_CHARACTERISTIC_UUID, handle_throttle_notification)
+    except Exception as e:
+        logger.error(f"Could not subscribe to the Throttle characteristic: {e}. Laps will "
+                     f"still be counted; lap 1 falls back to anchoring from crossings.")
+        return
+    logger.info("Subscribed to throttle notifications as a clock heartbeat.")
+
+
 async def run():
-    global _bleak_client, _ble_loop, _clock_offset, _timestamps_halted, _power_retry_at, _power_retry_delay
+    global _bleak_client, _ble_loop, _timestamps_halted, _power_retry_at, _power_retry_delay
+    global _last_heartbeat_at
     while True:
         try:
             address = await find_device_address()
@@ -480,14 +610,17 @@ async def run():
                 logger.info("Connected to Scalextric ARC powerbase.")
                 # Drop every car back to "not yet seeded" — values from before this
                 # connection can't be compared against what the powerbase reports now.
-                # Same for the clock anchor: the powerbase may have been power-cycled
-                # while we were away, which resets its timer to zero. Or it may still
-                # be halted from before we dropped, so treat its timestamps as frozen
-                # until our first write restarts them.
+                # And start a new clock: the powerbase may have been power-cycled while
+                # we were away (which zeroes its timer), or halted, or simply carried on
+                # — we can't tell, and "might have broken continuity" is exactly what a
+                # new clock is for. It may also still be halted from before we dropped,
+                # so treat its timestamps as frozen until our first write restarts them.
                 for i in range(len(_last_start_finish)):
                     _last_start_finish[i] = [None, None]
-                _clock_offset = None
+                    _baseline_clock[i] = None
+                _new_clock('connected to the powerbase')
                 _timestamps_halted = True
+                _last_heartbeat_at = None
                 # A retry left over from the last connection is superseded by the
                 # connect-time write below.
                 _power_retry_at = None
@@ -495,6 +628,7 @@ async def run():
 
                 await client.start_notify(SLOT_CHARACTERISTIC_UUID, handle_slot_notification)
                 logger.info("Subscribed to slot notifications — waiting for crossings.")
+                await _subscribe_clock_heartbeat(client)
 
                 # Publishing race_control writes is only meaningful once connected —
                 # exposing the client/loop here is what lets send_command() (called
@@ -502,8 +636,8 @@ async def run():
                 # run_coroutine_threadsafe.
                 _bleak_client = client
                 _ble_loop = asyncio.get_running_loop()
-                # Match the race, not a blanket POWER_ON_RACING: reconnecting while the
-                # race is Paused must not hand marshals on the track a live circuit.
+                # Match the race, not a blanket TRACK_RACING: reconnecting while the
+                # race is Paused must not set cars moving with marshals on the track.
                 # Read the state only after _ble_loop is set, so a race_state edge
                 # arriving from here on is written by handle_race_state() instead.
                 await _write_command_async(_command_for_race_state(_last_seen_race_state))

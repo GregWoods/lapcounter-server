@@ -5,6 +5,9 @@ container's deps live in its image), so they are stubbed before import. The modu
 uses them for I/O, which sits behind an `if __name__ == '__main__'` guard.
 """
 import asyncio
+import importlib
+import json
+import re
 import struct
 import sys
 import types
@@ -33,17 +36,17 @@ import ble_to_timestamps as ble  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch):
-    """Each test starts disconnected: no seeded cars, no clock anchor."""
+    """Each test starts disconnected: no seeded cars, a clock of its own."""
     monkeypatch.setattr(ble, '_last_start_finish', [[None, None] for _ in range(6)])
-    monkeypatch.setattr(ble, '_clock_offset', None)
-    monkeypatch.setattr(ble, '_step_run_since', None)
-    monkeypatch.setattr(ble, '_step_run_min', None)
+    monkeypatch.setattr(ble, '_baseline_clock', [None] * 6)
     monkeypatch.setattr(ble, '_timestamps_halted', True)
+    monkeypatch.setattr(ble, '_last_heartbeat_at', None)
     monkeypatch.setattr(ble, '_power_retry_at', None)
     monkeypatch.setattr(ble, '_power_retry_delay', ble.POWER_RETRY_INITIAL_DELAY)
     published = []
-    monkeypatch.setattr(ble, 'mqtt_client',
-                        types.SimpleNamespace(publish=lambda topic, payload: published.append(payload)))
+    monkeypatch.setattr(ble, 'mqtt_client', types.SimpleNamespace(
+        publish=lambda topic, payload: published.append((topic, json.loads(payload)))))
+    ble._new_clock('test setup')
     return published
 
 
@@ -52,14 +55,31 @@ def packet(car, t1=0, t2=0):
     return bytearray(bytes([0, car]) + struct.pack('<II', t1, t2) + bytes(8))
 
 
+def throttle_packet(timestamp_ticks, throttles=(0,) * 6):
+    """A 20-byte Throttle notification: seq, six throttle bytes, uint32 throttleTimestamp,
+    then isDigital and firmware versions, which this project never reads."""
+    return bytearray(bytes([0]) + bytes(throttles)
+                     + struct.pack('<I', timestamp_ticks) + bytes(9))
+
+
+def _of(published, topic):
+    return [p for t, p in published if t == topic]
+
+
 def crossings(published):
-    import json
-    return [(json.loads(p)['car'], json.loads(p)['lane']) for p in published]
+    return [(p['car'], p['lane']) for p in _of(published, ble.MQTT_TIMESTAMP_TOPIC)]
 
 
-def stamps(published):
-    import json
-    return [json.loads(p)['timestamp'] / 1e9 for p in published]
+def counters(published):
+    return [p['counter_ms'] for p in _of(published, ble.MQTT_TIMESTAMP_TOPIC)]
+
+
+def clocks(published):
+    return [p['clock'] for p in _of(published, ble.MQTT_TIMESTAMP_TOPIC)]
+
+
+def heartbeats(published):
+    return _of(published, ble.MQTT_CLOCK_TOPIC)
 
 
 def ticks(seconds):
@@ -126,188 +146,247 @@ def test_decode_throttle_short_packet():
     assert ble.decode_throttle(bytearray(10)) is None
 
 
-# ------------------------------------------------------- device clock anchoring
+# ---------------------------------------------------- the counter/clock contract
 
-def test_slot_timestamps_are_10ms_ticks(fresh_state, monkeypatch):
+def test_crossing_carries_the_raw_counter_and_the_clock(fresh_state):
+    """No conversion to anyone's wall clock: the powerbase's own number, plus the clock
+    it is meaningful on. lapdata subtracts two of these to get a lap time."""
+    ble.handle_slot_notification(None, packet(5, t1=0))           # seed
+    ble.handle_slot_notification(None, packet(5, t1=1_366))       # device 13.66s
+
+    assert counters(fresh_state) == [13_660]
+    assert clocks(fresh_state) == [ble._clock]
+
+
+def test_counter_is_10ms_ticks_not_milliseconds(fresh_state):
     """The protocol doc says ms; a real ARC Pro counts 10ms ticks (hardware run,
-    2026-09-18). A 3.66s lap arrives as 366, and must publish as 3.66s, not 0.366s,
-    which lapdata's MINIMUM_LAP_TIME would silently drop."""
-    clock = iter([1000.0, 1000.0, 1003.66])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
-    ble.handle_slot_notification(None, packet(5, t1=0))       # seed
-    ble.handle_slot_notification(None, packet(5, t1=1_000))   # 10.00s on the device
-    ble.handle_slot_notification(None, packet(5, t1=1_366))   # 13.66s
-    t1, t2 = stamps(fresh_state)
-    assert t2 - t1 == pytest.approx(3.66, abs=1e-6)
+    2026-09-18). Read as ms, every lap came out 10x short and fell under lapdata's
+    MINIMUM_LAP_TIME — i.e. no laps at all."""
+    ble.handle_slot_notification(None, packet(5, t1=0))
+    ble.handle_slot_notification(None, packet(5, t1=1_000))       # 10.00s on the device
+    ble.handle_slot_notification(None, packet(5, t1=1_366))       # 13.66s
+
+    a, b = counters(fresh_state)
+    assert (b - a) / 1000 == pytest.approx(3.66, abs=1e-9)
 
 
-
-def test_lap_delta_comes_from_the_device_not_arrival(fresh_state, monkeypatch):
-    """The whole point: round-robin reporting jitter must not reach lap times.
-
-    Two crossings exactly 5.000s apart on the powerbase clock, reported with wildly
-    different delays. The published stamps must still be 5.000s apart.
-    """
-    clock = iter([1000.0, 1000.2, 1005.9])   # arrival times: 200ms then 900ms late
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
-
-    ble.handle_slot_notification(None, packet(1, t1=0))          # seed
-    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))     # crossing at device 10.000s
-    ble.handle_slot_notification(None, packet(1, t1=ticks(15)))     # crossing at device 15.000s
-
-    t1, t2 = stamps(fresh_state)
-    assert t2 - t1 == pytest.approx(5.0, abs=1e-6)
+def test_clock_ids_are_never_reused_within_a_process(fresh_state):
+    seen = {ble._new_clock('test') for _ in range(50)}
+    assert len(seen) == 50
 
 
-def test_anchor_converges_on_the_least_delayed_sample(fresh_state, monkeypatch):
-    clock = iter([1000.0, 1010.5, 1020.1])   # 500ms late, then only 100ms late
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+def test_clock_ids_differ_between_processes():
+    """A restarted ble container must not publish an id the previous process used, or
+    lapdata would compare its counters against the dead process's. Reloading the module
+    re-runs the secrets.token_hex() at import, which is exactly what a restart does."""
+    before = ble._PROCESS_ID
+    try:
+        importlib.reload(ble)
+        assert ble._PROCESS_ID != before
+        assert re.fullmatch(r'ble:[0-9a-f]{6}:\d+', ble._clock)
+    finally:
+        importlib.reload(ble)
 
+
+# --- A new clock on every event that breaks the counter ---
+
+def test_a_backwards_value_starts_a_new_clock(fresh_state):
+    """Commands 0/1 and a power cycle zero the powerbase timers. Counters either side of
+    that can't be subtracted, so they must not share a clock."""
     ble.handle_slot_notification(None, packet(1, t1=0))
     ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
-    assert ble._clock_offset == pytest.approx(1000.5)
-    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))
-    assert ble._clock_offset == pytest.approx(1000.1)
+    before = ble._clock
+
+    ble.handle_slot_notification(None, packet(1, t1=ticks(0.1)))   # went backwards
+    assert ble._clock != before
+    assert clocks(fresh_state) == [before, ble._clock]
 
 
-def test_anchor_never_drifts_upward(fresh_state, monkeypatch):
-    """A later, more-delayed sample must not push the anchor back out."""
-    clock = iter([1000.0, 1010.1, 1020.9])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+def test_a_reset_starts_exactly_one_clock_across_all_six_cars(fresh_state):
+    """A reset zeroes all six cars, and their zeroed packets arrive one at a time over
+    the next rotation. Without the per-car baseline clock, each would read as another
+    backwards jump: six clocks for one reset, and every lap spanning any of them
+    downgraded from an exact counter subtraction to an anchored one."""
+    for car in range(1, 7):
+        ble.handle_slot_notification(None, packet(car, t1=ticks(10)))   # seed
+    before = ble._clock
 
-    ble.handle_slot_notification(None, packet(1, t1=0))
-    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
-    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))
-    assert ble._clock_offset == pytest.approx(1000.1)
+    for car in range(1, 7):
+        ble.handle_slot_notification(None, packet(car, t1=0))           # all zeroed
 
-
-def test_forward_clock_step_reanchors_once_sustained(fresh_state, monkeypatch):
-    """Our clock jumps forward an hour (NTP on the Pi; in dev, the host waking from sleep
-    while the simulator's monotonic clock stood still). Every sample is now 3600s above
-    the anchor, which a running minimum never follows. Once that has held for
-    CLOCK_STEP_CONFIRM_S, re-anchor to the least-delayed sample of the run."""
-    clock = iter([1000.0, 1010.0, 4620.0, 4623.2, 4625.1])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
-
-    ble.handle_slot_notification(None, packet(1, t1=0))           # seed
-    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
-    assert ble._clock_offset == pytest.approx(1000.0)
-
-    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))      # clock stepped +3600s
-    ble.handle_slot_notification(None, packet(1, t1=ticks(23)))      # 3.2s into the run
-    assert ble._clock_offset == pytest.approx(1000.0)             # not confirmed yet
-
-    ble.handle_slot_notification(None, packet(1, t1=ticks(25)))      # 5.1s into the run
-    assert ble._clock_offset == pytest.approx(4600.0)
-    assert stamps(fresh_state)[-1] == pytest.approx(4625.0, abs=0.01)
+    assert ble._clock != before
+    assert int(ble._clock.rsplit(':', 1)[1]) == int(before.rsplit(':', 1)[1]) + 1
 
 
-def test_a_delayed_burst_does_not_move_the_anchor(fresh_state, monkeypatch):
-    """A BLE stall delivers a few crossings seconds late, then prompt ones again. Any
-    prompt sample ends the run, so two late samples 17s apart never add up to a step."""
-    clock = iter([1000.0, 1000.0, 1010.0, 1026.0, 1026.2, 1043.0])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+def test_a_crossing_after_a_reset_publishes_on_the_new_clock(fresh_state):
+    """The baseline is still compared across the reset — the value changed, so the car
+    really did cross — but the crossing belongs to the new clock."""
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))    # seed
+    ble.handle_slot_notification(None, packet(1, t1=0))            # reset, no crossing
+    new_clock = ble._clock
+    ble.handle_slot_notification(None, packet(1, t1=ticks(3)))     # first lap after reset
 
-    ble.handle_slot_notification(None, packet(1, t1=0))           # seed car 1
-    ble.handle_slot_notification(None, packet(2, t1=0))           # seed car 2
-    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))      # anchor 1000.0
-    ble.handle_slot_notification(None, packet(1, t1=ticks(20)))      # 6s late
-    ble.handle_slot_notification(None, packet(2, t1=ticks(26)))      # 0.2s late: ends the run
-    ble.handle_slot_notification(None, packet(1, t1=ticks(37)))      # 6s late again, 17s on
-
-    assert ble._clock_offset == pytest.approx(1000.0)
+    assert crossings(fresh_state) == [(1, 1)]
+    assert clocks(fresh_state) == [new_clock]
+    assert counters(fresh_state) == [3_000]
 
 
-def test_powerbase_timer_reset_reanchors(fresh_state, monkeypatch):
-    """Commands 0/1 zero the powerbase timers; a stale anchor would then date every
-    crossing to the distant past."""
-    clock = iter([1000.0, 1010.0, 1100.0, 1105.0])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
+def test_a_halting_write_starts_a_new_clock(fresh_state):
+    """⚠️ The easy one to miss: a halting command freezes the counter WITHOUT moving it
+    backwards, so the backwards-detection can never catch it. A D-second halt leaves the
+    counter D behind real time forever.
 
-    ble.handle_slot_notification(None, packet(1, t1=0))
-    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
-    assert ble._clock_offset == pytest.approx(1000.0)
-
-    ble.handle_slot_notification(None, packet(1, t1=ticks(0.1)))     # timer went backwards
-    ble.handle_slot_notification(None, packet(1, t1=ticks(5.1)))
-    published = stamps(fresh_state)
-    assert published[-1] == pytest.approx(1105.0, abs=0.01)   # re-anchored to now
-
-
-def test_power_restored_after_a_halt_reanchors_the_clock(fresh_state, monkeypatch):
-    """POWER_ON_TIMER_HALT freezes the powerbase clock. Across a 10s halt the old anchor
-    is 10s stale, and a running minimum never corrects it upwards on its own."""
-    monkeypatch.setattr(ble, '_timestamps_halted', False)
-    clock = iter([1000.0, 1010.0, 1025.05])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
-
-    ble.handle_slot_notification(None, packet(1, t1=0))           # seed
-    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))      # crossing, wall 1010
-    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)            # halt at device 12s...
-    ble._note_command_applied(ble.POWER_ON_RACING)                # ...resumed 10s later
-    ble.handle_slot_notification(None, packet(1, t1=ticks(15)))      # 3s after resume, wall 1025
-
-    published = stamps(fresh_state)
-    assert published[-1] == pytest.approx(1025.05, abs=0.01)      # not 1015: 10s early
-
-
-def test_halt_alone_keeps_the_anchor(fresh_state):
-    """Crossings reported mid-halt carry the frozen clock, so they only ever sample a
-    larger offset — the pre-halt anchor stays the right one until timestamps restart."""
+    ble no longer sends one — a yellow flag stops the cars with CARS_STOPPED, which leaves
+    the counter running — but the safety net has to work if one arrives another way."""
     ble._timestamps_halted = False
-    ble._clock_offset = 1000.0
+    before = ble._clock
     ble._note_command_applied(ble.POWER_ON_TIMER_HALT)
-    assert ble._clock_offset == 1000.0
+    assert ble._clock != before
 
 
-def test_repeated_restart_writes_reanchor_only_once(fresh_state):
-    """Resume produces two POWER_ON_RACING writes (race_control and race_state). The
-    second must not throw away an anchor rebuilt from real post-resume crossings."""
+def test_a_restarting_write_starts_a_new_clock(fresh_state):
+    ble._timestamps_halted = True
+    before = ble._clock
     ble._note_command_applied(ble.POWER_ON_RACING)
-    assert ble._clock_offset is None
-    ble._clock_offset = 1000.0
+    assert ble._clock != before
+
+
+def test_a_halt_and_resume_starts_two_clocks(fresh_state):
+    """Both ends matter. At the halt, so heartbeat samples reported during it (the
+    counter frozen, arrivals advancing) land on a throwaway clock instead of corrupting
+    the anchor that pre-halt laps were timed on. At the resume, for the offset."""
+    ble._timestamps_halted = False
+    start = ble._clock
+    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)
+    halted = ble._clock
     ble._note_command_applied(ble.POWER_ON_RACING)
-    assert ble._clock_offset == 1000.0
+    assert len({start, halted, ble._clock}) == 3
 
 
-# ------------------------------------------------------- 32-bit timer wraparound
+def test_repeated_racing_writes_do_not_start_a_clock(fresh_state):
+    """Resume produces two POWER_ON_RACING writes (race_control and race_state), and
+    race_state re-sends on several transitions. The counter never stopped, so nothing is
+    discontinuous — burning a clock would needlessly downgrade the lap in progress."""
+    ble._timestamps_halted = True
+    ble._note_command_applied(ble.POWER_ON_RACING)
+    after_first = ble._clock
+    ble._note_command_applied(ble.POWER_ON_RACING)
+    ble._note_command_applied(ble.POWER_ON_RACING)
+    assert ble._clock == after_first
+
+
+def test_repeated_halting_writes_do_not_start_a_clock(fresh_state):
+    ble._timestamps_halted = False
+    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)
+    after_first = ble._clock
+    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)
+    assert ble._clock == after_first
+
+
+# --- 32-bit timer wraparound ---
 
 UINT32_MAX_TICKS = 2 ** 32 - 1    # ~497 days of 10ms ticks
 
 
-def test_counter_wrap_is_handled_as_a_reset(fresh_state, monkeypatch):
-    """The powerbase's tick counter is uint32, so it wraps ~497 days after its timer
-    was last zeroed — and we never send commands 0/1, so it runs from power-on.
-
-    A wrap looks exactly like a timer reset (value jumps backwards), so the reset path
-    catches it: re-anchor, and stamp this crossing at arrival. The wrap-spanning lap
-    carries arrival-level jitter; every lap after it is clean again.
-    """
-    clock = iter([1000.0, 1010.0, 1020.0, 1025.0])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
-
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(10)))   # seed
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(5)))    # pre-wrap
-    ble.handle_slot_notification(None, packet(1, t1=ticks(0.12)))                      # wrapped
-    ble.handle_slot_notification(None, packet(1, t1=ticks(5.12)))                    # 5s later
-
-    published = stamps(fresh_state)
-    assert published[-2] == pytest.approx(1020.0, abs=0.01)   # stamped at arrival
-    # and normal device-accurate timing resumes immediately afterwards
-    assert published[-1] - published[-2] == pytest.approx(5.0, abs=1e-6)
-
-
-def test_wrap_does_not_emit_a_time_in_the_distant_past(fresh_state, monkeypatch):
-    """Without re-anchoring, a wrapped value against a pre-wrap anchor would date the
-    crossing ~497 days ago. lapdata would reject that outright."""
-    clock = iter([1000.0, 1010.0, 1020.0])
-    monkeypatch.setattr(ble.time, 'time', lambda: next(clock))
-
-    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(10)))
+def test_counter_wrap_starts_a_new_clock(fresh_state):
+    """The tick counter is uint32, so it wraps ~497 days after its timer was last
+    zeroed — and we never send commands 0/1, so it runs from power-on. Handling the wrap
+    is Layer 1's job: it reads as the counter going backwards, which is a new clock, so
+    lapdata never has to know about it."""
+    ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(10)))  # seed
     ble.handle_slot_notification(None, packet(1, t1=UINT32_MAX_TICKS - ticks(5)))
-    ble.handle_slot_notification(None, packet(1, t1=ticks(0.12)))
+    before = ble._clock
 
-    assert stamps(fresh_state)[-1] > 1000.0    # not ~497 days in the past
+    ble.handle_slot_notification(None, packet(1, t1=ticks(0.12)))                   # wrapped
+    assert ble._clock != before
+
+    ble.handle_slot_notification(None, packet(1, t1=ticks(5.12)))
+    post_wrap = counters(fresh_state)[-2:]
+    assert (post_wrap[1] - post_wrap[0]) / 1000 == pytest.approx(5.0, abs=1e-9)
+
+
+# --- The Throttle clock heartbeat (plan A) ---
+
+def test_throttle_notification_publishes_a_clock_sample(fresh_state):
+    """This is what makes lap 1 accurate: crossings anchor the clock too, but a car has
+    to cross first, and lap 1 is timed from lights-out before any car has."""
+    ble.handle_throttle_notification(None, throttle_packet(ticks(12.34)))
+    assert heartbeats(fresh_state) == [{'clock': ble._clock, 'counter_ms': 12_340}]
+
+
+def test_the_heartbeat_uses_the_slot_clock(fresh_state):
+    """HW-12 (2026-09-20) measured throttleTimestamp to be a live reading of the same
+    clock the Slot crossings are stamped on, so samples from it anchor that clock.
+    ⚠️ If a later firmware keeps throttle on its own clock, these must carry their own
+    clock id — a heartbeat from a different clock with a smaller offset would silently
+    drag lapdata's anchor down, and a running minimum cannot notice that."""
+    ble.handle_slot_notification(None, packet(1, t1=0))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(10)))
+    ble.handle_throttle_notification(None, throttle_packet(ticks(10.5)))
+    assert heartbeats(fresh_state)[0]['clock'] == clocks(fresh_state)[0]
+
+
+def test_the_heartbeat_follows_a_clock_change(fresh_state):
+    ble._timestamps_halted = False
+    ble.handle_throttle_notification(None, throttle_packet(ticks(10)))
+    ble._note_command_applied(ble.POWER_ON_TIMER_HALT)
+    ble._last_heartbeat_at = None                      # past the rate limit
+    ble.handle_throttle_notification(None, throttle_packet(ticks(12)))
+
+    first, second = heartbeats(fresh_state)
+    assert first['clock'] != second['clock'] == ble._clock
+
+
+def test_the_heartbeat_is_rate_limited(fresh_state, monkeypatch):
+    """Bounds a future firmware that notifies faster than the measured 3.3/s. Publishing
+    promptly and dropping the excess beats buffering a window: buffering would hold every
+    sample back before lapdata could stamp its arrival, and lateness is the only thing
+    that degrades the anchor."""
+    now = [1000.0]
+    monkeypatch.setattr(ble.time, 'monotonic', lambda: now[0])
+
+    ble.handle_throttle_notification(None, throttle_packet(ticks(10)))
+    now[0] += ble.HEARTBEAT_MIN_INTERVAL_S / 2
+    ble.handle_throttle_notification(None, throttle_packet(ticks(10.05)))
+    assert len(heartbeats(fresh_state)) == 1
+
+    now[0] += ble.HEARTBEAT_MIN_INTERVAL_S
+    ble.handle_throttle_notification(None, throttle_packet(ticks(10.15)))
+    assert len(heartbeats(fresh_state)) == 2
+
+
+def test_a_short_throttle_packet_publishes_nothing(fresh_state):
+    ble.handle_throttle_notification(None, bytearray(10))
+    assert heartbeats(fresh_state) == []
+
+
+def test_the_heartbeat_can_be_turned_off(fresh_state, monkeypatch):
+    """BLE_CLOCK_HEARTBEAT=none falls back to anchoring from crossings alone (plan C)."""
+    monkeypatch.setattr(ble, 'clock_heartbeat', 'none')
+    subscribed = []
+
+    class Client:
+        async def start_notify(self, uuid, _cb):
+            subscribed.append(uuid)
+
+    asyncio.run(ble._subscribe_clock_heartbeat(Client()))
+    assert subscribed == []
+
+
+def test_a_powerbase_that_refuses_throttle_still_counts_laps(fresh_state, monkeypatch):
+    """An ARC One has no such characteristic. Losing the heartbeat costs a less accurate
+    lap 1, and must never tear down the slot subscription that is this container's job."""
+    monkeypatch.setattr(ble, 'clock_heartbeat', 'throttle')
+
+    class Client:
+        async def start_notify(self, _uuid, _cb):
+            raise RuntimeError('Characteristic was not found!')
+
+    asyncio.run(ble._subscribe_clock_heartbeat(Client()))   # must not raise
+
+    ble.handle_slot_notification(None, packet(1, t1=0))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(5)))
+    assert crossings(fresh_state) == [(1, 1)]
 
 
 # ------------------------------------------------------------ device discovery
@@ -335,9 +414,9 @@ def test_name_falls_back_to_advertisement_local_name():
 # ------------------------------------------------------ race lifecycle / power
 
 def sent_commands(monkeypatch):
-    """Patch send_command to record byte-0 command codes instead of writing GATT."""
+    """Patch send_command to record PowerStates instead of writing GATT."""
     sent = []
-    monkeypatch.setattr(ble, 'send_command', lambda command: sent.append(command))
+    monkeypatch.setattr(ble, 'send_command', lambda state: sent.append(state))
     return sent
 
 
@@ -345,14 +424,14 @@ def sent_commands(monkeypatch):
 def test_race_control_keeps_full_power(monkeypatch, command):
     sent = sent_commands(monkeypatch)
     ble.handle_race_control({'command': command})
-    assert sent == [ble.POWER_ON_RACING]
+    assert sent == [ble.TRACK_RACING]
 
 
-def test_race_control_pause_sends_timer_halt(monkeypatch):
+def test_race_control_pause_stops_the_cars(monkeypatch):
     """'pause' is the no-grace immediate stop, distinct from 'yellow'."""
     sent = sent_commands(monkeypatch)
     ble.handle_race_control({'command': 'pause'})
-    assert sent == [ble.POWER_ON_TIMER_HALT]
+    assert sent == [ble.CARS_STOPPED]
 
 
 def test_race_control_status_sends_nothing(monkeypatch):
@@ -361,22 +440,37 @@ def test_race_control_status_sends_nothing(monkeypatch):
     assert sent == []
 
 
-def test_race_state_paused_sends_timer_halt(monkeypatch):
+def test_race_state_paused_stops_the_cars(monkeypatch):
     """The Yellow -> Paused grace-expiry transition is only ever announced via
     race_state (lapdata drives it with an internal timer, not a race_control
     message), so this is the only place that can react to it."""
     monkeypatch.setattr(ble, '_last_seen_race_state', 'Yellow')
     sent = sent_commands(monkeypatch)
     ble.handle_race_state({'state': 'Paused'})
-    assert sent == [ble.POWER_ON_TIMER_HALT]
+    assert sent == [ble.CARS_STOPPED]
     assert ble._last_seen_race_state == 'Paused'
+
+
+def test_stopping_the_cars_leaves_the_counter_running(monkeypatch):
+    """⚠️ The whole reason CARS_STOPPED is a zero multiplier rather than command 4: a
+    stoppage must not break the counter, so the lap spanning a yellow flag stays an exact
+    counter subtraction (one long lap, the stopped time included) instead of going through
+    lapdata's anchor. Both states BEING command 3 is the point, not an accident."""
+    assert ble.CARS_STOPPED.command == ble.POWER_ON_RACING == ble.TRACK_RACING.command
+    assert ble.CARS_STOPPED.command not in ble._TIMESTAMP_BREAKING_COMMANDS
+    assert ble.CARS_STOPPED.power == 0
+
+    ble._timestamps_halted = False
+    before = ble._clock
+    ble._note_command_applied(ble.CARS_STOPPED.command)
+    assert ble._clock == before
 
 
 def test_race_state_yellow_keeps_full_power(monkeypatch):
     monkeypatch.setattr(ble, '_last_seen_race_state', 'Running')
     sent = sent_commands(monkeypatch)
     ble.handle_race_state({'state': 'Yellow'})
-    assert sent == [ble.POWER_ON_RACING]
+    assert sent == [ble.TRACK_RACING]
 
 
 def test_race_state_repeated_same_state_does_not_resend(monkeypatch):
@@ -389,16 +483,16 @@ def test_race_state_repeated_same_state_does_not_resend(monkeypatch):
 
 
 @pytest.mark.parametrize('state, expected', [
-    ('Paused', ble.POWER_ON_TIMER_HALT),
-    ('Yellow', ble.POWER_ON_RACING),
-    ('Running', ble.POWER_ON_RACING),
-    ('Finished', ble.POWER_ON_RACING),
-    ('NotStarted', ble.POWER_ON_RACING),
-    (None, ble.POWER_ON_RACING),
+    ('Paused', ble.CARS_STOPPED),
+    ('Yellow', ble.TRACK_RACING),
+    ('Running', ble.TRACK_RACING),
+    ('Finished', ble.TRACK_RACING),
+    ('NotStarted', ble.TRACK_RACING),
+    (None, ble.TRACK_RACING),
 ])
 def test_connect_time_power_follows_the_race(state, expected):
-    """run() writes this on every BLE connect. Always POWER_ON_RACING would restore
-    power to a Paused race after a reconnect, since the Paused edge was already seen."""
+    """run() writes this on every BLE connect. Always TRACK_RACING would set cars moving
+    on a Paused race after a reconnect, since the Paused edge was already seen."""
     assert ble._command_for_race_state(state) == expected
 
 
@@ -425,7 +519,9 @@ class FakeBleakClient:
     async def write_gatt_char(self, _uuid, payload):
         if self.fail:
             raise RuntimeError('GATT write rejected')
-        self.written.append(payload[0])
+        # Byte 0 alone no longer identifies the write: racing and stopped are both
+        # command 3, told apart only by the multiplier in bytes 1-6.
+        self.written.append(ble.PowerState(payload[0], payload[1]))
 
 
 def test_failed_power_write_is_retried_with_the_current_race_state(monkeypatch):
@@ -434,7 +530,7 @@ def test_failed_power_write_is_retried_with_the_current_race_state(monkeypatch):
     client = FakeBleakClient(fail=True)
     monkeypatch.setattr(ble, '_bleak_client', client)
     monkeypatch.setattr(ble, '_last_seen_race_state', 'Paused')
-    asyncio.run(ble._write_command_async(ble.POWER_ON_TIMER_HALT))
+    asyncio.run(ble._write_command_async(ble.CARS_STOPPED))
     assert ble._power_retry_at is not None
 
     ble._last_seen_race_state = 'Running'     # operator resumed in the meantime
@@ -442,7 +538,7 @@ def test_failed_power_write_is_retried_with_the_current_race_state(monkeypatch):
     ble._power_retry_at = 0.0                 # due now
     asyncio.run(ble._retry_power_if_due())
 
-    assert client.written == [ble.POWER_ON_RACING]
+    assert client.written == [ble.TRACK_RACING]
     assert ble._power_retry_at is None
 
 
@@ -460,7 +556,7 @@ def test_retry_backs_off_to_a_cap(monkeypatch):
     delays = []
     for _ in range(8):
         before = ble.time.monotonic()
-        asyncio.run(ble._write_command_async(ble.POWER_ON_RACING))
+        asyncio.run(ble._write_command_async(ble.TRACK_RACING))
         delays.append(round(ble._power_retry_at - before))
     assert delays == [1, 2, 4, 8, 16, 30, 30, 30]
 
@@ -475,3 +571,12 @@ def test_command_payload_layout():
     assert list(payload[1:7]) == [0x3F] * 6      # full throttle pass-through
     assert payload[1] & 0x80 == 0                # direct-drive override bit clear
     assert list(payload[7:20]) == [0] * 13       # rumble/brake/KERS genuinely unused
+
+
+def test_stopped_payload_zeroes_every_multiplier():
+    """What actually stops the cars under a yellow flag. hardware_check.py wants full
+    power and never passes one, hence the default — so a zero has to be explicit."""
+    payload = ble.command_payload(*ble.CARS_STOPPED)
+    assert payload[0] == 3                       # still racing, so the counter runs on
+    assert list(payload[1:7]) == [0] * 6         # ...but no car can move
+    assert list(ble.command_payload(ble.POWER_ON_RACING)[1:7]) == [0x3F] * 6

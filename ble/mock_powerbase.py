@@ -127,6 +127,7 @@ class SimulatedPowerbase:
         self._device_s = 0.0
         self._last_update = clock()
         self._sequence = 0
+        self._throttle_sequence = 0
         self._next_slot_index = 0
         self._listeners = []
         # Ground truth for tests: (car, lane, clock() at the crossing, device ticks stamped).
@@ -251,6 +252,29 @@ class SimulatedPowerbase:
         self._sequence = (self._sequence + 1) & 0xFF
         return packet
 
+    def next_throttle_packet(self) -> bytes:
+        """The next 20-byte Throttle notification: sequence, six throttle bytes, uint32
+        throttleTimestamp, then isDigital flags and firmware versions, which this project
+        never reads.
+
+        HW-12: throttleTimestamp is filled from the SAME counter as the Slot timestamps,
+        and read live at the moment of the packet — confirmed on real hardware 2026-09-20
+        (same_clock, live_at_rest, the two anchors agreeing to 148ms over 10 crossings).
+        That is what makes it usable as a clock heartbeat, so a simulation that kept it on
+        a separate counter would not exercise the real thing.
+
+        There is no simulated throttle input, so the per-car bytes just report whether the
+        car is moving. Nothing above Layer 1 reads them yet (fuel and jump starts are
+        unimplemented); ble uses this packet only for its timestamp.
+        """
+        self.advance()
+        throttles = [0] * SLOT_IDS
+        for car in self.cars:
+            throttles[car.car_id - 1] = round(MAX_POWER * self.speed(car))
+        packet = struct.pack('<7BI', self._throttle_sequence, *throttles, self.device_ticks)
+        self._throttle_sequence = (self._throttle_sequence + 1) & 0xFF
+        return packet + bytes(9)
+
     def apply_command(self, payload: bytes):
         """A Command characteristic write. Raises ValueError for anything the device
         would reject; mock_bleak turns that into a failed GATT write."""
@@ -265,8 +289,13 @@ class SimulatedPowerbase:
         self.advance()
         multipliers = list(payload[1:7])
         if command == POWER_ON_RACING and not any(m & MAX_POWER for m in multipliers):
-            logger.warning('POWER_ON_RACING with every power multiplier (bytes 1-6) at zero: '
-                           'no car can move. Those bytes are multipliers, not padding.')
+            # Deliberate, as of 2026-09-20: this is how a yellow flag or a pause stops the
+            # cars, precisely because it leaves the timestamps ticking (see
+            # ble_to_timestamps.CARS_STOPPED). Still worth logging — from the payload
+            # alone it is indistinguishable from the mistake of treating bytes 1-6 as
+            # padding, which caps every car at zero output with power nominally on.
+            logger.info('POWER_ON_RACING with every power multiplier (bytes 1-6) at zero: '
+                        'cars held stationary, timestamps still ticking.')
         self.command = command
         self.multipliers = multipliers
         if _COMMANDS[command].zeroes_timestamps:

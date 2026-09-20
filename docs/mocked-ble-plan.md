@@ -3,17 +3,28 @@
 **Status:** steps 1–3 done (2026-09-13): `ble/mock_powerbase.py`, `ble/mock_bleak.py`,
 `ble/mock_ble_to_timestamps.py`, the `mocked-ble` compose profile, and
 `ble/test_mock_powerbase.py` / `ble/test_mock_bleak.py`. Verified live against the dev
-stack: laps reach lapdata, no phantom laps on connect, `pause` cuts power (command 4) and
-`resume` re-anchors, and the double Layer 1 guard fires when `mocked-gpio` also runs.
-Steps 4–5 done the same day: `ble/test_mock_scenarios.py` (halt/resume stamps checked
+stack: laps reach lapdata, no phantom laps on connect, `pause` stops the cars and `resume`
+sets them going again (as of 2026-09-20 that is command 3 at a zero multiplier, so the
+counter never stops and there is nothing to re-anchor), and the double Layer 1 guard fires when `mocked-gpio` also runs.
+Steps 4–5 done the same day: `ble/test_mock_scenarios.py` (stop/resume stamps checked
 against the simulator's ground truth, reconnect while Paused with a power-restoring drop,
-a failed halt retried, a retry writing the current state rather than a stale halt), and
+a failed stop retried, a retry writing the current state rather than a stale stop), and
 CLAUDE.md. Only step 6 remains, after the hardware run.
 
 Decisions: `mocked-ble` **is now the dev default**; `mocked-gpio` sits behind
-`--profile mocked-gpio`, and lapdata's `depends_on` names no Layer 1. Also no throttle
-simulation, no UI badge. `ble/.dockerignore` keeps the mocks, tests and docs out of the
-production image (the dev volume mount supplies them).
+`--profile mocked-gpio`, and lapdata's `depends_on` names no Layer 1. No UI badge.
+`ble/.dockerignore` keeps the mocks, tests and docs out of the production image (the dev
+volume mount supplies them).
+
+⚠️ **Throttle is now simulated after all** (open question 2 below, reversed on
+2026-09-20) — not for fuel, but because the lap-timing redesign uses `throttleTimestamp`
+as a clock heartbeat (plan A, `docs/lap-timing-plan.md`). `next_throttle_packet()` fills
+it from the *same* counter as the Slot timestamps, read live, which is what HW-12
+measured on real hardware; a simulation that kept it on a separate counter would not
+exercise the real mechanism. `mock_bleak` pumps it every 50 ms and can refuse the
+subscription (`Faults.no_throttle_characteristic`) to stand in for an ARC One. The
+per-car throttle bytes are simulated only as "moving or not" — there is no simulated
+trigger input, and nothing reads them yet.
 
 Deviations from the plan below:
 - The Slot round-robin covers all 6 IDs whatever `MOCK_CARS` is (tagged HW-02), so the
@@ -147,14 +158,18 @@ docker compose -f compose.dev.yaml --profile mocked-ble up -d mocked-ble
 ### 6. Tests (`ble/`, run by the root pytest)
 
 - **`test_mock_powerbase.py`**, with a fake clock:
-  - command 4 freezes the clock and stops cars;
+  - command 4 freezes the clock and stops cars (no longer the shipped yellow-flag path,
+    but the device still implements it);
   - command 0 zeroes the timers;
-  - zero multiplier bytes stop cars;
+  - zero multiplier bytes stop cars while the clock keeps ticking — the shipped way to
+    stop them, precisely because it leaves the counter running;
   - packets round-trip through `ble.decode_slot()`.
 - **`test_mock_scenarios.py`**, running the real `ble.run()` against the fakes for a few
   seconds with short laps:
-  - lap deltas stay right across a halt and resume (review item 1, end to end);
-  - a reconnect while `race_state` is `Paused` writes command 4 (review item 2);
+  - lap deltas stay right across a stoppage and resume, with the stopped time in the
+    spanning lap and no clock change at all (review item 1, end to end);
+  - a reconnect while `race_state` is `Paused` re-writes the zero multiplier, leaving the
+    cars stopped (review item 2);
   - an injected write failure is retried with the current state.
 
 ## Order of work
@@ -173,8 +188,11 @@ Roughly one focused session for 1–3, and a second for 4–6.
 1. **Which mock is the dev default?** `mocked-ble` exercises more of the real system and
    is what the Pi runs. Making it the default means putting `mocked-gpio` behind a
    profile and changing lapdata's `depends_on`. Recommended once step 4 passes.
-2. **Throttle characteristic (`0x3B09`)?** Simulating it now would help the future fuel
-   feature. Recommended: not yet, until fuel work starts.
+2. **Throttle characteristic (`0x3B09`)?** ~~Recommended: not yet, until fuel work
+   starts.~~ **Reversed and done, 2026-09-20.** Fuel didn't force it; lap timing did —
+   `throttleTimestamp` is the clock heartbeat that makes lap 1 accurate, so `ble` now
+   subscribes to Throttle in production and the mock has to serve it. See the note at the
+   top.
 3. **UI for the mock's power state?** A dev-only badge in RaceControl showing
    `mock/powerbase`. Recommended: no, `mosquitto_sub` is enough, and a UI subscriber is
    the first step towards layers 2+ knowing about the hardware.

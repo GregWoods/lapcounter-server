@@ -171,13 +171,16 @@ def test_command_1_zeroes_then_ticks_with_cars_stationary(clock):
     assert all(car.laps == 0 and car.start_finish == [0, 0] for car in pb.cars)
 
 
-def test_zero_multiplier_bytes_stop_every_car_and_warn(clock, caplog):
-    """The trap from ble's FULL_POWER: bytes 1-6 are multipliers, not padding."""
+def test_zero_multiplier_bytes_stop_every_car(clock, caplog):
+    """Bytes 1-6 are multipliers, not padding — and as of 2026-09-20 zeroing them is how
+    ble stops the cars for a yellow flag or a pause (CARS_STOPPED), precisely BECAUSE the
+    timestamps keep ticking through it: the lap either side of a stoppage stays an exact
+    counter subtraction, with the stopped time in it."""
     pb = make_powerbase(clock)
     pb.cars[0].remaining_s = 1.0
-    with caplog.at_level(logging.WARNING, logger=mp.__name__):
+    with caplog.at_level(logging.INFO, logger=mp.__name__):
         pb.apply_command(command(mp.POWER_ON_RACING, power=0))
-    assert 'not padding' in caplog.text
+    assert 'cars held stationary' in caplog.text
 
     clock.tick(10.0)
     pb.advance()
