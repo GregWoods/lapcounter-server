@@ -4,6 +4,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict
 
+from lap_clock import ClockAnchors, Crossing, RaceStart, interval_s
+
 logger = logging.getLogger(__name__)
 
 SUSPEND_AFTER = 12.0  # seconds before a driver is considered suspended
@@ -18,7 +20,13 @@ class DriverState:
     laps_completed: int = 0     # real completed laps
     last_lap_time: float = 0.0
     best_lap_time: float = 999.999
-    last_crossing_time: float = 0.0   # time of last real lap crossing (0 = none yet)
+    # The last crossing this driver made, as Layer 1 reported it — None until they
+    # first cross. Held as a Crossing rather than a time so the NEXT lap can be a plain
+    # counter subtraction on Layer 1's own clock, with no clock of ours involved.
+    last_crossing: Optional[Crossing] = None
+    # How last_lap_time was measured ('counter', 'from_go', 'anchored', 'arrival'),
+    # carried through driver_lap as provenance. See lap_clock.
+    last_lap_timing: str = ''
     finished: bool = False
     lap_times: list = field(default_factory=list)  # all real lap times in order
 
@@ -26,15 +34,17 @@ class DriverState:
     def has_started(self) -> bool:
         return self.crossings > 0
 
-    def race_time(self, race_start_time: Optional[float]) -> float:
-        if race_start_time is None or self.last_crossing_time == 0.0:
-            return 0.0
-        return self.last_crossing_time - race_start_time
-
 
 class RaceManager:
 
-    def __init__(self):
+    def __init__(self, anchors: Optional[ClockAnchors] = None):
+        # Injected so this module stays pure and DB-free: the anchors are fed from MQTT
+        # by timestamps_to_lapdata, and tests drive them directly. Defaulted so a
+        # RaceManager is still usable on its own.
+        self.anchors = anchors if anchors is not None else ClockAnchors()
+        # Lights-out on lapdata's monotonic clock, and where that sits on each Layer 1
+        # clock. None until start(). Lap 1 is the only lap timed from it.
+        self.race_start: Optional[RaceStart] = None
         # None until a lineup is loaded, and published as null in race_state. They are
         # identities, not counts: a 0 here is a race that doesn't exist, and every consumer
         # would have to know to treat it as falsy. RaceControl didn't, and rendered
@@ -69,6 +79,7 @@ class RaceManager:
         self.count_first_crossing = count_first_crossing
         self.state = 'NotStarted'
         self.start_lights = 0
+        self.race_start = None
         self.race_start_time = None
         self.race_end_time = None
         self.race_fastest_lap = 999.999
@@ -141,9 +152,18 @@ class RaceManager:
         self.start_lights = 0
         logger.info(f"Race {self.race_id} armed — awaiting lights-out timer")
 
-    def start(self):
+    def start(self, go_local: Optional[float] = None):
+        """Lights out. `go_local` is that instant on lapdata's time.monotonic() clock,
+        taken by the caller *before* it waited for any lock — it is the base every lap 1
+        is timed from, so time spent blocking would land in lap 1.
+
+        race_start_time (wall clock) survives for display, the time-expiry timer and the
+        /races/{id}/start POST. None of those needs to be better than roughly right, and
+        none of them times a lap any more.
+        """
         self.state = 'Running'
         self.start_lights = 0  # lights out
+        self.race_start = RaceStart(local=go_local if go_local is not None else time.monotonic())
         self.race_start_time = time.time()
         if self.race_duration_seconds:
             self.race_end_time = self.race_start_time + self.race_duration_seconds
@@ -152,9 +172,15 @@ class RaceManager:
 
     def yellow(self):
         """Yellow flag: cars keep racing at full power for yellow_grace_seconds (the
-        caller is responsible for scheduling the timer that then calls pause()) —
-        laps stop counting immediately, same as Paused, since on_lap() only counts
-        while state == 'Running'. See CLAUDE.md "Yellow flags: power-based handling"."""
+        caller is responsible for scheduling the timer that then calls pause()).
+
+        ⚠️ Laps KEEP COUNTING through the grace period (Greg, 2026-09-20). The cars are
+        still under power and still racing — that is the whole point of the grace, to let
+        everyone finish the corner and get clear — so a crossing during it is a real lap
+        and counting stops only when the power actually goes (pause()). Treating Yellow
+        like Paused silently threw those laps away.
+
+        See CLAUDE.md "Yellow flags: power-based handling"."""
         self.state = 'Yellow'
         self.yellow_seconds_left = math.ceil(self.yellow_grace_seconds)
         logger.info(f"Race {self.race_id} yellow flag — power cuts in {self.yellow_grace_seconds:.1f}s")
@@ -174,12 +200,27 @@ class RaceManager:
         self.yellow_seconds_left = None
         logger.info(f"Race {self.race_id} ended by control signal")
 
-    def on_lap(self, lane: int, crossing_time: float) -> bool:
+    def race_time(self, driver: DriverState) -> float:
+        """Seconds from lights-out to this driver's last crossing — what positions are
+        sorted on within a lap count, and what the suspended check compares.
+
+        On one clock this ranks cars by their raw counters exactly, so two cars crossing
+        milliseconds apart can't be reordered by which notification we happened to get
+        first."""
+        if self.race_start is None or driver.last_crossing is None:
+            return 0.0
+        return self.race_start.since_go(driver.last_crossing, self.anchors)[0]
+
+    # States in which a crossing is a real lap: the cars are under power and racing.
+    # Yellow is in here because its grace period keeps full power on — see yellow().
+    COUNTING_STATES = ('Running', 'Yellow')
+
+    def on_lap(self, lane: int, crossing: Crossing) -> bool:
         """
         Process a lap crossing. Returns True if race state was updated (triggers publish).
-        Ignores crossings when not Running, or from lanes not in this race.
+        Ignores crossings while the cars aren't racing, or from lanes not in this race.
         """
-        if self.state != 'Running':
+        if self.state not in self.COUNTING_STATES:
             return False
 
         driver = self.drivers.get(lane)
@@ -192,19 +233,39 @@ class RaceManager:
         # This covers the case where the grid is just before the S/F line and the
         # car crosses almost immediately after lights out — not a real lap.
         if not self.count_first_crossing and driver.crossings == 1:
-            driver.last_crossing_time = crossing_time  # preserves crossing order for position sort
+            driver.last_crossing = crossing  # preserves crossing order for position sort
             logger.info(f"Lane {lane}: start-line crossing discarded")
             return True
 
-        # Real lap — lap 1 is always timed from race_start_time (lights out);
-        # subsequent laps from the previous real crossing.
-        if driver.laps_completed == 0:
-            lap_time = crossing_time - self.race_start_time
+        # ⚠️ Lap 1 is timed from LIGHTS-OUT in every race, whatever the start grid
+        # (Greg, 2026-09-20). The grid only decides which crossing *ends* lap 1: with the
+        # grid in front of the line it is the first crossing, and with the grid behind it
+        # the first crossing is a part-lap that is discarded, so lap 1 runs from
+        # lights-out to the second. Either way the clock starts when the lights go out —
+        # a driver's race begins there, not when they happen to reach the line.
+        #
+        # So lap 1 is the one lap in every race that has to cross from Layer 1's clock
+        # onto ours, which is what layer1_clock (the heartbeat) exists for. Lap 2 onwards
+        # is the interval from the previous counted crossing: a plain counter subtraction,
+        # exact and anchor-free.
+        if driver.laps_completed == 0 and self.race_start is not None:
+            lap_time, timing = self.race_start.since_go(crossing, self.anchors)
+        elif driver.last_crossing is not None:
+            lap_time, timing = interval_s(driver.last_crossing, crossing, self.anchors)
         else:
-            lap_time = crossing_time - driver.last_crossing_time
+            # Running with no lights-out recorded and nothing to measure from. Reachable:
+            # resume() sets Running without a start(), so a 'resume' sent to a freshly
+            # started lapdata lands here. Take this crossing as a baseline rather than
+            # inventing an interval — a fabricated 0.0 would win fastest lap outright and
+            # stand for the whole session.
+            driver.last_crossing = crossing
+            logger.error(f"Lane {lane} crossed while Running with no recorded lights-out "
+                         f"(resumed without a start?) — using it as the lap 1 baseline")
+            return True
 
         driver.last_lap_time = lap_time
-        driver.last_crossing_time = crossing_time
+        driver.last_lap_timing = timing
+        driver.last_crossing = crossing
         driver.laps_completed += 1
         driver.lap_times.append(round(lap_time, 3))
 
@@ -244,6 +305,10 @@ class RaceManager:
             return
         if all(d.finished or not d.has_started for d in self.drivers.values()):
             self.state = 'Finished'
+            # Reachable from Yellow, now that laps count through the grace period: the
+            # last driver can take the chequered flag before the power cut. Leaving the
+            # countdown set would publish a Finished race with a stale "Ns" on it.
+            self.yellow_seconds_left = None
             logger.info(f"Race {self.race_id} complete")
 
     def to_dict(self) -> dict:
@@ -253,22 +318,20 @@ class RaceManager:
         return self._to_dict_standard()
 
     def _to_dict_standard(self) -> dict:
-        latest_race_time = max(
-            (d.race_time(self.race_start_time) for d in self.drivers.values()),
-            default=0.0,
-        )
+        race_times = {d.lane: self.race_time(d) for d in self.drivers.values()}
+        latest_race_time = max(race_times.values(), default=0.0)
 
         sorted_drivers = sorted(
             self.drivers.values(),
-            key=lambda d: (-d.laps_completed, not d.has_started, d.race_time(self.race_start_time)),
+            key=lambda d: (-d.laps_completed, not d.has_started, race_times[d.lane]),
         )
 
         driver_list = []
         for position, driver in enumerate(sorted_drivers, start=1):
-            rt = driver.race_time(self.race_start_time)
+            rt = race_times[driver.lane]
             laps_remaining = max(0, self.target_laps - driver.laps_completed)
             suspended = (
-                driver.last_crossing_time > 0
+                driver.last_crossing is not None
                 and not driver.finished
                 and (rt + SUSPEND_AFTER) < latest_race_time
             )
