@@ -105,11 +105,12 @@ export default function RaceControl() {
     // Live values win; fall back to the API snapshot before the first MQTT message.
     const state = raceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
     const sessionType = raceState?.session_type ?? info.sessionType;
-    // ⚠️ `||`, not `??`: race_manager defaults race_number to 0 (race_manager.py), so lapdata
-    // publishes `race_number: 0` whenever no race is loaded — e.g. it started while the session's
-    // queue was empty. `??` passes that 0 straight through, and 0 is falsy, so the title read
-    // "No race" even though the API knew the race number. Race numbers are 1-based, so treating
-    // 0 as "no race" and falling back to the API snapshot is always right.
+    // ⚠️ `||`, not `??`. lapdata now publishes `race_number: null` when no race is loaded, so
+    // `??` would be correct against current lapdata — but an older lapdata image publishes 0
+    // (it used to default to 0), and `??` passes a 0 straight through. 0 is falsy, so the title
+    // rendered "No race" even though the API had already supplied the number. Race numbers are
+    // 1-based, so treating 0 as "no race" can never discard a real one, and this keeps the page
+    // right against a Pi whose lapdata hasn't been redeployed yet.
     const raceNumber = raceState?.race_number || info.raceNumber;
     const raceId = raceState?.race_id ?? info.pendingRaceId;
     const isFastestLap = sessionType === 'FastestLap';

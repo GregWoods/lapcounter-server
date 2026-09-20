@@ -317,7 +317,7 @@ def _schedule_start_sequence():
 def _load_pending(pending: dict, target_laps: int):
     """Load a /races/pending/ payload into the race manager (state becomes NotStarted)."""
     race.load_lineup(
-        pending['race_id'], pending.get('race_number', 0), target_laps,
+        pending['race_id'], pending.get('race_number'), target_laps,
         pending['lane_assignments'], pending.get('count_first_crossing', False),
         session_type=pending.get('session_type', 'Points'),
         race_duration_seconds=pending.get('race_duration_seconds'),

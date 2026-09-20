@@ -25,6 +25,21 @@ def new_race(target_laps=3, count_first_crossing=False, n_drivers=3, session_typ
     return race
 
 
+# --- No race loaded ---
+
+def test_no_race_loaded_publishes_null_identities():
+    """Regression: race_id and race_number must be None, not 0, before a lineup is loaded.
+
+    lapdata publishes race_state whenever asked (the `status` command), including when it
+    started against an empty queue and has no race. A 0 there is a race that doesn't exist,
+    and every consumer has to know to treat it as falsy. RaceControl used `??`, which only
+    falls back on null, so a 0 went through and the title read "No race of 7"."""
+    race = RaceManager()
+    state = race.to_dict()
+    assert state['race_id'] is None
+    assert state['race_number'] is None
+
+
 # --- Discarded first crossing (CLAUDE.md-documented footgun) ---
 
 def test_discarded_first_crossing_not_counted_as_lap():

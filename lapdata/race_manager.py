@@ -35,8 +35,12 @@ class DriverState:
 class RaceManager:
 
     def __init__(self):
-        self.race_id: int = 0
-        self.race_number: int = 0
+        # None until a lineup is loaded, and published as null in race_state. They are
+        # identities, not counts: a 0 here is a race that doesn't exist, and every consumer
+        # would have to know to treat it as falsy. RaceControl didn't, and rendered
+        # "No race of 7" when lapdata started against an empty queue.
+        self.race_id: Optional[int] = None
+        self.race_number: Optional[int] = None
         self.target_laps: int = 0
         self.count_first_crossing: bool = False
         self.state: str = 'NotStarted'
