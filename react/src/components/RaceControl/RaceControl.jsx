@@ -105,7 +105,12 @@ export default function RaceControl() {
     // Live values win; fall back to the API snapshot before the first MQTT message.
     const state = raceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
     const sessionType = raceState?.session_type ?? info.sessionType;
-    const raceNumber = raceState?.race_number ?? info.raceNumber;
+    // ⚠️ `||`, not `??`: race_manager defaults race_number to 0 (race_manager.py), so lapdata
+    // publishes `race_number: 0` whenever no race is loaded — e.g. it started while the session's
+    // queue was empty. `??` passes that 0 straight through, and 0 is falsy, so the title read
+    // "No race" even though the API knew the race number. Race numbers are 1-based, so treating
+    // 0 as "no race" and falling back to the API snapshot is always right.
+    const raceNumber = raceState?.race_number || info.raceNumber;
     const raceId = raceState?.race_id ?? info.pendingRaceId;
     const isFastestLap = sessionType === 'FastestLap';
 
@@ -165,8 +170,11 @@ export default function RaceControl() {
                     {info.sessionNumber != null ? `Session ${info.sessionNumber}` : '—'}
                 </div>
                 <div className="rc-racenum">
-                    {raceNumber ? `Race ${raceNumber}` : 'No race'}
-                    {info.racesTotal ? ` of ${info.racesTotal}` : ''}
+                    {/* "of N" hangs off the race number rather than standing alone, or a missing
+                        number leaves the nonsense "No race of 7" — same rule as LapCounter's Header. */}
+                    {raceNumber
+                        ? `Race ${raceNumber}${info.racesTotal ? ` of ${info.racesTotal}` : ''}`
+                        : 'No race'}
                 </div>
                 <div className={`rc-state rc-state--${(state ?? 'unknown').toLowerCase()}`}>
                     {STATE_LABELS[state] ?? 'Connecting…'}
