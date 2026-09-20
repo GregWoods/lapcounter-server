@@ -246,7 +246,7 @@ refactored.
 - **lapdata:** `_load_pending` passes `allow_jump_starts` through into `race_state`, so whatever
   later enforces it (lapdata's detection, or `ble` if power is held) already has it.
 - **Admin:**
-  - Remove the meeting checkbox and its "· Count first crossing" badge.
+  - Remove the meeting "Start grid" checkbox and its "· First crossing counts as lap 1" badge.
   - Add a session **Start grid** select: *Behind the finish line (the first crossing starts
     lap 1)* / *In front of the finish line (the first crossing is lap 1)*.
   - Add an **Allow jump starts** checkbox, ticked by default, with a hint saying truthfully that

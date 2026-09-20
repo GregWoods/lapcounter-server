@@ -289,6 +289,37 @@
     justify-self: start;
 }
 
+/* A checkbox whose meaning needs a sentence: the tickbox and its wording on one line,
+   with the explanation underneath, still inside the row's second grid column. */
+.admin-form-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* Out-specifies `.admin-form-row label`, which would otherwise grey this one out too. */
+.admin-form-row label.admin-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.admin-form-hint {
+    margin: 0;
+    color: #999;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.admin-form-hint strong {
+    color: #ccc;
+    font-weight: 600;
+}
+
 .admin-form-inline {
     display: flex;
     gap: 8px;

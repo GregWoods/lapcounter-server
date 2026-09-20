@@ -74,8 +74,19 @@ function MeetingForm({ initial, onSave, onCancel }) {
                 <input value={form.venue || ''} onChange={e => set('venue', e.target.value)} placeholder="Optional" />
             </div>
             <div className="admin-form-row">
-                <label>Count first crossing</label>
-                <input type="checkbox" checked={!!form.count_first_crossing} onChange={e => set('count_first_crossing', e.target.checked)} />
+                <label>Start grid</label>
+                <div className="admin-form-choice">
+                    <label className="admin-checkbox">
+                        <input type="checkbox" checked={!!form.count_first_crossing} onChange={e => set('count_first_crossing', e.target.checked)} />
+                        <span>First crossing counts as lap 1</span>
+                    </label>
+                    <p className="admin-form-hint">
+                        Tick when the finish line is <strong>behind</strong> the grid, so cars run almost a
+                        full lap to reach it. Leave unticked when the line sits <strong>just ahead of</strong> the
+                        grid: that first crossing isn&apos;t a lap, so it is discarded. Lap 1 is timed from
+                        lights-out either way.
+                    </p>
+                </div>
             </div>
             {error && <p className="admin-error">{error}</p>}
             <div className="admin-form-actions">
@@ -378,7 +389,7 @@ const Admin = () => {
                                 <span className="admin-meeting-meta">
                                     {meeting.date}
                                     {meeting.venue && ` · ${meeting.venue}`}
-                                    {meeting.count_first_crossing && ' · Count first crossing'}
+                                    {meeting.count_first_crossing && ' · First crossing counts as lap 1'}
                                 </span>
                             </div>
                             <button
