@@ -201,6 +201,42 @@ def test_a_lap_spanning_a_clock_change_is_anchored_and_includes_the_halt():
     assert driver.last_lap_timing == TIMING_ANCHORED
 
 
+def test_a_physical_power_cycle_mid_race_keeps_lap_times_sane():
+    """⚠️ A track short sometimes forces a physical power cycle mid-race (Greg,
+    2026-09-20). The powerbase zeroes its timers, so the counter after the cycle is
+    SMALLER than the counter before it — the one case that would produce a negative or
+    absurd lap time if anything ever subtracted across clocks. ble starts a new clock on
+    reconnect (and the counter going backwards would start one anyway), so it can't.
+
+    The spanning lap comes out as wall time including the whole outage, which is what a
+    stopwatch would say: the car really did take that long to get round, because it spent
+    most of it stationary while the short was fixed. Far too slow to be a fastest lap,
+    and one lap is genuinely what it completed.
+    """
+    anchors = ClockAnchors()
+    anchors.observe(CLOCK, 0, GO)
+    race = new_race(target_laps=5, count_first_crossing=True, anchors=anchors)
+    race.on_lap(1, at(5.0))
+
+    # A 40s outage: power off, short cleared, powerbase back with its timers at zero.
+    # The first heartbeat on the new clock anchors its zero to GO + 45.
+    after_cycle = 'test:2'
+    anchors.observe(after_cycle, 0, GO + 45.0)
+    race.on_lap(1, Crossing(clock=after_cycle, counter_ms=3_000, arrival=GO + 48.0))
+
+    driver = race.drivers[1]
+    assert driver.last_lap_timing == TIMING_ANCHORED
+    assert driver.last_lap_time == pytest.approx(43.0)   # 40s stopped + 3s of racing
+    assert driver.laps_completed == 2
+
+    # ...and racing simply continues on the new clock: the next lap is an exact counter
+    # subtraction again, with the reset behind it.
+    race.on_lap(1, Crossing(clock=after_cycle, counter_ms=8_000, arrival=GO + 53.0))
+    assert driver.last_lap_time == pytest.approx(5.0)
+    assert driver.last_lap_timing == TIMING_COUNTER
+    assert all(lap > 0 for lap in driver.lap_times), driver.lap_times
+
+
 def test_positions_follow_the_counters_even_when_arrivals_are_out_of_order():
     """Two cars crossing 100ms apart must not be reordered by which car's round-robin
     Slot packet happened to arrive first."""
