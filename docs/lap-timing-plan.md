@@ -1,7 +1,26 @@
 # Lap timing from Layer 1 counters: implementation plan
 
-**Status:** planned on 2026-09-14, not started. `docs/lap-timing-clocks.md` explains *why*; this
-file is *how*.
+**Status:** planned 2026-09-14. **Steps 2 and 3 implemented 2026-09-20** — the contract is
+switched, `lapdata/lap_clock.py` exists, and `ble`, `gpio` and `mocked-gpio` all publish
+counters plus a clock id with `BLE_CLOCK_HEARTBEAT=throttle` on by default. **Step 1
+(settings: migration 003, start grid, allow jump starts) is NOT done** and is still
+independent; the `count_first_crossing` flag stays on the meeting until it ships. Step 4
+(hardware day) and step 5 (provenance persistence, open question 1) are outstanding.
+`docs/lap-timing-clocks.md` explains *why*; this file is *how*.
+
+**Where the implementation deviates from this plan, deliberately:**
+- **The heartbeat is rate-limited, not window-buffered.** The plan says "thinned to at most
+  10 a second by keeping the least-delayed one in each 100ms window". Buffering a window
+  holds every sample back by up to that window before lapdata can stamp its arrival, which
+  makes every sample *later* — and lateness is the only thing that degrades the anchor. So
+  `ble` publishes promptly and drops the excess. On the measured 3.3/s hardware nothing is
+  ever dropped either way.
+- **`lap_times` entries stay plain floats.** The plan has them carry the timing and the
+  crossing; instead `DriverState.last_lap_timing` and `.last_crossing` hold it, which is all
+  `driver_lap` needs (it is published per lap) and leaves `current_race_laps` in the
+  FastestLap `race_state` untouched.
+- **`interval_s` has a fourth timing value, `arrival`**, for when no anchor exists at all.
+  The plan lists only `counter`/`anchored`/`from_go`.
 
 ✅ **The lap-1 method is decided: plan A.** HW-11 and HW-12 have now been run (see
 `ble/HARDWARE_VALIDATION.md`). HW-12 passed on 2026-09-20 — `same_clock`, `live_at_rest: true`,
@@ -16,7 +35,18 @@ should the heartbeat prove unreliable on the meet's hardware.
 1. **Lap 1 is meaningful, even with jump starts allowed.**
 2. **Start grid is a session setting.**
    - *In front of the finish line*: the first crossing completes lap 1, timed from lights-out.
-   - *Behind the finish line*: the first crossing is discarded, and lap 1 is timed from it.
+   - ~~*Behind the finish line*: the first crossing is discarded, and lap 1 is timed from it.~~
+     ⚠️ **Wrong, corrected by Greg 2026-09-20.** Lap 1 is timed from **lights-out in every
+     race**, whatever the start grid. The grid only decides which crossing *ends* lap 1:
+     behind the line, the first crossing is a discarded part-lap and lap 1 runs from
+     lights-out to the **second** crossing, part-lap included. A driver's race begins when
+     the lights go out, not when they happen to reach the line.
+
+     This was implemented as written and then reverted; the code and
+     `lapdata/test_race_manager.py` now match the correction. The consequence for the rest
+     of this plan is that **lap 1 always depends on the clock anchor** — the "no correlation
+     involved" escape hatch in `docs/lap-timing-clocks.md` does not exist, so plan A's
+     heartbeat matters in every race rather than only when the first crossing counts.
 
    This replaces the meeting-level `count_first_crossing` flag, which has the same meaning.
 3. **Allow jump starts is a session setting**, since one meeting can use more than one track
@@ -152,9 +182,10 @@ class RaceStart:
 - **Anchors are injected**, `RaceManager(anchors)`, so the module stays pure.
 - **`start(go_local)`** records `RaceStart`. It also still sets `race_start_time = time.time()`,
   which is now for display and the `/races/{id}/start` POST only.
-- **`on_lap(lane, crossing: Crossing)`:** lap 1 is `from_go` when `count_first_crossing`,
-  otherwise `interval_s` from the discarded start crossing. Later laps use `interval_s` from the
-  previous counted crossing.
+- **`on_lap(lane, crossing: Crossing)`:** lap 1 is `from_go` ~~when `count_first_crossing`,
+  otherwise `interval_s` from the discarded start crossing~~ **always, whatever the start
+  grid** (see the correction in decision 2). Later laps use `interval_s` from the previous
+  counted crossing.
 - **`DriverState.last_crossing_time`** becomes `last_crossing: Crossing | None`, and `race_time()`
   becomes the interval from `RaceStart`. On one clock, that ranks cars by their counters exactly.
   ⚠️ Keep the regression that a discarded first crossing still sets `last_crossing`, or the
@@ -311,7 +342,9 @@ Aim to finish steps 1–3 before the hardware day, so that day validates the fin
 **`lapdata/test_race_manager.py`** (adapted)
 - Lap 1 from go uses the frozen per-clock start. Two cars' lap-1 errors are identical even when
   the anchor improves between their crossings.
-- `count_first_crossing = false`: lap 1 is exact even with a deliberately wrong anchor.
+- ~~`count_first_crossing = false`: lap 1 is exact even with a deliberately wrong anchor.~~
+  Replaced by its opposite, per decision 2's correction: lap 1 goes through the anchor with
+  the grid **either** side of the line, so a deliberately wrong anchor shows up in both.
 - The discarded first crossing still sets `last_crossing` (existing regression).
 - On one clock, positions follow the counters even when arrivals are out of order.
 - A lap spanning a halt's clock change is `anchored` and includes the halt.

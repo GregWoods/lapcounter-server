@@ -1,10 +1,11 @@
 # Lap timing: Layer 1 counters instead of wall-clock timestamps
 
-**Status:** design rationale. Greg's decisions and the implementation plan are in
-**`docs/lap-timing-plan.md`** (2026-09-14), and where the two differ, the plan wins. HW-11
-and HW-12 now exist in `ble/hardware_check.py` but haven't been run. Aim to land the change
-**before the first BLE meet**: changing the contract is cheaper before a season of data
-exists than after.
+**Status:** design rationale, kept for the *why*. **The contract change described here was
+implemented on 2026-09-20** (plan steps 2 and 3) — this document now describes the problem
+it solved, not pending work. Greg's decisions and the implementation plan are in
+**`docs/lap-timing-plan.md`**, which also records where the implementation deviates from it;
+where the two differ, the plan wins. HW-12 was run and passed on 2026-09-20, so option B
+below (the plan's plan A, the Throttle heartbeat) is what shipped.
 
 ⚠️ **The plan renames the lap-1 options.** Its *plan A* is option B below (the Throttle
 heartbeat). Its *plan B* is Greg's reset with commands 1 then 3 **at arm**, which replaces
@@ -166,8 +167,13 @@ between them.
   then **identical for every car**. It can't change lap-1 order or finishing positions,
   only the absolute lap-1 value. Today each car's lap 1 uses whatever anchor held when
   *that car* crossed, and the anchor can improve between cars.
-- **`count_first_crossing = false` removes the problem entirely.** The first counted lap
-  is then already a crossing-to-crossing difference, with no correlation involved.
+- ~~**`count_first_crossing = false` removes the problem entirely.** The first counted lap
+  is then already a crossing-to-crossing difference, with no correlation involved.~~
+  ⚠️ **Wrong — corrected by Greg on 2026-09-20** (see `docs/lap-timing-plan.md` decision 2).
+  Lap 1 is timed from **lights-out in every race**, whatever the start grid; the grid only
+  decides which crossing *ends* it. So there is no escape hatch: **every** race's lap 1 goes
+  through the correlation, which makes the heartbeat (option B below, the plan's plan A)
+  matter always rather than sometimes.
 - An absolute lap-1 error still matters in one case: lap 1 counts, it is eligible for
   fastest lap, and the error shortens it.
 

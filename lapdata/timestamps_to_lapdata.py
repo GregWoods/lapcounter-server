@@ -7,6 +7,7 @@ import threading
 import urllib.request
 import urllib.error
 import paho.mqtt.client as mqtt
+from lap_clock import ClockAnchors, Crossing, interval_s
 from race_manager import RaceManager
 
 logging.basicConfig(level=logging.INFO)
@@ -15,12 +16,7 @@ logger = logging.getLogger(__name__)
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 api_url = os.getenv('API_URL', 'http://api:8000')
 # Seconds, fractional allowed (a small test circuit can lap in under 2s).
-min_lap_time_ns = round(float(os.getenv('MINIMUM_LAP_TIME', '2')) * 1_000_000_000)
-# How far a Layer 1's crossing timestamp may sit from our own clock before we stop
-# trusting it. Generous: every Layer 1 runs on this same machine, so a legitimate
-# stamp is milliseconds old, but a container that has just started while the Pi's
-# clock is being set by hand deserves some slack before we start shouting.
-HW_TIMESTAMP_TOLERANCE_NS = 30 * 1_000_000_000
+min_lap_time_s = float(os.getenv('MINIMUM_LAP_TIME', '2'))
 # lapdata owns the whole start-light sequence: the 5 lights come on at
 # START_LIGHT_INTERVAL spacing, then after a random hold all lights go out (race
 # goes). The lit-count is published in race_state.start_lights so every client
@@ -34,7 +30,11 @@ light_interval = float(os.getenv('START_LIGHT_INTERVAL', '1.0'))
 lights_out_hold_min = float(os.getenv('LIGHTS_OUT_HOLD_MIN', '0.5'))
 lights_out_hold_max = float(os.getenv('LIGHTS_OUT_HOLD_MAX', '3.0'))
 
-race = RaceManager()
+# Maps each Layer 1 clock onto our own time.monotonic(). Fed by every car_timestamp and
+# every layer1_clock heartbeat; read by the race manager for lap 1 and for laps spanning
+# a clock change. See lapdata/lap_clock.py.
+anchors = ClockAnchors()
+race = RaceManager(anchors)
 pending_race_cache: dict | None = None
 _light_timers: list = []  # the start-light sequence timers (5 lights + lights-out)
 _end_timer: threading.Timer | None = None
@@ -56,8 +56,10 @@ _race_lock = threading.RLock()
 # so persistence is browser-independent — no client needs to be open.
 _last_posted_state: str | None = None
 
-# Hardware-level: last crossing time per lane (nanoseconds) for phantom-trigger filtering
-prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+# Hardware-level: the last crossing seen per lane, for phantom-trigger filtering. None
+# means "no crossing to compare against", which is where every lane starts and what
+# lights-out resets them to — so the first crossing of a race is never filtered.
+prev_crossing: list = [None] * 6
 
 
 def fetch_pending_race() -> dict | None:
@@ -75,67 +77,79 @@ def fetch_pending_race() -> dict | None:
     return None
 
 
-def _crossing_ns(data: dict) -> int:
-    """When the crossing actually happened, per Layer 1 — not when we got told.
+def _parse_crossing(data: dict, arrival: float) -> Crossing | None:
+    """Validate a car_timestamp payload into a Crossing, or None to drop it.
 
-    Every Layer 1 already stamps `timestamp` at detection: GPIO in its interrupt
-    callback, BLE from the powerbase's own millisecond sensor clock. Re-stamping on
-    arrival here would throw that away and fold MQTT/queueing latency into lap times.
-    That was tolerable for GPIO (interrupt-driven, so arrival ≈ crossing) but not for
-    BLE, whose Slot characteristic is round-robin across 6 cars and can report a
-    crossing up to a full cycle late.
-
-    Falls back to arrival time if the stamp is missing or implausible — a Layer 1 with
-    a broken clock must not be able to poison race timing, and on the Pi (no RTC, clock
-    set by hand before a meet) that is a real possibility. Same machine, same clock, so
-    a sane stamp is always within a second or two of now.
+    There is deliberately no fallback to the old wall-clock `timestamp` format (see
+    docs/lap-timing-plan.md decision 4: the contract changes in one step). A Layer 1
+    image older than this one would otherwise publish laps that look plausible and are
+    timed on a different basis, which is far worse at a meet than counting nothing and
+    saying loudly why. The deploy step exists to make sure there is no stale image.
     """
-    now_ns = time.time_ns()
-    stamp = data.get('timestamp')
-    if stamp is None:
-        return now_ns
-    try:
-        stamp = int(stamp)
-    except (TypeError, ValueError):
-        logger.warning(f"Ignoring non-numeric car_timestamp {stamp!r}")
-        return now_ns
-    if abs(now_ns - stamp) > HW_TIMESTAMP_TOLERANCE_NS:
-        logger.warning(
-            f"Ignoring implausible car_timestamp: {(now_ns - stamp) / 1e9:+.1f}s from now. "
-            f"Layer 1 clock out of step? Falling back to arrival time."
-        )
-        return now_ns
-    return stamp
+    clock = data.get('clock')
+    counter_ms = data.get('counter_ms')
+    if not isinstance(clock, str) or not clock:
+        logger.error(f"Dropping car_timestamp with no usable 'clock' ({clock!r}) — a Layer 1 "
+                     f"image is older than lapdata. No laps will be counted until it is updated.")
+        return None
+    # bool is an int subclass, and True would sail through as counter_ms 1.
+    if isinstance(counter_ms, bool) or not isinstance(counter_ms, int) or counter_ms < 0:
+        logger.error(f"Dropping car_timestamp with bad 'counter_ms' ({counter_ms!r}) — a Layer 1 "
+                     f"image is older than lapdata. No laps will be counted until it is updated.")
+        return None
+    return Crossing(clock=clock, counter_ms=counter_ms, arrival=arrival)
 
 
-def handle_car_timestamp(data: dict):
+def _to_unix(local: float) -> float:
+    """A lapdata time.monotonic() value as unix seconds. Display and logging only —
+    nothing that times a lap goes through here."""
+    return time.time() - time.monotonic() + local
+
+
+def handle_car_timestamp(data: dict, arrival: float):
     """Process a raw hardware crossing. Filters phantoms, publishes lap, updates race state."""
     lane = data['car']
     idx = lane - 1
 
-    now_ns = _crossing_ns(data)
-    elapsed_ns = now_ns - prev_crossing_ns[idx]
-    if elapsed_ns <= min_lap_time_ns:
-        return  # phantom trigger — too soon after last crossing
+    crossing = _parse_crossing(data, arrival)
+    if crossing is None:
+        return
 
-    prev_crossing_ns[idx] = now_ns
-    crossing_time = now_ns / 1e9  # seconds, used by race manager for lap timing
+    # Every crossing doubles as a clock sample, on top of the layer1_clock heartbeat.
+    anchors.observe(crossing.clock, crossing.counter_ms, arrival)
 
-    # Publish the normalised lap event — the stable public interface for all consumers
+    # Phantom filter, on Layer 1's counter rather than arrival times: a delayed
+    # notification must not be able to push two genuine crossings under MINIMUM_LAP_TIME
+    # and silently drop a real lap.
+    previous = prev_crossing[idx]
+    elapsed = None
+    if previous is not None:
+        elapsed, _ = interval_s(previous, crossing, anchors)
+        if elapsed <= min_lap_time_s:
+            return  # phantom trigger — too soon after last crossing
+
+    prev_crossing[idx] = crossing
+
+    crossing_local = anchors.to_local(crossing.clock, crossing.counter_ms)
+    crossing_unix = _to_unix(crossing_local if crossing_local is not None else arrival)
+
+    # Publish the normalised lap event — the stable public interface for all consumers.
+    # lapTime is null for a lane's first crossing since lights-out: there is genuinely
+    # no interval to report, where the old code invented one from a seeded previous time.
     client.publish('lap', json.dumps({
         'type': 'lap',
         'car': lane,
-        'time': crossing_time,
-        'lapTime': elapsed_ns / 1e9,
+        'time': crossing_unix,
+        'lapTime': round(elapsed, 3) if elapsed is not None else None,
     }))
-    logger.info(f"lap: lane={lane} t={crossing_time:.3f}")
+    logger.info(f"lap: lane={lane} counter={crossing.counter_ms}ms clock={crossing.clock}")
 
     # Capture lap count before processing so we can tell a real counted lap from a
     # discarded start-line crossing (both make on_lap return True).
     driver_before = race.drivers.get(lane)
     prev_laps = driver_before.laps_completed if driver_before else 0
 
-    if race.on_lap(lane, crossing_time):
+    if race.on_lap(lane, crossing):
         publish_race_state()
 
         # Emit a context-rich event for the DB writer ONLY when a real lap was
@@ -150,10 +164,37 @@ def handle_car_timestamp(data: dict):
                 'lane': lane,
                 'lap_number': d.laps_completed,
                 'lap_time': d.lap_times[-1],
+                # Provenance: which clock timed this lap, where on it the crossing fell,
+                # and how the interval was derived ('counter' is exact; 'from_go' and
+                # 'anchored' went through the clock anchor). The DB writer ignores these
+                # unless they are persisted later — they are the only way to re-check a
+                # disputed lap after the meet.
+                'clock': crossing.clock,
+                'counter_ms': crossing.counter_ms,
+                'timing': d.last_lap_timing,
             }))
 
         if race.state == 'Finished':
             logger.info("Race finished — waiting for next race_control start")
+
+
+def handle_layer1_clock(data: dict, arrival: float):
+    """A bare (clock, counter) reading from Layer 1, pairing its counter with our clock.
+
+    This is what makes lap 1 accurate. Crossings alone would anchor the clock too, but
+    only once a car has crossed — and lap 1 is timed from lights-out, before any of that.
+    The BLE Layer 1 feeds this from the Throttle characteristic (plan A, confirmed by
+    HW-12 on 2026-09-20: throttleTimestamp is a live reading of the Slot clock), at
+    ~3.3 samples/s with a median lateness of 1ms, so the anchor is essentially exact by
+    the time the lights go out. GPIO sends one a second off its own monotonic clock.
+    """
+    clock = data.get('clock')
+    counter_ms = data.get('counter_ms')
+    if not isinstance(clock, str) or not clock:
+        return
+    if isinstance(counter_ms, bool) or not isinstance(counter_ms, int) or counter_ms < 0:
+        return
+    anchors.observe(clock, counter_ms, arrival)
 
 
 def _time_expiry(generation: int):
@@ -257,12 +298,16 @@ def _schedule_yellow_sequence():
 def _lights_out(generation: int):
     """Return the timer callback that fires lights out, transitioning the race to Running."""
     def _cb():
-        global pending_race_cache, prev_crossing_ns
+        global pending_race_cache, prev_crossing
+        # "Go" is this instant, not the instant we get the lock. Every lap 1 in the race
+        # is timed from this value, so waiting on _race_lock behind a crossing must not
+        # land in it. If the generation check below then fails, it is simply discarded.
+        go = time.monotonic()
         with _race_lock:
             if generation != _start_generation or race.state != 'ArmedForStart':
                 return
-            race.start()
-            prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+            race.start(go)
+            prev_crossing = [None] * 6
             _schedule_end_timer()
             publish_race_state()
         # Outside the lock: an HTTP call (5s timeout) must not hold up the crossings
@@ -344,9 +389,14 @@ def _load_pending(pending: dict, target_laps: int | None = None):
     )
 
 
-def handle_race_control(data: dict):
-    """Process a race_control command from any client (browser, button box, etc.)."""
-    global pending_race_cache, prev_crossing_ns
+def handle_race_control(data: dict, arrival: float):
+    """Process a race_control command from any client (browser, button box, etc.).
+
+    `arrival` is when the message landed, on time.monotonic() and stamped before the
+    race lock. The immediate 'start' command (no start-light countdown) uses it as
+    lights-out, for the same reason _lights_out() takes its own: lap 1 is timed from it.
+    """
+    global pending_race_cache, prev_crossing
     command = data.get('command')
     logger.info(f"race_control: {command}")
 
@@ -401,9 +451,9 @@ def handle_race_control(data: dict):
             return
 
         _load_pending(pending, target_laps)
-        race.start()
-        # Reset hardware crossing times so no phantom laps bleed across race start
-        prev_crossing_ns = [time.time_ns() - min_lap_time_ns - 1 for _ in range(6)]
+        race.start(arrival)
+        # Forget the previous race's crossings so no phantom laps bleed across race start
+        prev_crossing = [None] * 6
         _schedule_end_timer()
         publish_race_state()
 
@@ -517,19 +567,31 @@ def publish_race_state():
 
 
 def on_message(_client, _userdata, msg):
+    # Stamp arrival FIRST, before parsing and before _race_lock. Every second spent
+    # waiting for the lock would otherwise be added to this sample's apparent lateness,
+    # and the anchor is a running minimum of exactly that.
+    arrival = time.monotonic()
     try:
         data = json.loads(msg.payload.decode('utf-8', 'ignore'))
+        # Deliberately outside _race_lock: a clock sample touches no race state, and
+        # these arrive several times a second. Blocking them behind a crossing or a
+        # timer callback would make them late, which is the one thing that degrades
+        # the anchor. ClockAnchors has its own lock.
+        if msg.topic == 'layer1_clock':
+            handle_layer1_clock(data, arrival)
+            return
         with _race_lock:
             if msg.topic == 'car_timestamp':
-                handle_car_timestamp(data)
+                handle_car_timestamp(data, arrival)
             elif msg.topic == 'race_control':
-                handle_race_control(data)
+                handle_race_control(data, arrival)
     except Exception as e:
         logger.error(f"Error handling {msg.topic}: {e}", exc_info=True)
 
 
 def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     _client.subscribe('car_timestamp')
+    _client.subscribe('layer1_clock')
     _client.subscribe('race_control')
     logger.info("Connected to MQTT broker")
 

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # from ble_to_timestamps: see mock_powerbase's module docstring.
 SLOT_CHARACTERISTIC_UUID = '00003b0b-0000-1000-8000-00805f9b34fb'
 COMMAND_CHARACTERISTIC_UUID = '00003b0a-0000-1000-8000-00805f9b34fb'
+THROTTLE_CHARACTERISTIC_UUID = '00003b09-0000-1000-8000-00805f9b34fb'
 
 # Two trailing spaces, per the spec's Advertising Packet section, so _name_matches() is
 # exercised rather than an exact match.
@@ -39,6 +40,7 @@ class Faults:
     drop_every_s: float | None = None      # disconnect this long after each connect
     write_fail_rate: float = 0.0           # chance that a Command write raises
     no_command_characteristic: bool = False  # ARC One: every Command write rejected
+    no_throttle_characteristic: bool = False  # a base with no Throttle notify to subscribe to
     rng: random.Random = dataclasses.field(default_factory=random.Random)
     write_failures: int = 0                # count of writes failed by the two faults above
 
@@ -46,13 +48,19 @@ class Faults:
 _powerbase: SimulatedPowerbase | None = None
 _faults = Faults()
 _slot_interval_s = 0.05
+# HW-12 measured one Throttle notification per ~300ms on real hardware. 50ms here keeps
+# the simulated races (which lap in well under a second) supplied with clock samples at a
+# comparable samples-per-lap rate.
+_throttle_interval_s = 0.05
 
 
-def configure(powerbase: SimulatedPowerbase, faults: Faults | None = None, slot_interval_s: float = 0.05):
-    global _powerbase, _faults, _slot_interval_s
+def configure(powerbase: SimulatedPowerbase, faults: Faults | None = None,
+              slot_interval_s: float = 0.05, throttle_interval_s: float = 0.05):
+    global _powerbase, _faults, _slot_interval_s, _throttle_interval_s
     _powerbase = powerbase
     _faults = faults or Faults()
     _slot_interval_s = slot_interval_s
+    _throttle_interval_s = throttle_interval_s
 
 
 def _same_uuid(char_specifier, uuid: str) -> bool:
@@ -124,20 +132,28 @@ class FakeBleakClient:
     async def start_notify(self, char_specifier, callback, **_kwargs):
         if not self.is_connected:
             raise FakeBleakError('Not connected')
-        if not _same_uuid(char_specifier, SLOT_CHARACTERISTIC_UUID):
+        if _same_uuid(char_specifier, SLOT_CHARACTERISTIC_UUID):
+            packets = _powerbase.next_slot_packet
+            interval = _slot_interval_s
+        elif _same_uuid(char_specifier, THROTTLE_CHARACTERISTIC_UUID):
+            if _faults.no_throttle_characteristic:
+                raise FakeBleakError(f'Characteristic {char_specifier} was not found!')
+            packets = _powerbase.next_throttle_packet
+            interval = _throttle_interval_s
+        else:
             raise FakeBleakError(f'Characteristic {char_specifier} does not support notify in this mock')
-        self._tasks.append(asyncio.create_task(self._pump_slot(callback)))
+        self._tasks.append(asyncio.create_task(self._pump(char_specifier, callback, packets, interval)))
 
-    async def _pump_slot(self, callback):
-        sender = types.SimpleNamespace(uuid=SLOT_CHARACTERISTIC_UUID)
+    async def _pump(self, uuid, callback, next_packet, interval):
+        sender = types.SimpleNamespace(uuid=uuid)
         while self.is_connected:
-            await asyncio.sleep(_slot_interval_s)
+            await asyncio.sleep(interval)
             if not self.is_connected:
                 break
             try:
-                callback(sender, bytearray(_powerbase.next_slot_packet()))
+                callback(sender, bytearray(next_packet()))
             except Exception:
-                logger.exception('Slot notification callback raised')
+                logger.exception('Notification callback raised')
 
     async def write_gatt_char(self, char_specifier, data, response: bool | None = None):
         if not self.is_connected:

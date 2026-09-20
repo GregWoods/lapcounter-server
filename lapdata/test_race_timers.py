@@ -89,10 +89,11 @@ def lapdata(monkeypatch):
     return types.SimpleNamespace(race=race, timers=timers, published=published)
 
 
-def control(command):
-    """As on_message does it: race_control handled under the lock."""
+def control(command, **extra):
+    """As on_message does it: arrival stamped before the lock, then handled under it."""
+    arrival = tsl.time.monotonic()
     with tsl._race_lock:
-        tsl.handle_race_control({'command': command})
+        tsl.handle_race_control({'command': command, **extra}, arrival)
 
 
 # --- Yellow flag ---
@@ -255,7 +256,7 @@ def staged(lapdata, monkeypatch):
 def test_arm_races_the_lineup_as_edited_not_as_cached(staged):
     """A stale cache would leave the added driver's laps uncounted."""
     with tsl._race_lock:
-        tsl.handle_race_control({'command': 'arm', 'race_id': 1})
+        tsl.handle_race_control({'command': 'arm', 'race_id': 1}, tsl.time.monotonic())
 
     assert sorted(staged.race.drivers) == [1, 5]
     assert staged.race.state == 'ArmedForStart'
@@ -264,7 +265,7 @@ def test_arm_races_the_lineup_as_edited_not_as_cached(staged):
 def test_arm_falls_back_to_the_cache_when_the_api_is_down(staged, monkeypatch):
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
     with tsl._race_lock:
-        tsl.handle_race_control({'command': 'arm', 'race_id': 1})
+        tsl.handle_race_control({'command': 'arm', 'race_id': 1}, tsl.time.monotonic())
 
     assert sorted(staged.race.drivers) == [1]
     assert staged.race.state == 'ArmedForStart'
