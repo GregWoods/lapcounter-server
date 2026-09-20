@@ -35,12 +35,55 @@ python ble/hardware_check.py --report hw-report.json
 ```
 
 To re-run a subset, add `--only HW-06,HW-07`. `--drift-minutes 10` lengthens HW-10.
+
+**HW-03 takes no keyboard input at all**, so it can be started and then left alone while both
+hands are on a controller: `--only HW-03`, hold one trigger fully down, and the sweep begins
+as soon as the script sees it and steps the power every 2s. Watch the car, and report what it
+did at each step afterwards. ⚠️ Be ready for the failure case physically — if a zero
+multiplier does not stop the car, it keeps going at full throttle.
 The report is rewritten after every check, so an aborted run keeps its results. Each
 check ends with a verdict:
 - `pass`: the hardware matches the code.
 - `fail`: it doesn't.
 - `review`: the answer changes code or race-day procedure; see `code_impact` in the report.
 - `info`: a measurement, not a yes/no.
+
+## HW-03, 2026-09-20: the power multiplier works, and does not touch the counter
+
+Run on the `lapcounter-ble` box against the real ARC Pro, car 5, trigger held flat:
+
+| step | byte | trigger read | counter rate | car |
+|---|---|---|---|---|
+| 100% | `0x3f` | 63 | 1.0 | full speed |
+| 75% | `0x2f` | 63 | 1.0 | distinctly slower |
+| 50% | `0x20` | 63 | 1.043 | slower again |
+| 0% | `0x00` | 63 | 1.0 | **stopped** |
+
+**Verdict: `CARS_STOPPED` is correct.** A zero multiplier under `POWER_ON_RACING` stops a
+car whose trigger is held flat, and the counter runs at real-time rate straight through the
+stop — so the lap spanning a yellow flag stays an exact counter subtraction with the
+stopped time in it, and no clock change is needed. Command writes were accepted at 58-133ms.
+
+Three things this run taught, all of which cost an hour:
+
+1. ⚠️ **`docker stop ble` does not free the powerbase.** BlueZ keeps the ACL connection
+   open on the host, so the base stays `Connected`, never advertises, and nothing else can
+   reach it — a scan finds nothing and a direct connect fails with
+   `BleakDeviceNotFoundError`. `bluetoothctl disconnect EF:2A:C2:EF:D8:AA` is required too.
+2. **The production container never scans** (`BLE_ADDRESS` is set), so `hardware_check.py`
+   now falls back to connecting by address when a scan doesn't see the device.
+3. ⚠️ **The operator cannot see this script's output while it runs** — it is driven over
+   ssh and the stream only arrives at the end. An instruction printed here reaches them too
+   late to act on, which silently produced eight seconds of released-trigger data that read
+   exactly like "the powerbase reports no throttle at all". Hence the self-synchronising
+   protocol: the sweep starts on the first packet showing the trigger down and retries until
+   it gets one with the trigger held throughout. It took 5 attempts here.
+
+⚠️ **Controller calibration is an untested assumption** (Greg, 2026-09-20): a released
+trigger may report a small non-zero value and a fully-pulled one somewhat under 63. Car 5's
+controller read a clean 0 and 63, so `TRIGGER_HELD_THRESHOLD = 0x30` was comfortable — but a
+controller reading, say, 40 at full travel would never be detected as held, and the sweep
+would wait forever. `throttle_max_seen` in the report is there to diagnose that.
 
 ## First run: 2026-09-18 (Pi Zero 2 W, one car, ID 5)
 
@@ -207,18 +250,18 @@ undocumented MCU (risk: reset, bootloader, bricked base), so it was left there.
 | ID | Question | Code that assumes it | If the answer differs |
 |---|---|---|---|
 | **HW-01** | Does the powerbase expose Slot `0x3B0B` (notify) and Command `0x3B0A` (writable)? Does its advertised name start with `Scalextric ARC`? The spec says it has two trailing spaces. | `SLOT_/COMMAND_CHARACTERISTIC_UUID`, `_name_matches()` | No Command characteristic: there's no power control on this base. Capability advertising must not claim `power_control`. Name mismatch: set `BLE_ADDRESS`, fix the filter. |
-| **HW-02** | Are packets 18 bytes? How often does each car's round-robin notification come round, i.e. the worst-case reporting delay? Do timestamps stay still when no car moves? Are the last timestamps handed over on connect? | `decode_slot()`, the seeding in `handle_slot_notification()`, `CLOCK_STEP_THRESHOLD_S`, `MINIMUM_LAP_TIME` | Changes at rest: phantom laps, and edge detection needs a rethink. The **rotation** (one packet per car ID, all 6 in turn — also note whether absent IDs are skipped) decides three things. **1)** `CLOCK_STEP_THRESHOLD_S` is a provisional 3s: set it to ~2× the worst rotation. **2)** A car's lap must take longer than one rotation, or a second same-lane crossing overwrites the first and a lap is lost — matters for sub-2s test circuits. **3)** The first lap after a connect, timer reset or halt resume (every yellow flag) can read short by up to a rotation while the clock anchor converges, so `MINIMUM_LAP_TIME` (3s on the race Pi for ~5s laps) needs at least that much margin below the fastest genuine lap. |
-| **HW-03** | Is a 20-byte `POWER_ON_RACING` write accepted, and do cars get full throttle with the multiplier bytes at `0x3F`? | `command_payload()`, `FULL_POWER` | Write rejected: check the response mode and pairing. Cars slow or dead: the multiplier semantics are wrong. |
+| **HW-02** | Are packets 18 bytes? How often does each car's round-robin notification come round, i.e. the worst-case reporting delay? Do timestamps stay still when no car moves? Are the last timestamps handed over on connect? | `decode_slot()`, the seeding in `handle_slot_notification()`, lapdata's `CLOCK_STEP_THRESHOLD_S`, `MINIMUM_LAP_TIME` | Changes at rest: phantom laps, and edge detection needs a rethink. The **rotation** (one packet per car ID, all 6 in turn — also note whether absent IDs are skipped) decides three things. **1)** `CLOCK_STEP_THRESHOLD_S` is a provisional 3s: set it to ~2× the worst rotation. **2)** A car's lap must take longer than one rotation, or a second same-lane crossing overwrites the first and a lap is lost — matters for sub-2s test circuits. **3)** The first lap after a connect or a timer reset can read short by up to a rotation while the clock anchor converges (a yellow flag no longer resumes from a halt, so it is no longer one of these), so `MINIMUM_LAP_TIME` (3s on the race Pi for ~5s laps) needs at least that much margin below the fastest genuine lap. |
+| **HW-03** | **Power multiplier sweep.** Hold one trigger flat; the script detects that from the Throttle characteristic and steps the multiplier under you, 2s each: **100% → 75% → 50% → 0%**, then restores full power. Does the car's speed follow the multiplier, and ⚠️ **safety-critical: does `0x00` actually stop a moving car with the trigger still held?** Is the response linear (the 75/50 steps are the sweep limp mode needs)? | `command_payload()`, `FULL_POWER`, `TRACK_RACING`/`CARS_STOPPED`; the 75/50 points inform a future limp mode | ⚠️ **Car still moving at `0x00`: a yellow flag does not stop the cars, with marshals reaching onto the track.** Fall back to `PowerState(POWER_ON_TIMER_HALT, NO_POWER)` and accept that the lap spanning a yellow becomes anchored rather than an exact counter subtraction (see HW-06). This must be proven before a meet is run on BLE. Write rejected: check the response mode and pairing. **Prompt-free by design** — the operator's hands are on a controller, so the report records the objective side (the trigger really was held; the counter kept running through the 0% step, read from throttleTimestamp) and the operator reports what the car did. |
 | **HW-04** | Is byte 1 the car's programmed digital ID? Does lane 1 set StartFinish1 and lane 2 set StartFinish2? Is it exactly one field per crossing, with no sensor bounce? How much jitter is there between device and wall-clock laps? | `car_timestamp.car`/`.lane`, lapdata's phantom filter | Wrong field mapping: swap `lane`. Both fields per crossing: the second must be suppressed in Layer 1. Bounce: debounce, or check `MINIMUM_LAP_TIME` covers it. |
 | **HW-05** | Does power stay on indefinitely after a single write, with no keepalive? | `run()` writes only on transitions, connect and retry | Power times out: `run()`'s 1s loop must rewrite the current power state periodically. |
-| **HW-06** | Does `POWER_ON_TIMER_HALT` cut power immediately? Does the powerbase clock **pause** through the halt, keep ticking, or reset? What does a car pushed over the line mid-halt report? | `_note_command_applied()` re-anchoring, yellow-flag grace expiry | See `HALT_CLOCK_IMPACT` in the script. `kept_ticking` means the re-anchor can go. `reset` means the backwards-detection already covers it. No power cut means yellow flags don't stop cars at all. |
+| **HW-06** | Does `POWER_ON_TIMER_HALT` cut power immediately? Does the powerbase clock **pause** through the halt, keep ticking, or reset? What does a car pushed over the line mid-halt report? | `_note_command_applied()` starting a new clock at the halt AND at the restart. ⚠️ **No longer the shipped yellow-flag path** — command 4 is the HW-03 fallback now, so this check matters only if that fallback is needed. | See `HALT_CLOCK_IMPACT` in the script. `kept_ticking` means the halt needs no new clock at all — and would make command 4 as good as the zero multiplier. `reset` means the backwards-detection already covers it. |
 | **HW-07** | When BLE **disconnects**, what happens to track power, while halted and while racing? Are timestamps retained across a reconnect? | Connect-time write in `run()`, seeding | ⚠️ **Safety:** if a disconnect while halted restores power, a BLE drop during a yellow flag puts cars back on track with marshals out, and no software can stop it. That goes into race-day procedure. If a disconnect while racing cuts power, every car stops on a BLE drop. |
 | **HW-08** | After a powerbase power-cycle, are the timers zero? Does the track have power before any app command? | Seeding, backwards reset detection | Timers not zeroed: the seeding comment is wrong. No power without the app: the base is dead until `ble` connects, which matters at meet start. |
 | **HW-09** | Does command 0 (`NO_POWER_TIMER_STOPPED`) zero the Slot timestamps, with the next crossing counting from zero? | The backwards-timestamp path in `handle_slot_notification()` | Not zeroed: the "commands 0/1 zero the timers" comments are wrong. The reset path still holds for power-cycles. |
-| **HW-10** | Over a long run, what is the reporting delay (median, p95, max)? How far does the powerbase clock drift, in ppm? | Running-minimum clock anchor, lapdata's 30s `HW_TIMESTAMP_TOLERANCE_NS` | Large positive drift, i.e. a slow powerbase clock: the anchor can't follow it, so it needs a slow decay. A p95 delay near a lap time: rethink `MINIMUM_LAP_TIME`. |
+| **HW-10** | Over a long run, what is the reporting delay (median, p95, max)? How far does the powerbase clock drift, in ppm? | lapdata's running-minimum clock anchor (`ClockAnchors`) — which now only affects lap 1 and clock-spanning laps, not every lap | Large positive drift, i.e. a slow powerbase clock: the anchor can't follow it, so it needs a slow decay. Drift no longer touches ordinary laps, which are counter differences. A p95 delay near a lap time: rethink `MINIMUM_LAP_TIME`. |
 
-| **HW-11** | Plan B for lap 1: commands 1 then 3, sent at arm. With the cars stationary, does command 1 (`NO_POWER_TIMER_TICKING`) hold them still and zero the Slot timers? Does the clock tick from command 1, or hold at zero until command 3? How long do back-to-back 1 → 3 writes take, and how soon after them is the clock's zero? (`plan_b.zero_lag_upper_bound_ms` also includes one crossing's reporting delay.) Does re-sending command 3 mid-race reset anything? | Nothing yet: plan B is the lap-timing plan's fallback if HW-12 fails. Re-sending 3 is what `handle_race_state()` and resume already do. | `not_reset`: plan B is out, and the "commands 0/1 zero the timers" comments are wrong. Cars not held: a reset at arm lets a car creep, and a jump-start hold can't use command 1. Re-sending 3 resets the clock: `ble` must stop re-sending it, or start a new clock epoch each time. |
-| **HW-12** | Plan A for lap 1: is `throttleTimestamp` (Throttle `0x3B09`, bytes 7–10) a live reading of the **same** clock as the Slot timestamps? The evidence is threefold. Its anchor offset agrees with the Slot crossings' anchor. It halts on command 4 the way the Slot clock did in HW-06. It zeroes on command 1 the way the Slot timers did in HW-11. Does it also advance while the triggers are released, and how late do its notifications arrive? It also records each controller's highest throttle reading at rest (`throttle_at_rest_max`), the noise floor a jump-start threshold must sit above. | Nothing yet: plan A is a clock heartbeat published by `ble`; jump-start detection reads throttle. | `different_clock`: plan A is out; use plan B (HW-11). Same clock but not advancing at rest: no heartbeat on a stationary grid, so still plan B. |
+| **HW-11** | Plan B for lap 1: commands 1 then 3, sent at arm. With the cars stationary, does command 1 (`NO_POWER_TIMER_TICKING`) hold them still and zero the Slot timers? Does the clock tick from command 1, or hold at zero until command 3? How long do back-to-back 1 → 3 writes take, and how soon after them is the clock's zero? (`plan_b.zero_lag_upper_bound_ms` also includes one crossing's reporting delay.) Does re-sending command 3 mid-race reset anything? | `_TIMESTAMP_BREAKING_COMMANDS` includes command 1 on the assumption it may hold at zero; if the clock ticks from command 1, move it out. Plan B itself is unbuilt — HW-12 passed, so plan A shipped. Re-sending 3 is what `handle_race_state()` and resume already do. | `not_reset`: plan B is out, and the "commands 0/1 zero the timers" comments are wrong. Cars not held: a reset at arm lets a car creep, and a jump-start hold can't use command 1. Re-sending 3 resets the clock: `ble` must stop re-sending it, or start a new clock epoch each time. |
+| **HW-12** | Plan A for lap 1: is `throttleTimestamp` (Throttle `0x3B09`, bytes 7–10) a live reading of the **same** clock as the Slot timestamps? The evidence is threefold. Its anchor offset agrees with the Slot crossings' anchor. It halts on command 4 the way the Slot clock did in HW-06. It zeroes on command 1 the way the Slot timers did in HW-11. Does it also advance while the triggers are released, and how late do its notifications arrive? It also records each controller's highest throttle reading at rest (`throttle_at_rest_max`), the noise floor a jump-start threshold must sit above. | **Shipped 2026-09-20**: `BLE_CLOCK_HEARTBEAT=throttle` publishes `layer1_clock` from `handle_throttle_notification()`, on the Slot clock id. Jump-start detection will read the same throttle bytes. | `different_clock`: plan A is out; use plan B (HW-11). Same clock but not advancing at rest: no heartbeat on a stationary grid, so still plan B. |
 | **HW-13** | Do the **six buttons on the powerbase itself** show up anywhere over BLE? The doc only covers controller buttons (brake `0x40`, lane change `0x80` in Throttle bytes 1–6, lane-change double-tap in byte 11). Lift cars off the track first: a base button may re-program a car's ID. | Nothing: this is to find out whether they could drive race control (e.g. start, yellow) from the base. | `visible_over_ble: false`: they can't be used from software. Otherwise `new_bytes_while_pressing` names the characteristic and byte. |
 | **HW-14** | Does **reading** Slot (it is readable, HW-01) see crossings sooner than its 300 ms round-robin notifications? Does each read return the next car ID, or repeat the last notification? What are the two undocumented bytes 18–19? Drive car 5 in steady laps for 30 s. | Nothing yet: lap *position* needs to reach the leaderboard fast; last-lap times can wait ~1 s. | `polling_earlier_ms` median well above 300: add a polling mode to `ble_to_timestamps`. About 0, or reads repeat the notified car: the 1.8 s rotation stands. |
 
@@ -235,17 +278,20 @@ logs -f ble` in one terminal. To see race state:
 | ID | Do | Expect |
 |---|---|---|
 | **E1** Laps | Start a race from `/racecontrol`, drive 5 laps, time one lap with a stopwatch. | One lap counted per crossing, lap times within a few hundredths of the stopwatch, no phantom laps at lights out. |
-| **E2** Yellow flag | Mid-race, press Yellow Flag. | Leaderboard shows "Yellow Flag - 5s" counting down; power **stays on** for the grace; `ble` logs `Command characteristic <- 4` at 0 and cars stop. |
-| **E3** Resume after a cut | Wait ~20s, press Resume Race, drive 3 laps. | `ble` logs `re-anchoring the clock offset`; power returns; the lap times after resume are sane. That's review item 1, proven on hardware. |
+| **E2** Yellow flag | Mid-race, press Yellow Flag, and keep driving through the grace. | Leaderboard shows "Yellow Flag - 5s" counting down; cars keep running for the grace **and their laps keep counting**; at 0 `ble` logs `Command characteristic <- 3 at power 0x00` and the cars stop. |
+| **E3** Resume after a cut | Wait ~20s, press Resume Race, drive 3 laps. | `ble` logs **no new clock** at either the cut or the resume (the counter never stopped); cars move again; the lap times after resume are sane. That's review item 1, proven on hardware. |
 | **E4** Resume Now | Yellow Flag, then Resume Now within the grace period. | Power never cuts; the race stays Running. |
-| **E5** `ble` restart while Paused | Let a yellow flag cut power, then `docker restart ble`. | After reconnect, `ble` logs `Command characteristic <- 4` and the track **stays unpowered**. That's review item 2, proven on hardware. |
-| **E6** Powerbase drop while Paused | Let a yellow flag cut power, switch the powerbase off and on (or walk the Pi out of range). | Same as E5 once reconnected. **Also note** whether power came back while disconnected (see HW-07). |
+| **E5** `ble` restart while Paused | Let a yellow flag stop the cars, then `docker restart ble`. | After reconnect, `ble` logs `Command characteristic <- 3 at power 0x00` and the cars **stay stopped** (the track stays energised — that is expected). That's review item 2, proven on hardware. |
+| **E6** Powerbase drop while Paused | Let a yellow flag stop the cars, switch the powerbase off and on (or walk the Pi out of range). | Same as E5 once reconnected. **Also note** whether the cars moved again while disconnected (see HW-07). |
 | **E7** `ble` restart mid-race | While Running, `docker restart ble`, keep driving. | No phantom laps on reconnect (seeding); laps continue counting. |
 | **E8** End during yellow | Yellow Flag, then End Race during the grace period. | Race Finished; power on (`<- 3`); no later power cut. |
+| **E9** Lap 1 | Set the meeting's start grid to **in front of the line** (first crossing counts). Start a race and stopwatch from lights-out to the first crossing. Then set the grid **behind** the line and repeat, stopwatching lights-out to the **second** crossing (the first is a discarded part-lap). | Lap 1 within a few hundredths of the stopwatch **both times**. Lap 1 is timed from lights-out whatever the grid, so `driver_lap` shows `"timing":"from_go"` for it in both cases and `"counter"` for every lap after. This is the one lap per race that depends on the clock anchor, so it is also the check that proves the `layer1_clock` heartbeat is working on real hardware. |
+| **E10** No clock change at a yellow | Yellow Flag, let the grace expire, then Resume Race. | ⚠️ `ble` logs **no new clock at all** — stopping the cars with a zero multiplier leaves the counter running, which is the whole point. The lap spanning the stoppage shows `"timing":"counter"` (an exact subtraction, not `anchored`) and *includes* the stopped time, so it is far too slow to be a fastest lap. Laps after the resume are `counter` and sane. |
+| **E11** GPIO fallback | Redeploy with `./deploy/deploy.ps1 -Layer1 gpio`, drive 3 laps. | Laps count, and `car_timestamp` carries `counter_ms` + a `gpio:<boot id>` clock. ⚠️ An old `gpio` image publishes the removed `timestamp` field, which lapdata now **drops outright** — logging "a Layer 1 image is older than lapdata" and counting nothing. There is no fallback by design, so this check is what proves the fallback is actually deployable. |
 
 ## 4. Report back
 
-Bring `hw-report.json` and the E1–E8 results to the next session. Then:
+Bring `hw-report.json` and the E1–E11 results to the next session. Then:
 - Fix any `fail`s.
 - Make the `code_impact` notes from `review` checks into code or race-day procedure.
 - Update the simulated behaviour in `docs/mocked-ble-plan.md`, so the dev mock copies the real hardware rather than today's assumptions.

@@ -108,6 +108,104 @@ def test_classify_halt_clock(device_elapsed, wall_elapsed, halt, expected):
     assert hw.classify_halt_clock(device_elapsed, wall_elapsed, halt) == expected
 
 
+# --- the power multiplier sweep (HW-03) ---
+
+def TS(arrival, timestamp_s, throttles):
+    # Not T(): this module already binds T = hw.ThrottleSample further down, which takes
+    # raw ticks. Shadowing it silently fed seconds in as ticks.
+    return hw.ThrottleSample(arrival=arrival, timestamp_ticks=ticks(timestamp_s),
+                             throttles=throttles)
+
+
+def held(car, position=0x3F):
+    """Six throttle bytes with one car's trigger at `position`."""
+    return tuple(position if i == car - 1 else 0 for i in range(6))
+
+
+def test_throttle_positions_mask_the_button_bits():
+    """0x40 is brake and 0x80 lane-change — a trigger at full with both pressed is 0xFF,
+    and reading that as a position would put it off the 0-0x3f scale."""
+    assert hw.throttle_positions((0x3F, 0x7F, 0xFF, 0x40, 0x80, 0)) == (0x3F, 0x3F, 0x3F, 0, 0, 0)
+
+
+def test_find_held_trigger_identifies_the_car():
+    """Auto-detection is the whole point: the operator's hands are on the controller, so
+    holding the trigger IS the start signal — they never say which car they're on."""
+    samples = [TS(100.0 + i * 0.3, 50.0 + i * 0.3, held(4)) for i in range(5)]
+    assert hw.find_held_trigger(samples) == 4
+
+
+def test_the_sweep_starts_on_the_first_held_packet():
+    """⚠️ The whole test must last exactly 8s from the moment the operator presses (Greg,
+    2026-09-20), so detection fires on ONE packet — a confirmation period would delay the
+    100% step past the press by that much."""
+    assert hw.TRIGGER_HELD_FOR_S == 0.0
+    assert hw.find_held_trigger([TS(100.0, 50.0, held(4))]) == 4
+    assert len(hw.POWER_SWEEP) * hw.SWEEP_STEP_SECONDS == 8.0
+
+
+def test_find_held_trigger_can_require_a_sustained_hold():
+    """The confirmation period is still a parameter, for any caller that wants one."""
+    samples = [TS(100.0, 50.0, held(4)), TS(100.1, 50.1, held(4))]
+    assert hw.find_held_trigger(samples, for_s=0.5) is None
+
+
+def test_find_held_trigger_ignores_a_partly_pulled_trigger():
+    samples = [TS(100.0 + i * 0.3, 50.0 + i * 0.3, held(4, position=0x20)) for i in range(5)]
+    assert hw.find_held_trigger(samples) is None
+
+
+def test_a_release_then_a_fresh_press_starts_the_sweep():
+    """The operator releasing and pressing again is a new press, and the sweep belongs to
+    it — only the run of held samples at the END of the stream counts, so the earlier
+    release is irrelevant. With a confirmation period it would be a feathered trigger and
+    rejected, which is what `for_s` is for."""
+    samples = [TS(100.0, 50.0, held(4)), TS(100.3, 50.3, held(4, position=0)),
+               TS(100.6, 50.6, held(4)), TS(100.9, 50.9, held(4))]
+    assert hw.find_held_trigger(samples) == 4
+    assert hw.find_held_trigger(samples, for_s=0.5) is None
+
+
+def test_find_held_trigger_with_no_samples():
+    assert hw.find_held_trigger([]) is None
+
+
+def test_counter_rate_running_and_frozen():
+    """Read from throttleTimestamp, not crossings: at ~3.3 samples/s a 2s step has enough
+    of them, where one Slot rotation (~1.8s) would not."""
+    running = [TS(100.0 + i * 0.3, 50.0 + i * 0.3, held(1)) for i in range(7)]
+    frozen = [TS(100.0 + i * 0.3, 50.0, held(1)) for i in range(7)]
+    assert hw.counter_rate(running) == pytest.approx(1.0)
+    assert hw.counter_rate(frozen) == pytest.approx(0.0)
+    assert hw.counter_rate(running[:1]) is None
+
+
+@pytest.mark.parametrize('rate, expected', [
+    (1.0, 'counter_ran'),
+    (0.98, 'counter_ran'),
+    (0.0, 'counter_froze'),
+    (0.5, 'counter_froze'),
+    (None, 'not_measured'),
+])
+def test_classify_zero_power_counter(rate, expected):
+    assert hw.classify_zero_power_counter(rate) == expected
+
+
+def test_every_zero_power_counter_outcome_has_a_code_impact():
+    """The report is read once, after the hardware session — an outcome with no guidance
+    attached would send someone back to the source to work out what it meant."""
+    outcomes = {hw.classify_zero_power_counter(r) for r in (1.0, 0.0, 0.5, None)}
+    assert outcomes <= set(hw.ZERO_POWER_COUNTER_IMPACT)
+
+
+def test_the_sweep_ends_at_zero_power():
+    """0% is the step the yellow flag depends on, and the last one so that full power is
+    restored immediately afterwards rather than leaving cars dead on the track."""
+    assert hw.POWER_SWEEP[0][0] == 1.00
+    assert hw.POWER_SWEEP[-1][0] == 0.00
+    assert [round(hw.ble.FULL_POWER * f) for f, _label in hw.POWER_SWEEP][-1] == 0
+
+
 def test_classify_halted_crossing():
     before = C(arrival=100.0, car=1, lane=1, device_ticks=ticks(50.0))     # halt at wall 102
     frozen = C(arrival=110.0, car=2, lane=1, device_ticks=ticks(52.0))     # device = halt instant

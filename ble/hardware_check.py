@@ -34,6 +34,7 @@ import time
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from bleak import BleakClient, BleakScanner
 
@@ -192,6 +193,107 @@ def classify_halt_clock(device_elapsed_s: float, wall_elapsed_s: float, halt_s: 
     if ticking_error <= tolerance_s and ticking_error < paused_error:
         return 'kept_ticking'
     return 'unclear'
+
+
+# The power multiplier sweep (HW-03, Greg's design 2026-09-20). The operator holds one
+# trigger flat and the script steps the multiplier down under them, so nobody has to touch
+# a keyboard mid-test and what the car does is judged by the person watching it.
+#
+# 100% first so the step down is felt against a known baseline; 0% last because that is the
+# one the yellow flag depends on. 75/50 are not padding — limp mode (capping power instead
+# of stopping the cars) needs to know the shape of the response, and the protocol doc says
+# nothing about it being linear. Add 0.25 here if the ~30% limp point needs measuring.
+POWER_SWEEP = ((1.00, '100%'), (0.75, '75%'), (0.50, '50%'), (0.00, '0%'))
+SWEEP_STEP_SECONDS = 2.0
+
+# ⚠️ The operator cannot see this script's output while it runs — it is driven over ssh and
+# the stream only arrives when the command finishes. So an instruction printed here reaches
+# them too late to act on, and the first real run measured eight seconds of a released
+# trigger because of exactly that. The protocol has to be self-synchronising instead: the
+# operator simply holds the trigger down, and the script keeps retrying until it gets a
+# sweep with the trigger held from the first step to the last.
+SWEEP_ATTEMPTS = 6
+TRIGGER_WAIT_SECONDS = 180
+
+# A trigger counts as held when its position byte is this high. The first hardware run
+# measured a noise floor at rest (HW-12's throttle_at_rest_max), so this sits far above it:
+# 0x30 of 0x3f is 75% of travel, which no resting controller reports.
+TRIGGER_HELD_THRESHOLD = 0x30
+
+# ⚠️ Zero on purpose: the sweep must start on the FIRST packet showing the trigger down, so
+# the whole test is exactly len(POWER_SWEEP) * SWEEP_STEP_SECONDS = 8s from the moment the
+# operator presses (Greg, 2026-09-20). Requiring the trigger to be held for a confirmation
+# period first would push the 100% step later than the press by that much. Noise can't fire
+# it at this threshold, so one sample is enough; the powerbase's ~300ms notification rate
+# is then the only lag, and it is the hardware's, not ours.
+TRIGGER_HELD_FOR_S = 0.0
+
+ZERO_POWER_COUNTER_IMPACT = {
+    'counter_ran': "As designed: the counter runs through a zero-multiplier stop, so the lap "
+                   "spanning a yellow flag stays an exact counter subtraction with the stopped "
+                   "time in it. This is the whole reason CARS_STOPPED is command 3 at power 0 "
+                   "rather than command 4.",
+    'counter_froze': "⚠️ The counter stopped even at command 3, so the reason for preferring a "
+                     "zero multiplier over POWER_ON_TIMER_HALT is gone. "
+                     "_TIMESTAMP_BREAKING_COMMANDS must then cover this write too, or lapdata "
+                     "will subtract counters across a discontinuity and believe the answer.",
+    'not_measured': "No usable throttleTimestamp samples during the 0% step (see HW-12). Rerun "
+                    "with the Throttle subscription working, or fall back to HW-06's "
+                    "crossing-either-side arithmetic over a longer stop.",
+}
+
+
+def throttle_positions(throttles) -> tuple:
+    """The six trigger positions, 0-0x3f, with the brake (0x40) and lane-change (0x80)
+    button bits masked off."""
+    return tuple(b & 0x3F for b in throttles)
+
+
+def find_held_trigger(samples: list, threshold: int = TRIGGER_HELD_THRESHOLD,
+                      for_s: float = TRIGGER_HELD_FOR_S) -> int | None:
+    """The car ID (1-6) whose trigger has been at or above `threshold` for the last `for_s`
+    seconds, or None. Auto-detecting it means the operator never has to say which car they
+    are on — they just hold the trigger down, which is the signal to begin."""
+    if not samples:
+        return None
+    latest = samples[-1].arrival
+    for car in range(6):
+        # The longest unbroken run of held samples at the END of the stream, then how long
+        # it spans. ⚠️ Not "every sample within the last for_s": throttle notifications
+        # arrive ~300ms apart, so the samples inside a 500ms window span only ~300ms of it
+        # and such a test can never pass on real hardware.
+        run_started = None
+        for sample in reversed(samples):
+            if throttle_positions(sample.throttles)[car] < threshold:
+                break
+            run_started = sample.arrival
+        if run_started is not None and latest - run_started >= for_s:
+            return car + 1
+    return None
+
+
+def counter_rate(samples: list) -> float | None:
+    """How fast the powerbase counter advanced across these throttle samples, as a fraction
+    of real time. ~1.0 means running, ~0.0 frozen.
+
+    Read from throttleTimestamp rather than from crossings: HW-12 confirmed it is a live
+    reading of the same counter, and at ~3.3 samples/s a 2s step has enough of them, where
+    a 1.8s Slot rotation would not.
+    """
+    if len(samples) < 2:
+        return None
+    wall = samples[-1].arrival - samples[0].arrival
+    if wall <= 0:
+        return None
+    device = ble.device_seconds(samples[-1].timestamp_ticks - samples[0].timestamp_ticks)
+    return device / wall
+
+
+def classify_zero_power_counter(rate: float | None, tolerance: float = 0.25) -> str:
+    """Did the counter keep running while the cars were held at zero power?"""
+    if rate is None:
+        return 'not_measured'
+    return 'counter_ran' if abs(rate - 1.0) <= tolerance else 'counter_froze'
 
 
 def classify_halted_crossing(pushed: Crossing | None, before: Crossing, halt_at: float,
@@ -509,20 +611,26 @@ class Session:
             await self.client.disconnect()
             print("    Disconnected.")
 
-    async def write(self, command: int) -> dict:
+    async def write(self, command: int, power: int = ble.FULL_POWER) -> dict:
         """`at` is when the write was sent and `acked_at` when bleak returned, so the
         powerbase acted on it somewhere in between (with-response writes, which HW-01's
-        characteristic properties confirm)."""
+        characteristic properties confirm).
+
+        `power` is the per-car multiplier in bytes 1-6. It defaults to full because every
+        check but HW-03 wants the cars driving normally; HW-03 passes 0, which is how
+        ble_to_timestamps stops them for a yellow flag (CARS_STOPPED)."""
         at = time.time()
         try:
-            await self.client.write_gatt_char(ble.COMMAND_CHARACTERISTIC_UUID, ble.command_payload(command))
+            await self.client.write_gatt_char(ble.COMMAND_CHARACTERISTIC_UUID,
+                                              ble.command_payload(command, power))
         except Exception as e:
             acked_at = time.time()
             print(f"    Command {command} write FAILED: {e!r}")
-            return {'command': command, 'ok': False, 'at': at, 'acked_at': acked_at, 'error': repr(e)}
+            return {'command': command, 'power': power, 'ok': False,
+                    'at': at, 'acked_at': acked_at, 'error': repr(e)}
         acked_at = time.time()
-        print(f"    Command {command} written ({(acked_at - at) * 1000:.0f}ms).")
-        return {'command': command, 'ok': True, 'at': at, 'acked_at': acked_at,
+        print(f"    Command {command} at power 0x{power:02x} written ({(acked_at - at) * 1000:.0f}ms).")
+        return {'command': command, 'power': power, 'ok': True, 'at': at, 'acked_at': acked_at,
                 'latency_ms': round((acked_at - at) * 1000)}
 
     def last_values(self) -> dict:
@@ -620,11 +728,114 @@ async def check_slot_idle(s: Session) -> dict:
     }
 
 
-@check('HW-03', 'Command write accepted; POWER_ON_RACING at full multiplier gives full throttle')
-async def check_full_power(s: Session) -> dict:
-    write = await s.write(ble.POWER_ON_RACING)
-    drives = await ask_yes_no("Pull each controller's trigger in turn. Does every car drive at normal full speed?")
-    return {'verdict': verdict(write['ok'] and drives), 'write': write, 'full_speed': drives}
+@check('HW-03', 'Power multiplier sweep: 100% -> 75% -> 50% -> 0%, trigger held flat')
+async def check_power_multiplier(s: Session) -> dict:
+    """⚠️ Safety-critical, and unproven until this runs. A yellow flag stops the cars with
+    POWER_ON_RACING at a zero multiplier (ble_to_timestamps.CARS_STOPPED) rather than
+    POWER_ON_TIMER_HALT, deliberately: command 4 freezes the powerbase counter, which
+    downgrades every lap spanning a yellow flag from an exact counter subtraction to one
+    converted through lapdata's clock anchor. A zero multiplier leaves the counter running,
+    so the spanning lap is exact and simply long — the cars really did stand still for part
+    of it. All of which depends on a zero multiplier actually stopping a moving car.
+
+    Deliberately PROMPT-FREE (Greg's design, 2026-09-20): hold one trigger flat and the
+    script detects that from the Throttle characteristic, then steps the multiplier down
+    underneath you — 2s per step, so you can feel each one — and restores full power at the
+    end. Nobody has to touch a keyboard with a controller in their hands, and what the car
+    does is judged by the person watching it rather than inferred from a 1.8s Slot rotation.
+    Report what you saw afterwards; this records the objective side:
+
+    - the trigger really was held flat through every step (so a "no change at 50%" is a
+      measurement of the powerbase, not of a released trigger);
+    - the counter kept advancing at real-time rate through the 0% step, read from
+      throttleTimestamp — the design's premise, and the one thing here that IS automatic;
+    - any Slot crossings per step, which at 2s a step is weak evidence but free to collect.
+    """
+    if s.throttle_error:
+        return {'verdict': 'skipped',
+                'reason': f'no Throttle notifications, so the trigger cannot be detected: '
+                          f'{s.throttle_error}'}
+
+    await s.write(ble.POWER_ON_RACING)
+    print(f"\n>>> Hold ONE controller's trigger fully down and KEEP HOLDING it. The sweep runs "
+          f"as soon as that is detected ({SWEEP_STEP_SECONDS:.0f}s a step: "
+          + ' -> '.join(label for _f, label in POWER_SWEEP) + f"), and retries up to "
+          f"{SWEEP_ATTEMPTS} times until it gets one with the trigger held throughout.")
+
+    attempts = []
+    for attempt in range(1, SWEEP_ATTEMPTS + 1):
+        car = None
+        deadline = time.time() + TRIGGER_WAIT_SECONDS
+        while car is None:
+            if time.time() > deadline:
+                return {'verdict': 'skipped',
+                        'reason': f'no trigger held down within {TRIGGER_WAIT_SECONDS:.0f}s',
+                        'attempts': attempts}
+            await asyncio.sleep(0.1)
+            car = find_held_trigger(s.throttle)
+        print(f"\n    Attempt {attempt}: trigger held on car {car}. Sweeping.")
+
+        steps = []
+        for fraction, label in POWER_SWEEP:
+            power = round(ble.FULL_POWER * fraction)
+            write = await s.write(ble.POWER_ON_RACING, power=power)
+            started = write['acked_at']
+            await asyncio.sleep(SWEEP_STEP_SECONDS)
+            window = [t for t in s.throttle if t.arrival > started]
+            positions = [throttle_positions(t.throttles)[car - 1] for t in window]
+            steps.append({
+                'label': label, 'power_byte': power, 'fraction': fraction,
+                'write': write,
+                'throttle_samples': len(positions),
+                # If this dips, the trigger was released and the step tells us nothing.
+                'trigger_held_min': min(positions) if positions else None,
+                'trigger_held_throughout': bool(positions) and min(positions) >= TRIGGER_HELD_THRESHOLD,
+                'counter_rate': round(r, 3) if (r := counter_rate(window)) is not None else None,
+                'crossings': [asdict(c) for c in find_crossings(s.samples, after=started)],
+            })
+            print(f"    {label} (byte 0x{power:02x}): trigger min {steps[-1]['trigger_held_min']}, "
+                  f"counter rate {steps[-1]['counter_rate']}, "
+                  f"{len(steps[-1]['crossings'])} crossing(s)")
+
+        attempts.append(steps)
+        # Full power back between attempts, so a retry never leaves the car sitting dead.
+        await s.write(ble.POWER_ON_RACING)
+        if all(step['trigger_held_throughout'] for step in steps):
+            print(f"    Clean sweep: the trigger was held through every step.")
+            break
+        released = [step['label'] for step in steps if not step['trigger_held_throughout']]
+        print(f"    Trigger released during {released} — full power restored, retrying. "
+              f"KEEP HOLDING the trigger.")
+
+    steps = attempts[-1]
+    restore = await s.write(ble.POWER_ON_RACING)
+    print("\n>>> Full power restored — you can release the trigger.")
+
+    zero_step = steps[-1]
+    counter = classify_zero_power_counter(zero_step['counter_rate'])
+    return {
+        # 'info': what the car physically did is the operator's call, not the script's. The
+        # counter question below is the part that can be judged automatically.
+        'verdict': 'info',
+        'car': car,
+        'steps': steps,
+        'sweep_attempts': len(attempts),
+        'restore_write': restore,
+        'trigger_held_all_steps': all(step['trigger_held_throughout'] for step in steps),
+        # ⚠️ Controller calibration is an assumption (Greg, 2026-09-20): a released trigger
+        # may report a small non-zero value and a fully-pulled one somewhat under 63. Car
+        # 5's read a clean 63, so TRIGGER_HELD_THRESHOLD was comfortable — but a controller
+        # reading 40 at full travel would never be detected as held and the sweep would wait
+        # forever. This is what tells you that is what happened.
+        'throttle_max_seen': {car_id: max((throttle_positions(t.throttles)[car_id - 1]
+                                           for t in s.throttle), default=None)
+                              for car_id in range(1, 7)},
+        'trigger_held_threshold': TRIGGER_HELD_THRESHOLD,
+        'counter_through_zero_power': counter,
+        'code_impact': ZERO_POWER_COUNTER_IMPACT[counter],
+        'operator_reports': "Record what the car did at each step: full speed / slower / "
+                            "much slower / stopped, and whether it coasted or braked.",
+    }
 
 
 @check('HW-04', 'Crossings: car ID byte, which StartFinish field each lane sets, bounce, jitter')
@@ -1041,10 +1252,22 @@ async def check_slot_polling(s: Session) -> dict:
 async def find_device(address: str | None):
     if address:
         device = await BleakScanner.find_device_by_address(address, timeout=20)
+        if device is None:
+            # ⚠️ A scan is not the same as reachability. A powerbase that BlueZ already
+            # knows may not be advertising — it stops while connected, and does not
+            # necessarily resume the instant the link drops — but it can still be
+            # connected to by address. That is exactly what ble_to_timestamps does when
+            # BLE_ADDRESS is set (it never scans), so refusing to try here made the
+            # script fail against a powerbase the production code connects to happily.
+            print(f"    Not seen in a 20s scan, but an address was given: connecting to "
+                  f"{address} directly, as ble_to_timestamps does.")
+            return SimpleNamespace(address=address, name=None)
     else:
         device = await BleakScanner.find_device_by_filter(ble._name_matches, timeout=20)
     if device is None:
-        raise SystemExit("No powerbase found. Is it on, in range, and is the ble container stopped?")
+        raise SystemExit("No powerbase found. Is it on, in range, and is the ble container "
+                         "stopped? With --address it is also tried directly, so this means "
+                         "the address itself could not be reached.")
     print(f"Found {device.name!r} at {device.address}")
     return device
 
