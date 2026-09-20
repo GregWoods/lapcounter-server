@@ -146,7 +146,7 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, NULL) ON CONFL
 INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, scoring_method, scoring_points, start_time, end_time, state)
     VALUES (1, 3, 'FastestLap', 'Time', 3, 2, NULL, 'FastestLap', NULL, NULL, NULL, 'Finished') ON CONFLICT (id) DO NOTHING;
 INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, scoring_method, scoring_points, start_time, end_time, state)
-    VALUES (2, 3, 'Points', 'Laps', 20, 3, 2, 'PositionPoints', '[10, 8, 6, 4, 3, 2]', NULL, NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
+    VALUES (2, 3, 'Points', 'Laps', 5, 3, 2, 'PositionPoints', '[10, 8, 6, 4, 3, 2]', NULL, NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO lanes (lane_number, color, enabled) VALUES (1, 'red', true) ON CONFLICT (lane_number) DO NOTHING;

@@ -173,7 +173,7 @@ def add_sessions(session: Session):
                    scoring_method='FastestLap', scoring_points=None,
                    start_time=None, end_time=None, state='Finished'),
         RaceSession(id=2, meeting_id=3, session_type='Points',
-                   end_condition='Laps', end_condition_info=20,
+                   end_condition='Laps', end_condition_info=5,
                    races_per_driver=3, max_sit_outs=2,
                    scoring_method='PositionPoints', scoring_points='[10, 8, 6, 4, 3, 2]',
                    start_time=None, end_time=None, state='InProgress')
