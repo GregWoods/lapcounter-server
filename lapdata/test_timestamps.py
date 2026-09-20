@@ -110,3 +110,36 @@ def test_phantom_filter_uses_device_time(monkeypatch):
     tsl.handle_car_timestamp({'car': 1, 'timestamp': base + 1_000_000_000, 'lane': 1})  # 1s later
 
     assert len([p for t, p in published if t == 'lap']) == 1
+
+
+# --- Lap target for a staged race ---
+
+def _pending(**extra):
+    """Minimal /races/pending/ payload: one driver in lane 1."""
+    return {
+        'race_id': 7,
+        'race_number': 3,
+        'lane_assignments': [{'lane_number': 1, 'id': 4, 'driver_name': 'Dave', 'lane_enabled': True}],
+        **extra,
+    }
+
+
+def test_staged_race_takes_its_lap_target_from_the_payload():
+    """Regression: /races/pending/ now carries the session's lap target, so a 5-lap
+    session must stage as 5. It used to be a hardcoded 20 at every call site, so a
+    staged race showed 20 laps until RaceControl armed it with its own lookup."""
+    tsl._load_pending(_pending(target_laps=5))
+    assert tsl.race.target_laps == 5
+
+
+def test_explicit_target_laps_beats_the_payload():
+    """An arm/start race_control message naming target_laps is a deliberate instruction
+    from a client, so it wins over the payload's default."""
+    tsl._load_pending(_pending(target_laps=5), target_laps=12)
+    assert tsl.race.target_laps == 12
+
+
+def test_falls_back_when_the_api_sends_no_lap_target():
+    """An API image older than the target_laps field leaves lapdata to guess."""
+    tsl._load_pending(_pending())
+    assert tsl.race.target_laps == tsl.DEFAULT_TARGET_LAPS

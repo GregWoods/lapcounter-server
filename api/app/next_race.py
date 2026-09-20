@@ -479,8 +479,11 @@ def _build_race_setup(dbsession, race):
     races_done, races_total = compute_session_progress(race_session, all_drivers, dbsession)
 
     race_duration_seconds = None
+    target_laps = None
     if race_session.end_condition == 'Time' and race_session.end_condition_info:
         race_duration_seconds = race_session.end_condition_info * 60
+    elif race_session.end_condition == 'Laps' and race_session.end_condition_info:
+        target_laps = race_session.end_condition_info
 
     session_drivers = []
     if race_session.session_type == 'FastestLap':
@@ -497,6 +500,7 @@ def _build_race_setup(dbsession, race):
         session_races_total=races_total,
         session_type=race_session.session_type,
         race_duration_seconds=race_duration_seconds,
+        target_laps=target_laps,
         yellow_grace_seconds=race_session.yellow_grace_seconds,
         session_drivers=session_drivers,
     )

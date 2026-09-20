@@ -113,6 +113,9 @@ class NextRaceSetup(SQLModel):
     session_races_total: Optional[int] = None  # None for non-RacesPerDriver sessions
     session_type: str = 'Points'
     race_duration_seconds: Optional[int] = None  # seconds; set for time-limited races
+    target_laps: Optional[int] = None  # laps; set for lap-limited races. The counterpart of
+    # race_duration_seconds: without it lapdata has to guess a lap target for a staged race,
+    # and a session set to 5 laps still showed 20 until the race was armed.
     yellow_grace_seconds: int = 5  # full-power seconds after a yellow flag before power cuts
     session_drivers: list[SessionDriverFastestLap] = []  # FastestLap sessions only
 

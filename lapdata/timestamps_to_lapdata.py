@@ -26,6 +26,10 @@ HW_TIMESTAMP_TOLERANCE_NS = 30 * 1_000_000_000
 # goes). The lit-count is published in race_state.start_lights so every client
 # (browser, future hardware light bar) renders identical, in-sync lights — no
 # client runs its own countdown clock.
+# Last-resort lap target, used only when neither the race_control message nor the
+# /races/pending/ payload carries one — i.e. an API image older than the target_laps
+# field. The session's own end_condition_info is the real source.
+DEFAULT_TARGET_LAPS = 20
 light_interval = float(os.getenv('START_LIGHT_INTERVAL', '1.0'))
 lights_out_hold_min = float(os.getenv('LIGHTS_OUT_HOLD_MIN', '0.5'))
 lights_out_hold_max = float(os.getenv('LIGHTS_OUT_HOLD_MAX', '3.0'))
@@ -314,8 +318,22 @@ def _schedule_start_sequence():
     )
 
 
-def _load_pending(pending: dict, target_laps: int):
-    """Load a /races/pending/ payload into the race manager (state becomes NotStarted)."""
+def _load_pending(pending: dict, target_laps: int | None = None):
+    """Load a /races/pending/ payload into the race manager (state becomes NotStarted).
+
+    The payload carries the session's own lap target, so that is the default. An explicit
+    target_laps (from a race_control arm/start message) still wins, since that is a
+    deliberate instruction from a client. DEFAULT_TARGET_LAPS is only reached against an
+    API image old enough not to send one.
+
+    ⚠️ This used to be a hardcoded 20 at every call site, because /races/pending/ carried
+    no lap target: a session set to 5 laps staged and displayed as 20, and only became 5
+    when RaceControl armed it with a value it had looked up itself.
+    """
+    if target_laps is None:
+        target_laps = pending.get('target_laps')
+    if target_laps is None:
+        target_laps = DEFAULT_TARGET_LAPS
     race.load_lineup(
         pending['race_id'], pending.get('race_number'), target_laps,
         pending['lane_assignments'], pending.get('count_first_crossing', False),
@@ -334,7 +352,7 @@ def handle_race_control(data: dict):
 
     if command == 'arm':
         race_id = data.get('race_id')
-        target_laps = data.get('target_laps', 20)
+        target_laps = data.get('target_laps')
 
         _cancel_start_timers()
         _cancel_yellow_timers()
@@ -366,7 +384,7 @@ def handle_race_control(data: dict):
 
     elif command == 'start':
         race_id = data.get('race_id')
-        target_laps = data.get('target_laps', 20)
+        target_laps = data.get('target_laps')
 
         _cancel_end_timer()
 
@@ -403,7 +421,7 @@ def handle_race_control(data: dict):
         fresh = fetch_pending_race()
         if fresh:
             pending_race_cache = fresh
-            _load_pending(fresh, 20)
+            _load_pending(fresh)
             publish_race_state()
             logger.info(f"Staged race {fresh.get('race_id')} on prepare (requested {race_id})")
         else:
@@ -433,7 +451,7 @@ def handle_race_control(data: dict):
                         f"staged race is {race.race_id} (use prepare to advance)")
             return
         pending_race_cache = fresh
-        _load_pending(fresh, 20)
+        _load_pending(fresh)
         publish_race_state()
 
     elif command == 'yellow':
@@ -529,7 +547,7 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     with _race_lock:
         if pending:
             pending_race_cache = pending
-            _load_pending(pending, 20)
+            _load_pending(pending)
             publish_race_state()
         else:
             logger.warning("No pending race found on startup — waiting for race_control start")
