@@ -36,6 +36,9 @@ device_name = os.getenv('BLE_DEVICE_NAME', 'Scalextric ARC')
 device_address = os.getenv('BLE_ADDRESS')
 scan_timeout = float(os.getenv('BLE_SCAN_TIMEOUT', '10'))
 reconnect_delay = float(os.getenv('BLE_RECONNECT_DELAY', '5'))
+# How hard to chase the first reconnect. See the backoff in run().
+RECONNECT_FAST_DELAY = float(os.getenv('BLE_RECONNECT_FAST_DELAY', '1'))
+RECONNECT_FAST_WINDOW_S = float(os.getenv('BLE_RECONNECT_FAST_WINDOW', '30'))
 
 MQTT_TIMESTAMP_TOPIC = "car_timestamp"
 MQTT_CLOCK_TOPIC = "layer1_clock"
@@ -203,6 +206,16 @@ _TIMESTAMP_BREAKING_COMMANDS = {NO_POWER_TIMER_STOPPED, NO_POWER_TIMER_TICKING,
 # on every connect) because we don't know what state the powerbase was left in.
 _timestamps_halted = True
 
+# time.monotonic() when the BLE link dropped, or None while connected. Only used to say
+# how long we were away in the reconnect log — nothing times a lap with it.
+_disconnected_at: float | None = None
+
+# The highest counter value seen from the powerbase, from a crossing or a heartbeat. Its
+# job is diagnostic: logged on reconnect so a smaller value afterwards identifies a power
+# cycle at a glance, which is otherwise invisible in the logs and is exactly what a
+# "we lost two laps" report needs to be checked against.
+_last_counter_ms_seen: int | None = None
+
 # Retry for a Command write that fails while connected (a disconnect is covered instead
 # by run()'s connect-time write). Without it a rejected CARS_STOPPED would leave cars
 # racing until the next race_state transition. Backs off so a powerbase that
@@ -229,6 +242,14 @@ def counter_ms(device_ticks: int) -> int:
     return round(device_seconds(device_ticks) * 1000)
 
 
+def _note_counter_seen(value_ms: int):
+    """Remember the highest counter the powerbase has reported. Diagnostic only — see
+    _last_counter_ms_seen."""
+    global _last_counter_ms_seen
+    if _last_counter_ms_seen is None or value_ms > _last_counter_ms_seen:
+        _last_counter_ms_seen = value_ms
+
+
 def publish_crossing(car_number: int, lane: int, device_ticks: int):
     """Publish the crossing as the powerbase's OWN counter, unconverted.
 
@@ -238,6 +259,7 @@ def publish_crossing(car_number: int, lane: int, device_ticks: int):
     lapdata subtracts two of these to get a lap time, so the delay cancels out entirely
     and never reaches a lap. The anchor it keeps is only for lap 1.
     """
+    _note_counter_seen(counter_ms(device_ticks))
     payload = {"car": car_number, "lane": lane,
                "counter_ms": counter_ms(device_ticks), "clock": _clock}
     mqtt_client.publish(MQTT_TIMESTAMP_TOPIC, payload=json.dumps(payload))
@@ -300,13 +322,16 @@ def handle_slot_notification(_sender, data: bytearray):
     _last_start_finish[idx] = [timestamp1, timestamp2]
     _baseline_clock[idx] = _clock
 
-    # First packet seen for this car since connecting: that was the baseline, publish
-    # nothing. The powerbase keeps counting while we're away (POWER_ON_RACING leaves
-    # timestamps ticking — only commands 0 and 1 zero them), so it hands us whatever
-    # each car's last crossing was. Comparing that against "unknown" would read as a
-    # change and fake a lap for every car — six phantom laps on a mid-race reconnect.
-    # Cost of seeding: a real crossing in the sub-second before this car's first
-    # round-robin packet is missed, which is the far cheaper failure.
+    # First packet EVER seen for this car: that was the baseline, publish nothing. The
+    # powerbase keeps counting while nothing is connected (POWER_ON_RACING leaves
+    # timestamps ticking — only commands 0 and 1 zero them), so on the first connect of
+    # this process it hands us whatever each car's last crossing was, from a race we may
+    # not even have been running. Comparing that against "unknown" would read as a change
+    # and fake a lap for every car — six phantom laps at startup.
+    #
+    # ⚠️ This is NOT reached on a reconnect any more (Greg, 2026-09-20): run() keeps the
+    # baselines, so a crossing made while the link was down is recognised as a change and
+    # published like any other. Those are real laps and must be counted. See run().
     if previous1 is None:
         return
 
@@ -354,6 +379,7 @@ def publish_clock_sample(device_ticks: int):
     if _last_heartbeat_at is not None and now - _last_heartbeat_at < HEARTBEAT_MIN_INTERVAL_S:
         return
     _last_heartbeat_at = now
+    _note_counter_seen(counter_ms(device_ticks))
     mqtt_client.publish(MQTT_CLOCK_TOPIC, payload=json.dumps(
         {"clock": _clock, "counter_ms": counter_ms(device_ticks)}))
 
@@ -601,23 +627,42 @@ async def _subscribe_clock_heartbeat(client):
 
 async def run():
     global _bleak_client, _ble_loop, _timestamps_halted, _power_retry_at, _power_retry_delay
-    global _last_heartbeat_at
+    global _last_heartbeat_at, _disconnected_at
+    attempts_since_drop = 0
     while True:
         try:
             address = await find_device_address()
             logger.info(f"Connecting to {address}...")
             async with BleakClient(address) as client:
-                logger.info("Connected to Scalextric ARC powerbase.")
-                # Drop every car back to "not yet seeded" — values from before this
-                # connection can't be compared against what the powerbase reports now.
-                # And start a new clock: the powerbase may have been power-cycled while
-                # we were away (which zeroes its timer), or halted, or simply carried on
-                # — we can't tell, and "might have broken continuity" is exactly what a
-                # new clock is for. It may also still be halted from before we dropped,
-                # so treat its timestamps as frozen until our first write restarts them.
-                for i in range(len(_last_start_finish)):
-                    _last_start_finish[i] = [None, None]
-                    _baseline_clock[i] = None
+                if _disconnected_at is None:
+                    logger.info("Connected to Scalextric ARC powerbase.")
+                else:
+                    logger.info(f"Reconnected to Scalextric ARC powerbase after "
+                                f"{time.monotonic() - _disconnected_at:.1f}s. Last counter "
+                                f"seen before the drop: {_last_counter_ms_seen}ms — a smaller "
+                                f"one from here means the powerbase was power-cycled.")
+                # ⚠️ The per-car baselines are deliberately KEPT across a reconnect (Greg,
+                # 2026-09-20). Clearing them used to force every car's first packet to be
+                # swallowed as a fresh baseline, which threw away a real lap: the powerbase
+                # reports each car's LAST crossing as absolute state, so a crossing made
+                # while we were away is still there when we come back. Remembering what we
+                # last saw is what makes it decidable per car, with no phantom-lap risk:
+                #
+                #   unchanged  -> nothing crossed while away, publish nothing
+                #   larger     -> a real crossing while away, publish it
+                #   smaller    -> the timers were zeroed, so the powerbase was power-cycled
+                #                 and a non-zero value is a real crossing since power-up
+                #   None       -> genuinely unknown (first connect of this process), seed
+                #
+                # A car that crossed TWICE while we were away still loses one: the
+                # powerbase keeps only the most recent stamp per car, and no software can
+                # recover what it never kept. That is what the fast reconnect is for.
+                #
+                # Still a new clock, though: the powerbase may have been power-cycled
+                # (which zeroes its timer), or halted, or simply carried on — we can't
+                # tell, and "might have broken continuity" is exactly what a new clock is
+                # for. It may also still be halted from before we dropped, so treat its
+                # timestamps as frozen until our first write restarts them.
                 _new_clock('connected to the powerbase')
                 _timestamps_halted = True
                 _last_heartbeat_at = None
@@ -642,6 +687,8 @@ async def run():
                 # arriving from here on is written by handle_race_state() instead.
                 await _write_command_async(_command_for_race_state(_last_seen_race_state))
 
+                _disconnected_at = None
+                attempts_since_drop = 0
                 while client.is_connected:
                     await asyncio.sleep(1)
                     await _retry_power_if_due()
@@ -656,9 +703,22 @@ async def run():
         finally:
             _bleak_client = None
             _ble_loop = None
+            if _disconnected_at is None:
+                _disconnected_at = time.monotonic()
 
-        logger.info(f"Retrying in {reconnect_delay}s...")
-        await asyncio.sleep(reconnect_delay)
+        # Retry fast at first, then back off. ⚠️ Every second we are not subscribed is a
+        # second of crossings the powerbase can only remember one of per car, so the first
+        # reconnect after a power cycle is worth chasing hard — a powerbase takes a few
+        # seconds to boot and the old flat 5s could idle through most of that. The backoff
+        # then stops a base that is simply switched off (overnight, between meets) from
+        # filling the Pi's disk with retry lines.
+        attempts_since_drop += 1
+        delay = (RECONNECT_FAST_DELAY
+                 if attempts_since_drop * RECONNECT_FAST_DELAY <= RECONNECT_FAST_WINDOW_S
+                 else reconnect_delay)
+        if delay != RECONNECT_FAST_DELAY or attempts_since_drop == 1:
+            logger.info(f"Retrying in {delay}s...")
+        await asyncio.sleep(delay)
 
 
 mqtt_client.on_connect = on_mqtt_connect

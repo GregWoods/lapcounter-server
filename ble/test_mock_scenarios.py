@@ -323,6 +323,48 @@ def test_reconnect_while_paused_keeps_the_cars_stopped(harness):
     assert_lap_times_true(h)
 
 
+def test_a_lap_completed_while_the_link_was_down_is_still_counted(harness, monkeypatch):
+    """⚠️ Greg, 2026-09-20: "those crossings are real laps". The powerbase keeps racing while
+    nothing is connected and remembers each car's last crossing, so a lap completed during a
+    BLE drop is still there on reconnect. Clearing the per-car baselines on connect used to
+    swallow it as a fresh seed — which is how a power cycle mid-race lost two laps.
+
+    The reconnect is slowed here so the gap is long enough to contain a real lap; on the Pi
+    it is chased as fast as possible for exactly this reason.
+    """
+    h = harness
+    h.powerbase.disconnect_power = 'on'          # cars keep racing while we are away
+    monkeypatch.setattr(ble, 'RECONNECT_FAST_DELAY', 1.2)
+
+    async def scenario():
+        async with ble_running():
+            await eventually(lambda: len(crossings_seen(h)) >= 6, 'laps before the drop')
+            dropped_at = time.time()
+            h.powerbase.on_disconnect()
+            await eventually(lambda: h.powerbase.connection_id == 2, 'the reconnect', timeout=10)
+            reconnected_at = time.time()
+            before = len(crossings_seen(h))
+            await eventually(lambda: len(crossings_seen(h)) >= before + 3, 'laps after')
+            return dropped_at, reconnected_at
+
+    dropped_at, reconnected_at = asyncio.run(scenario())
+
+    # Every crossing the simulator made while nobody was listening...
+    in_the_gap = {(car, lane, ticks) for car, lane, at, ticks in h.powerbase.crossings
+                  if dropped_at < at < reconnected_at}
+    assert in_the_gap, 'no car crossed during the drop, so this proves nothing'
+
+    published = {(p['car'], p['lane'], round(p['counter_ms'] / 1000 / mp.TICK_S))
+                 for p in crossings_seen(h)}
+    # ...and at least one of them must have come through. Only the most recent stamp per
+    # car survives in the powerbase, so a car that crossed twice in the gap still loses one.
+    assert published & in_the_gap, (
+        f'every crossing during the drop was lost: {sorted(in_the_gap)}')
+
+    assert_no_phantom_laps(h)
+    assert_lap_times_true(h)
+
+
 def test_a_power_cycle_is_a_new_clock_with_no_phantom_laps(harness):
     """The powerbase is switched off and on mid-race: it drops the link and zeroes its
     timers. Both halves of the trap are here — six cars' retained timestamps must not

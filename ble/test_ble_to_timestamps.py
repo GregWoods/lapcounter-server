@@ -96,6 +96,62 @@ def test_first_packet_per_car_seeds_without_publishing(fresh_state):
     assert crossings(fresh_state) == []
 
 
+def _reconnect():
+    """What run() does on reconnect: a new clock, and the per-car baselines KEPT."""
+    ble._new_clock('reconnected to the powerbase')
+
+
+def test_a_crossing_made_while_disconnected_is_still_counted(fresh_state):
+    """⚠️ Regression (Greg, 2026-09-20): "those crossings are real laps". The powerbase
+    reports each car's last crossing as absolute state, so one made while the link was
+    down is still there when we reconnect — and clearing the baselines used to throw it
+    away as a fresh seed. A power cycle mid-race cost two laps that way."""
+    ble.handle_slot_notification(None, packet(1, t1=ticks(50)))    # first connect: seed
+    _reconnect()
+    ble.handle_slot_notification(None, packet(1, t1=ticks(58)))    # crossed while away
+
+    assert crossings(fresh_state) == [(1, 1)]
+    assert counters(fresh_state) == [58_000]
+    # On the CURRENT clock: its anchor is derived from whichever counter the powerbase is
+    # running now, and this stamp came from that same counter.
+    assert clocks(fresh_state) == [ble._clock]
+
+
+def test_a_reconnect_with_nothing_crossed_publishes_nothing(fresh_state):
+    """The other half of keeping the baselines: an unchanged stamp is not a lap. This is
+    what stops six phantom laps on every reconnect."""
+    ble.handle_slot_notification(None, packet(1, t1=ticks(50)))
+    ble.handle_slot_notification(None, packet(1, t1=ticks(60)))    # a real lap
+    before = len(crossings(fresh_state))
+
+    _reconnect()
+    ble.handle_slot_notification(None, packet(1, t1=ticks(60)))    # same stamp as before
+    assert len(crossings(fresh_state)) == before
+
+
+def test_a_crossing_after_a_power_cycle_but_before_we_reconnect_is_counted(fresh_state):
+    """The timers are zeroed by a power cycle, so a SMALLER stamp than we remember means
+    the powerbase rebooted — and a non-zero one is a real crossing since power-up."""
+    ble.handle_slot_notification(None, packet(1, t1=ticks(500)))   # seed, long-running base
+    _reconnect()
+    clock_after_reconnect = ble._clock
+    ble.handle_slot_notification(None, packet(1, t1=ticks(3)))     # zeroed, then crossed
+
+    assert crossings(fresh_state) == [(1, 1)]
+    assert counters(fresh_state) == [3_000]
+    # ⚠️ And only ONE clock for the reset: backwards-detection must not fire on top of the
+    # reconnect's own new clock, or each of the six cars would start another in turn.
+    assert ble._clock == clock_after_reconnect
+
+
+def test_a_power_cycle_with_no_crossing_yet_publishes_nothing(fresh_state):
+    """Every car reports 0 after a power cycle until it crosses. Zero is not a lap."""
+    ble.handle_slot_notification(None, packet(1, t1=ticks(500)))
+    _reconnect()
+    ble.handle_slot_notification(None, packet(1, t1=0))
+    assert crossings(fresh_state) == []
+
+
 def test_crossing_after_seeding_publishes(fresh_state):
     ble.handle_slot_notification(None, packet(1, t1=40_000))
     ble.handle_slot_notification(None, packet(1, t1=45_000))
