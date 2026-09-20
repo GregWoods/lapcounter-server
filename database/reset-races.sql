@@ -3,6 +3,13 @@
 --
 -- Usage:
 --   docker exec -i database psql -U lap -d lapcounter_server < database/reset-races.sql
+--   curl -X POST http://<pi>:8000/sessions/2/regenerate-races      # <- REQUIRED, see below
+--
+-- The second step is not optional. This script restores session 2 to InProgress with two
+-- Finished races and NO queue, because the upcoming queue is a balanced schedule computed
+-- in Python (build_session_schedule: fewest-raced drivers first, lanes spread evenly) and
+-- cannot be written as fixed INSERTs. Until it is generated, /races/pending/ returns 404
+-- and /nextrace has nothing to show. RaceControl's regenerate prompt does the same thing.
 
 -- 1. Wipe all race data in dependency order
 DELETE FROM driver_laps;

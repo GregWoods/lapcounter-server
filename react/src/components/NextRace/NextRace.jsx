@@ -11,12 +11,17 @@ function NextRace() {
     const next_race_setup = useLoaderData();
 
     if (next_race_setup?.error || !next_race_setup?.lane_assignments) {
+        // With a session still in progress the queue is empty, not finished — say so, and
+        // point at Race Control, which is where it gets regenerated.
+        const sessionRunning = next_race_setup?.activeSessionId != null;
         return (
             <div id="nextrace-page">
                 <PageHeader title="Next Race" />
                 <div className="nr-empty">
-                    <p>Session has ended</p>
-                    <Link to="/results" className="nr-empty-link">View Results</Link>
+                    <p>{sessionRunning ? 'No races queued for this session' : 'Session has ended'}</p>
+                    {sessionRunning
+                        ? <Link to="/racecontrol" className="nr-empty-link">Regenerate in Race Control</Link>
+                        : <Link to="/results" className="nr-empty-link">View Results</Link>}
                 </div>
             </div>
         );

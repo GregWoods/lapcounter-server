@@ -71,8 +71,8 @@ All required — set by `compose.dev.yaml` in Docker, or `setenv.ps1` locally. R
 
 | Variable | Dev value | Purpose |
 |---|---|---|
-| `API_URL` | `http://localhost:8000` | Base URL for constructing car image URLs |
-| `REACT_URL` | `http://localhost:8088` | CORS allowed origin |
+| `API_URL` | *(unused)* | Was the base URL for car image URLs; those now come from the request. Optional, kept so old `.env` files still load |
+| `REACT_URL` | *(unused)* | Was the single CORS origin; CORS now accepts any origin. Optional, as above |
 | `MEDIA_FOLDER` | `media` | Static files mount point |
 | `CARS_MEDIA_FOLDER` | `media/cars` | Car images subfolder |
 | `DB_DATABASE` | `lapcounter_server` | PostgreSQL database name |
@@ -171,6 +171,8 @@ python sampledata.py
 ```
 Requires env vars to be set (use `setenv.ps1` or run inside Docker container). Inserts data in FK dependency order: manufacturers → categories → models → tyres → chips → cars → drivers → meetings → junction tables → sessions → races → driver_races → driver_laps → lanes.
 
+It finishes with `add_race_queue()`, which generates session 2's upcoming races through the same `build_session_schedule()`/`save_session_schedule()` path as `POST /sessions/{id}/regenerate-races`. Without it a fresh database has an InProgress session with **no** queue, so `/races/pending/` 404s and NextRace looks like the session has ended. It also fixes up each table's id sequence first: every row above is inserted with an explicit id, which leaves the sequences at 1. `database/sampledata.sql` cannot do this (the schedule is balanced in Python), so that path still needs the regenerate call.
+
 ## Docker
 
 - **Dev** (`Dockerfile.dev`): Python 3.12.8-bookworm, `fastapi dev` with hot reload. The `app/` directory is bind-mounted from compose so edits are reflected immediately.
@@ -178,7 +180,7 @@ Requires env vars to be set (use `setenv.ps1` or run inside Docker container). I
 
 ## Patterns & Conventions
 
-- CORS allows `REACT_URL`, `localhost:5173` (local Vite), and `localhost:8088` (Docker Vite)
+- CORS accepts **any** origin (`allow_origin_regex`). React derives the API address from whatever host served the page, so the origin varies with the Pi's address and can't be listed in advance. The API is unauthenticated and the race network is private and offline
 - Global exception handler catches unhandled exceptions and returns full tracebacks in JSON (dev-friendly, not production-safe)
 - `model.py` uses `from model import *` in `main.py` and `next_race.py` — all table classes are in the global namespace
 - Table names are pluralized (`drivers`, `meetings`, `cars`, etc.)

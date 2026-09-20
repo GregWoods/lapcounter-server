@@ -47,7 +47,16 @@ const router = createBrowserRouter([
                 const res = await fetch(`${API_URL}/races/pending/`);
                 if (!res.ok) {
                     const body = await res.json().catch(() => ({}));
-                    return { error: body.detail || 'No pending race available' };
+                    // A 404 means "no race queued", which is NOT the same as "session over":
+                    // a running session whose queue was never generated (sample data) or was
+                    // emptied looks identical here. regen-status is what tells them apart.
+                    const regen = await fetch(`${API_URL}/sessions/active/regen-status`)
+                        .then(r => r.ok ? r.json() : null)
+                        .catch(() => null);
+                    return {
+                        error: body.detail || 'No pending race available',
+                        activeSessionId: regen?.session_id ?? null,
+                    };
                 }
                 return res.json();
             } catch {

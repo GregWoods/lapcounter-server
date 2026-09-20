@@ -1,4 +1,9 @@
 -- Active: 1738530390749@@127.0.0.1@5432@lapcounter_server
+--
+-- NOTE: this seeds finished races only. Session 2 is InProgress with no upcoming queue,
+-- so after loading run:  curl -X POST http://<pi>:8000/sessions/2/regenerate-races
+-- (the queue is a balanced schedule computed in Python - see database/reset-races.sql).
+-- `python sampledata.py` inside the api container does it for you.
 
 INSERT INTO car_manufacturers (id, name) VALUES (1, 'Scalextric') ON CONFLICT (id) DO NOTHING;
 INSERT INTO car_manufacturers (id, name) VALUES (2, 'Policar') ON CONFLICT (id) DO NOTHING;
