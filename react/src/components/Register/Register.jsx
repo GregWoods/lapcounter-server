@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
 import { House } from 'lucide-react';
 import './Register.css';
+import { API_URL } from '../../endpoints.js';
 
-const API_URL = import.meta.env.VITE_API_URL;
 
 const formatDate = (dateStr) =>
     new Date(dateStr).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });

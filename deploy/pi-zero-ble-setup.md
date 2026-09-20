@@ -187,10 +187,13 @@ docker run --rm -it -v /var/run/dbus:/var/run/dbus --cap-add NET_ADMIN -v "$PWD:
 `sudo btmon -w /tmp/x.btsnoop` during a run, then
 `btmon -r /tmp/x.btsnoop | grep -i 'connection interval'` (it was 37.5 ms).
 
-## Known limitation: the web UI
+## The web UI works on any address (since 2026-09-20)
 
-The react image has `http://192.168.8.3:8000` / `ws://192.168.8.3:8080` compiled in, and the
-API's CORS allows only `http://192.168.8.3:8087`. On `.170` pages load but get no data.
-`deploy.ps1` also targets `greg@192.168.8.3` only. Until addresses stop being hardcoded,
-either give the Zero `.3` while the 3A+ is off (a puck DHCP reservation for its MAC,
-`2c:cf:67:c2:3d:77`), or use it for BLE work over SSH only.
+React derives the API and MQTT addresses from the host that served the page
+(`react/src/endpoints.js`) and the API accepts any origin, so `http://192.168.8.170:8087/`
+works with no rebuild. Before that change the bundle had `192.168.8.3` compiled in and the
+UI timed out on any other Pi.
+
+`deploy.ps1` still targets `greg@192.168.8.3` only, so deploying to this box is by hand
+(see step 9). A puck DHCP reservation for its MAC (`2c:cf:67:c2:3d:77`) keeps its address
+stable.

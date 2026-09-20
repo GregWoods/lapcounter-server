@@ -2,6 +2,7 @@ import DriverCardPosition from './DriverCardPosition';
 import './DriverCard.css';
 import './DriverColors.css';
 import DriverCardTime from './DriverCardTime';
+import { CAR_MEDIA_URL } from '../../endpoints.js';
 
 
 const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
@@ -57,7 +58,7 @@ const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestO
             </div>
             <div className="carimg" onClick={onRequestOpenCarSelector}>
                 <img alt="Car Image" src={driver.carImgUrl}
-                    onError={(e) => { e.target.onerror = null; e.target.src = `${import.meta.env.VITE_API_URL}/${import.meta.env.VITE_CAR_MEDIA_FOLDER}/GT_AA_Generic.jpg`; }} />
+                    onError={(e) => { e.target.onerror = null; e.target.src = `${CAR_MEDIA_URL}/GT_AA_Generic.jpg`; }} />
             </div>
 
             <div className="drivercontent">

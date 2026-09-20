@@ -55,23 +55,26 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.mount("/media", StaticFiles(directory=settings.MEDIA_FOLDER), name="media")
 
-cors_origins = [
-    settings.REACT_URL,
-    "http://localhost:5173",    # when using the development vite server not in docker
-    "http://localhost:8088"     # when using the development vite server using docker compose
-]
-
+# Any origin. CORS is an EXACT match on scheme+host+port, so a fixed list means the API
+# only works when the browser reached React on the one address it was built for — which is
+# what tied this stack to 192.168.8.3. React now derives its API address from whatever host
+# served the page, so the origin is whatever the Pi's address happens to be, and the API
+# can't know it in advance. Safe here: the API is unauthenticated anyway and lives on a
+# private, offline race network. allow_origin_regex (not allow_origins=["*"]) because the
+# wildcard is rejected by browsers when credentials are allowed; this echoes the origin back.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.get("/api/cars")
-def get_cars(dbsession: SessionDep):
-    car_pic_base_url = f"{settings.API_URL}/{settings.CARS_MEDIA_FOLDER}"
+def get_cars(dbsession: SessionDep, request: Request):
+    # From the request, not a configured address: the browser must fetch these images from
+    # the same host it reached the API on.
+    car_pic_base_url = f"{str(request.base_url).rstrip('/')}/{settings.CARS_MEDIA_FOLDER}"
     cars = dbsession.exec(select(Car)).all()
     return [
         {"id": c.id, "name": c.name, "picture": c.picture, "url": f"{car_pic_base_url}/{c.picture}"}

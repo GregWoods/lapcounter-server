@@ -2,10 +2,11 @@
 # Uses pre-built images from DockerHub; pull_policy=missing means Docker only
 # pulls on first boot and then operates fully offline (suitable for Pi-as-AP use).
 #
-# NOTE: VITE_MQTT_URL and VITE_API_URL are compiled into the React bundle at
+# NOTE: the React bundle no longer has any address compiled in - it derives the API
+# and MQTT addresses from whatever host served the page (react/src/endpoints.js). What
+# used to be here was:
 # image build time. The values here must match the URL used to build the React
 # image. If you rebuild React images, update build-and-push.ps1 to set
-# VITE_API_URL=http://lapcounter.local:8000 and VITE_MQTT_URL=ws://lapcounter.local:8080
 
 services:
 
@@ -66,8 +67,6 @@ services:
     ports:
       - 80:80
     environment:
-      - VITE_MQTT_URL=ws://lapcounter.local:8080
-      - VITE_API_URL=http://lapcounter.local:8000
       - VITE_CAR_MEDIA_FOLDER=media/cars
     restart: unless-stopped
 
@@ -80,8 +79,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - API_URL=http://lapcounter.local:8000
-      - REACT_URL=http://lapcounter.local
       - MEDIA_FOLDER=media
       - CARS_MEDIA_FOLDER=media/cars
       - DB_DATABASE=lapcounter_server

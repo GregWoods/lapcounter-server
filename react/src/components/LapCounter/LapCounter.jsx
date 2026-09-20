@@ -11,6 +11,7 @@ import YellowFlagRacePaused from './YellowFlagRacePaused.jsx';
 import { useState, useRef, useEffect } from 'react';
 import { useLoaderData } from 'react-router-dom';
 import { defaultConfig, defaultRace, getInitialDrivers } from '../../defaultConfig.js';
+import { API_URL, MQTT_URL, CAR_MEDIA_URL } from '../../endpoints.js';
 
 const DEBUG = true;
 
@@ -31,7 +32,7 @@ const LapCounter = () => {
 
     const lapsPerRace = race.RaceType?.details.laps ?? 0;
 
-    const carMediaBase = config.apiurl.replace(/\/$/, '') + "/" + config.carmediafolder.replace(/\/$/, '');
+    const carMediaBase = CAR_MEDIA_URL;
     const defaultCarImg = carMediaBase + '/GT_AA_Generic.jpg';
     // Build a car image URL from a picture filename (from the pending race lineup),
     // falling back to the generic image when no car is assigned.
@@ -112,7 +113,7 @@ const LapCounter = () => {
     const resyncCurrentRace = (incomingState, targetLaps) => {
         if (resyncInFlightRef.current) return;
         resyncInFlightRef.current = true;
-        fetch(`${config.apiurl}/races/current/`)
+        fetch(`${API_URL}/races/current/`)
             .then(r => r.ok ? r.json() : null)
             .then(setup => {
                 if (!setup) return;
@@ -184,7 +185,7 @@ const LapCounter = () => {
     const handleCarSelectedInLapCounter = (car) => {
         const laneNumber = drivers[carSelectorModalDriverIdx].number;
         if (raceIdRef.current) {
-            fetch(`${config.apiurl}/races/${raceIdRef.current}/lanes/${laneNumber}`, {
+            fetch(`${API_URL}/races/${raceIdRef.current}/lanes/${laneNumber}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ car_id: car.id }),
@@ -324,7 +325,7 @@ const LapCounter = () => {
 
             <div id={'lapcounter'}>
                 <MqttSubscriber
-                    mqttHost={config.mqtturl}
+                    mqttHost={MQTT_URL}
                     onRaceStateMessage={processRaceStateMsg}
                     clientRef={mqttClientRef}
                     debug={DEBUG}
@@ -367,7 +368,7 @@ const LapCounter = () => {
                             <CarSelectorModal
                                 showMe={carSelectorModalShown}
                                 onClose={closeCarSelectorModal}
-                                carImgListUrl={config.apiurl + '/api/cars'}
+                                carImgListUrl={API_URL + '/api/cars'}
                                 drivers={drivers}
                                 setDrivers={setDrivers}
                                 driverIdx={carSelectorModalDriverIdx}

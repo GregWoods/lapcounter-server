@@ -3,8 +3,8 @@ import { useLoaderData, Link } from 'react-router-dom';
 import { House, LogOut, ChevronDown, ChevronRight, Timer, Trophy } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/adminAuth';
 import './Admin.css';
+import { API_URL } from '../../endpoints.js';
 
-const API_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
 // Race types offered in the session form. 'Points' = Finishing Position (race ends on
 // laps, scored by position); 'FastestLap' = Fastest Lap (race ends on time, personal best).

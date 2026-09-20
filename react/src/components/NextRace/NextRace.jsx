@@ -4,6 +4,7 @@ import { useLoaderData, Link } from 'react-router-dom';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
 import MqttSubscriber from '../MqttSubscriber';
 import PageHeader from '../PageHeader/PageHeader';
+import { API_URL, MQTT_URL, CAR_MEDIA_URL } from '../../endpoints.js';
 
 
 function NextRace() {
@@ -34,7 +35,7 @@ function NextRaceSetupView({ next_race_setup }) {
     const [sessionRacesTotal, setSessionRacesTotal] = useState(next_race_setup.session_races_total ?? null);
 
     const refreshPendingRace = () => {
-        fetch(`${import.meta.env.VITE_API_URL}/races/pending/`)
+        fetch(`${API_URL}/races/pending/`)
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data) {
@@ -69,12 +70,12 @@ function NextRaceSetupView({ next_race_setup }) {
         }
     };
 
-    const carMediaBase = `${import.meta.env.VITE_API_URL}/${import.meta.env.VITE_CAR_MEDIA_FOLDER}`;
+    const carMediaBase = `${CAR_MEDIA_URL}`;
     const defaultCarImg = `${carMediaBase}/GT_AA_Generic.jpg`;
     const carImageUrl = (picture) => picture ? `${carMediaBase}/${picture}` : defaultCarImg;
 
     const handleLaneToggle = async (laneNumber, enabled) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/lanes/${laneNumber}`, {
+        const res = await fetch(`${API_URL}/lanes/${laneNumber}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled }),
@@ -89,7 +90,7 @@ function NextRaceSetupView({ next_race_setup }) {
     const hasFreeSlot = laneAssignments.some(a => a.id === 0 && a.lane_enabled);
 
     const handleRemoveDriver = async (laneNumber) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/lanes/${laneNumber}`, {
+        const res = await fetch(`${API_URL}/races/pending/lanes/${laneNumber}`, {
             method: 'DELETE',
         });
         if (!res.ok) return;
@@ -100,7 +101,7 @@ function NextRaceSetupView({ next_race_setup }) {
     };
 
     const handleAddDriver = async (driverId) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/drivers`, {
+        const res = await fetch(`${API_URL}/races/pending/drivers`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ driver_id: driverId }),
@@ -113,7 +114,7 @@ function NextRaceSetupView({ next_race_setup }) {
     };
 
     const handleCarSelected = async (car) => {
-        const res = await fetch(`${import.meta.env.VITE_API_URL}/races/pending/lanes/${carSelectorLane}`, {
+        const res = await fetch(`${API_URL}/races/pending/lanes/${carSelectorLane}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ car_id: car.id }),
@@ -129,7 +130,7 @@ function NextRaceSetupView({ next_race_setup }) {
     return (
         <div id="nextrace-page">
             <MqttSubscriber
-                mqttHost={import.meta.env.VITE_MQTT_URL}
+                mqttHost={MQTT_URL}
                 onRaceStateMessage={handleRaceState}
                 onRaceControlMessage={handleRaceControl}
                 clientRef={mqttClientRef}
@@ -229,7 +230,7 @@ function NextRaceSetupView({ next_race_setup }) {
             <CarSelectorModal
                 showMe={carSelectorLane !== null}
                 onClose={() => setCarSelectorLane(null)}
-                carImgListUrl={`${import.meta.env.VITE_API_URL}/api/cars`}
+                carImgListUrl={`${API_URL}/api/cars`}
                 onCarSelected={handleCarSelected}
             />
         </div>

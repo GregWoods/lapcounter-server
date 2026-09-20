@@ -95,6 +95,16 @@ every ~1.6–1.8 s at worst. All 12 crossings were seen by both streams, and pol
 *later* than notifications (the read round trip). Bytes 18–19 were always `0000`. The Slot value
 itself only changes every 300 ms, so no client-side approach gets a crossing sooner.
 
+## The micro-B USB port (2026-09-19)
+
+Undocumented. On a Windows laptop it enumerates as a **CH340 USB-serial bridge** (VID `1A86`,
+PID `7523`, driver `wch.cn`), i.e. a raw UART from one of the powerbase's chips. Listened
+passively (DTR/RTS held low, since CH340 boards often wire those to a reset line, and nothing
+written) at 9600–250000 baud, idle and for 90 s with a car lapping: **zero bytes**. Silent
+at every rate means the line is idle, not a baud mismatch. Most likely a factory programming
+or firmware-update line that only answers commands. Probing it means writing blind to an
+undocumented MCU (risk: reset, bootloader, bricked base), so it was left there.
+
 ## 2. What we need to know
 
 | ID | Question | Code that assumes it | If the answer differs |

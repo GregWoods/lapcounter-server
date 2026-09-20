@@ -139,9 +139,11 @@ jobs:
 
             ## Two things worth knowing
 
-            **The addresses are fixed.** `VITE_API_URL` is compiled into the
-            React bundle, so the Pi is `192.168.8.3` and the router
-            `192.168.8.1`. Changing them means rebuilding the react image.
+            **The addresses are the puck's, not the image's.** The Pi is
+            `192.168.8.3` and the router `192.168.8.1` because the puck config
+            and captive portal use those. The React bundle itself works out the
+            API address from whatever host served the page, so a different
+            address needs no rebuild.
 
             **Set the clock at the start of every meet.** There is no RTC and no
             internet, so open the Home page on a laptop and use the clock-sync

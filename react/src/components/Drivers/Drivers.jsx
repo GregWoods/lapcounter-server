@@ -3,8 +3,8 @@ import { useLoaderData, Link } from 'react-router-dom';
 import { House, LogOut } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/adminAuth';
 import '../Admin/Admin.css';
+import { API_URL } from '../../endpoints.js';
 
-const API_URL = import.meta.env.VITE_API_URL;
 
 function DriverForm({ initial, onSave, onCancel }) {
     const [form, setForm] = useState(initial || { first_name: '', last_name: '' });

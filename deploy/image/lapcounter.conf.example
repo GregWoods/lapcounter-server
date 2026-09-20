@@ -37,11 +37,9 @@ SEED_SAMPLE_DATA=yes
 #
 # The Pi's address is fixed at 192.168.8.3 and the router at 192.168.8.1.
 #
-# The React bundle is built by Vite, which inlines VITE_API_URL and
-# VITE_MQTT_URL as compile-time constants. Changing the address therefore needs
-# a rebuild of the react image, not a setting - so the image ships the
-# documented network and the puck config (openwrt-ap-setup.sh) hardcodes the
-# matching values.
+# The React bundle no longer has an address compiled in: it uses whatever host served
+# the page. The pair is fixed here because the puck config (openwrt-ap-setup.sh) and the
+# captive portal's links hardcode the matching values - not because of the image.
 #
 # The admin PIN is likewise compiled into the JS bundle. It defaults to 1234 and
 # is readable by anyone who inspects the bundle: it deters a curious attendee

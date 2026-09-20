@@ -3,6 +3,7 @@ import { House } from 'lucide-react';
 import { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import MqttSubscriber from '../MqttSubscriber';
 import './Results.css';
+import { API_URL, MQTT_URL } from '../../endpoints.js';
 
 function posClass(pos) {
     if (!pos) return 'pos-dns';
@@ -144,7 +145,7 @@ function Results() {
     const [wideView, setWideView] = useState(false);
 
     const refreshResults = () => {
-        fetch(`${import.meta.env.VITE_API_URL}/sessions/current/results`)
+        fetch(`${API_URL}/sessions/current/results`)
             .then(r => r.ok ? r.json() : null)
             .then(data => { if (data) setResults(data); })
             .catch(() => {});
@@ -221,7 +222,7 @@ function Results() {
     return (
         <div className="results-page">
             <MqttSubscriber
-                mqttHost={import.meta.env.VITE_MQTT_URL}
+                mqttHost={MQTT_URL}
                 onRaceStateMessage={handleRaceState}
             />
             <div className="results-header">

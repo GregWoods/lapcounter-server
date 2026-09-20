@@ -4,9 +4,8 @@ import { Link } from 'react-router-dom';
 import { House, Flag, Pause, Play } from 'lucide-react';
 import MqttSubscriber from '../MqttSubscriber';
 import ChequeredFlagIcon from '../ChequeredFlagIcon';
-import { defaultConfig } from '../../defaultConfig';
+import { API_URL, MQTT_URL } from '../../endpoints.js';
 
-const API = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
 const STATE_LABELS = {
     NotStarted: 'Staged',
@@ -34,9 +33,9 @@ export default function RaceControl() {
     const loadInfo = useCallback(async () => {
         try {
             const [pendingRes, meetingRes, regenRes] = await Promise.all([
-                fetch(`${API}/races/pending/`),
-                fetch(`${API}/meetings/active`),
-                fetch(`${API}/sessions/active/regen-status`),
+                fetch(`${API_URL}/races/pending/`),
+                fetch(`${API_URL}/meetings/active`),
+                fetch(`${API_URL}/sessions/active/regen-status`),
             ]);
             const pending = pendingRes.ok ? await pendingRes.json() : null;
             const meeting = meetingRes.ok ? await meetingRes.json() : null;
@@ -45,7 +44,7 @@ export default function RaceControl() {
             let targetLaps = 20;
             let sessionInProgress = false, nextSessionAvailable = false, activeSessionId = null;
             if (meeting?.id) {
-                const sRes = await fetch(`${API}/sessions?meeting_id=${meeting.id}`);
+                const sRes = await fetch(`${API_URL}/sessions?meeting_id=${meeting.id}`);
                 if (sRes.ok) {
                     const sessions = await sRes.json();
                     const inProgress = sessions.find(s => s.state === 'InProgress');
@@ -117,7 +116,7 @@ export default function RaceControl() {
     const yellowSecondsLeft = raceState?.yellow_seconds_left ?? null;
 
     const apiPost = async (path) => {
-        try { await fetch(`${API}${path}`, { method: 'POST' }); } catch { /* ignore */ }
+        try { await fetch(`${API_URL}${path}`, { method: 'POST' }); } catch { /* ignore */ }
     };
 
     const nextRace = () => { publish('prepare', { race_id: info.pendingRaceId }); setTimeout(loadInfo, 300); };
@@ -150,7 +149,7 @@ export default function RaceControl() {
     return (
         <div className="rc-page">
             <MqttSubscriber
-                mqttHost={defaultConfig.mqtturl}
+                mqttHost={MQTT_URL}
                 onRaceStateMessage={onRaceState}
                 clientRef={clientRef}
             />

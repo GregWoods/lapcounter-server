@@ -119,8 +119,6 @@ services:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
     environment:
-      - VITE_MQTT_URL=ws://localhost:8080
-      - VITE_API_URL=http://localhost:8000
       - VITE_CAR_MEDIA_FOLDER=media/cars
       - VITE_ADMIN_PIN=1234
 
@@ -130,8 +128,6 @@ services:
     cap_add:
       - SYS_TIME
     environment:
-      - API_URL=http://localhost:8000   # as seen by external users including the react app
-      - REACT_URL=http://localhost:8088
       - MEDIA_FOLDER=media
       - CARS_MEDIA_FOLDER=media/cars
       - DB_DATABASE=lapcounter_server

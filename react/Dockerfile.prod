@@ -18,15 +18,13 @@ RUN npm ci
 COPY ./public ./public/
 COPY ./src ./src/
 
-# Vite inlines import.meta.env.VITE_* at BUILD time, so unlike the dev-server
-# image these must be supplied here - setting them in compose has no effect.
-ARG VITE_API_URL
-ARG VITE_MQTT_URL
+# Vite inlines import.meta.env.VITE_* at BUILD time, so unlike the dev-server image these
+# must be supplied here - setting them in compose has no effect. There is deliberately NO
+# API/MQTT address: the bundle derives those at runtime from the host that served the page
+# (react/src/endpoints.js), so one image works on any Pi at any address.
 ARG VITE_CAR_MEDIA_FOLDER=media/cars
 ARG VITE_ADMIN_PIN
-ENV VITE_API_URL=$VITE_API_URL \
-    VITE_MQTT_URL=$VITE_MQTT_URL \
-    VITE_CAR_MEDIA_FOLDER=$VITE_CAR_MEDIA_FOLDER \
+ENV VITE_CAR_MEDIA_FOLDER=$VITE_CAR_MEDIA_FOLDER \
     VITE_ADMIN_PIN=$VITE_ADMIN_PIN
 
 RUN npm run build

@@ -431,11 +431,14 @@ A 9 GB image would otherwise compress to a 9 GB-ish download. Two steps fix it:
 
 ### What is deliberately NOT configurable
 
-The Pi is fixed at `192.168.8.3` and the router at `192.168.8.1`, because Vite
-inlines `VITE_API_URL`/`VITE_MQTT_URL` as **compile-time constants**. Changing the
-addresses means rebuilding the react image, so the SD image ships the documented
-network and `openwrt-ap-setup.sh` hardcodes the matching values. The admin PIN is
-compiled in the same way.
+The **admin PIN** is inlined into the JS bundle at build time, so changing it means
+rebuilding the react image.
+
+The addresses no longer are. React derives the API and MQTT addresses from whatever host
+served the page (`react/src/endpoints.js`) and the API accepts any origin, so the same
+images work on any Pi at any address. The SD image still ships the documented network
+(`192.168.8.3` / `192.168.8.1`) because `openwrt-ap-setup.sh` and the captive portal's
+links use it, but a different address now needs no rebuild.
 
 `lapcounter.conf` covers what genuinely can vary: WiFi SSID/password/country,
 hostname, DB password, and whether to seed sample data.
@@ -637,17 +640,15 @@ would yield, at a fraction of the risk. Full figures and method in
   `build-and-push-react.ps1` (currently `1234`). Note the PIN is inlined into the
   JS bundle and is therefore readable by anyone who looks — it is a speed bump
   against a curious attendee, not security.
-- **CORS is exact-match.** `REACT_URL` must equal the origin the browser
-  actually uses — scheme, host **and** port. Reaching the app by IP when
-  `REACT_URL` names a hostname (or a different port) silently breaks every API
-  call.
-- **`VITE_API_URL` / `VITE_MQTT_URL` are NOT baked in — for this image.**
-  `react/build-and-push-react.ps1` builds from **`Dockerfile.dev`**, so the
-  published image runs the Vite *dev server* and reads those variables at
-  container start. Editing compose is enough. The warning comment in
-  `compose.pi.yaml` is wrong for the image that actually exists. This changes if
-  the image is ever rebuilt from `Dockerfile.prod` (see RAM, below), where they
-  genuinely do become compile-time.
+- **CORS accepts any origin** (2026-09-20). It used to be an exact match on
+  `REACT_URL`, which silently broke every API call when the app was reached on any
+  other address. React now derives the API address from the page's own host, so the
+  API cannot know the origin in advance. Safe: the API is unauthenticated anyway and
+  the race network is private and offline.
+- **No address is baked into the react image.** `react/src/endpoints.js` works them
+  out at runtime; `VITE_API_URL`/`VITE_MQTT_URL` are gone from the build args, the
+  Dockerfile and every compose file. Only `VITE_ADMIN_PIN` and the car media folder
+  are still build-time.
 - **`dbwriter` has no published image.** There is no `build-and-push-dbwriter.ps1`,
   and it is absent from `compose.pi.yaml` — so any deployment based on that file
   has **no lap persistence**. `compose.race.yaml` builds it from source on the Pi

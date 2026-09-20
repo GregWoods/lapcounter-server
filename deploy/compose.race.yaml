@@ -8,11 +8,9 @@
 #   - port 80 is deliberately left FREE: the captive portal runs on the puck,
 #     not here, to save RAM on a 424MB machine
 #
-# NOTE ON VITE_* VARS: the published react image is built from Dockerfile.dev,
-# so it runs the Vite dev server and reads these at container start. They are
-# NOT baked in, contrary to the comment in compose.pi.yaml. See
-# race-network-setup.md for why that image should eventually be replaced with a
-# Dockerfile.prod (nginx) build.
+# NOTE ON ADDRESSES: nothing here pins one. React derives the API and MQTT addresses
+# from the host that served the page (react/src/endpoints.js), and the API accepts any
+# origin, so the same images work on any Pi at any address.
 
 services:
 
@@ -118,9 +116,8 @@ services:
     container_name: react
     ports:
       - 8087:80            # nginx (image is now built from Dockerfile.prod)
-    # NO VITE_* vars here. The prod image inlines them at BUILD time via
-    # --build-arg in react/build-and-push-react.ps1; setting them here does
-    # nothing. Changing the address, port or admin PIN needs a rebuild.
+    # No address vars: see the note at the top of this file. Only the admin PIN is
+    # still inlined at build time (react/build-and-push-react.ps1).
     restart: unless-stopped
 
   api:
@@ -132,10 +129,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - API_URL=http://192.168.8.3:8000
-      # CORS is an EXACT origin match - scheme, host AND port must equal what
-      # the browser actually uses, or every API call silently fails.
-      - REACT_URL=http://192.168.8.3:8087
       - MEDIA_FOLDER=media
       - CARS_MEDIA_FOLDER=media/cars
       - DB_DATABASE=lapcounter_server

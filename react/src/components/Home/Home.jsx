@@ -3,9 +3,9 @@ import { useLoaderData, Link } from 'react-router-dom';
 import { UserPlus, Flag, ListOrdered, Trophy, CalendarDays, Users } from 'lucide-react';
 import ChequeredFlagIcon from '../ChequeredFlagIcon';
 import './Home.css';
+import { API_URL } from '../../endpoints.js';
 
 const DEFAULT_TITLE = 'Go! Go! Go! Race Manager';
-const API_URL = import.meta.env.VITE_API_URL ?? `http://${window.location.hostname}:8000`;
 
 function Home() {
     const activeMeeting = useLoaderData();
