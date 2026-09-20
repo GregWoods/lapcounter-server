@@ -1,10 +1,15 @@
 # Lap timing from Layer 1 counters: implementation plan
 
 **Status:** planned on 2026-09-14, not started. `docs/lap-timing-clocks.md` explains *why*; this
-file is *how*. The two hardware checks that decide lap 1's method, HW-11 and HW-12, exist in
-`ble/hardware_check.py` but haven't been run. The plan works whichever way they come out: only
-the choice of lap-1 method (plan A, B or C below) waits on them, and that is an environment
-setting, not a code path.
+file is *how*.
+
+✅ **The lap-1 method is decided: plan A.** HW-11 and HW-12 have now been run (see
+`ble/HARDWARE_VALIDATION.md`). HW-12 passed on 2026-09-20 — `same_clock`, `live_at_rest: true`,
+the two anchors agreeing to 148 ms over 10 crossings — so `throttleTimestamp` is a live reading
+of the Slot clock and can be published as a `layer1_clock` heartbeat. Lap 1 therefore needs **no
+power writes at arm or go**, and plan B's `BLE_RESET_AT_ARM` stays off. Set
+`BLE_CLOCK_HEARTBEAT=throttle` when step 3 ships. Plan B and C remain documented as fallbacks
+should the heartbeat prove unreliable on the meet's hardware.
 
 ## Decisions (Greg, 2026-09-14)
 
@@ -24,8 +29,10 @@ setting, not a code path.
      "Jump starts (later)". The setting itself is implemented now, in "Settings".
 4. **The contract changes in one step.** No period of publishing old and new formats together.
 5. **Lap-1 correlation, in order of preference:**
-   - **Plan A.** `throttleTimestamp` as a clock heartbeat, if HW-12 finds it is a live reading
-     of the Slot clock. It needs no power writes at all, so it works with jump starts allowed.
+   - **Plan A — confirmed 2026-09-20 (HW-12 pass).** `throttleTimestamp` as a clock heartbeat:
+     it *is* a live reading of the Slot clock. It needs no power writes at all, so it works with
+     jump starts allowed. Measured 3.3 samples/s with a median lateness of 1 ms at rest, so the
+     anchor is essentially exact by lights-out.
    - **Plan B** (Greg). Send commands 1 then 3 back-to-back **at arm**, while the cars are
      already still on the grid, so a moment at zero speed costs nothing. Lights-out is lapdata's
      own timer counting from arm, so go lands at a known point on the freshly reset clock. The
@@ -191,15 +198,18 @@ class RaceStart:
   Crossing detection still compares against the baseline whatever clock it came from, because the
   powerbase's values run on continuously across a halt.
 - **`publish_crossing()`** sends `counter_ms` as the raw `device_ms` value, plus `clock`.
-- **Plan A:** `BLE_CLOCK_HEARTBEAT=throttle|none`, defaulting to `none`, and set to `throttle` on
-  the Pi only once HW-12 passes. It subscribes to Throttle (`decode_throttle()` already exists)
-  and publishes thinned `layer1_clock` samples. ⚠️ Keep the default off until then. A heartbeat
-  from a *different* clock with a smaller offset would drag lapdata's anchor down, and a running
-  minimum can't notice that. The same rule applies to the later throttle features (jump starts,
-  fuel): if HW-12 finds a different clock, their throttle readings carry a clock id of their own,
-  never the Slot clock's.
-- **Plan B:** `BLE_RESET_AT_ARM=true`. On `race_control` `arm`, write 1 then 3, then publish the
-  `counter_ms: 0` sample. Only turn it on if HW-12 fails and HW-11 isn't `not_reset`.
+- **Plan A (chosen):** `BLE_CLOCK_HEARTBEAT=throttle|none`. HW-12 passed on 2026-09-20, so set it
+  to `throttle` on the Pi. It subscribes to Throttle (`decode_throttle()` already exists)
+  and publishes thinned `layer1_clock` samples. ⚠️ Note the measured cadence is one Throttle
+  notification per **300 ms** (3.3/s), not the "several times a second" the protocol doc implies,
+  so the plan's "thinned to at most 10 a second" window never actually bites on this hardware.
+  ⚠️ The reason this needed proving first still stands for any *future* change: a heartbeat from a
+  *different* clock with a smaller offset would drag lapdata's anchor down, and a running minimum
+  can't notice that. So if a later powerbase or firmware turns out to keep throttle on its own
+  clock, its readings must carry a clock id of their own, never the Slot clock's — the same rule
+  applies to the later throttle features (jump starts, fuel).
+- **Plan B (not needed):** `BLE_RESET_AT_ARM=true`. On `race_control` `arm`, write 1 then 3, then
+  publish the `counter_ms: 0` sample. Kept as a fallback only — HW-12 passed, so leave it off.
 - **If HW-11 finds that re-sending 3 while racing resets the clock:** start a new clock on every
   such write, or stop re-sending it on `Running` and resume.
 
@@ -278,8 +288,10 @@ for a later discussion. What this plan fixes in place for that work:
 3. **The switch, as one commit.** lapdata wiring, `ble`, `gpio`, `mocked-gpio`, the mock's
    Throttle, test updates and the CLAUDE.md contract. Plan C is the default, which already gives
    lap 2 onwards exact counter differences.
-4. **Hardware day.** HW-01 to HW-12 plus the E checks. Choose plan A, B or C, set the env var, and
-   correct the mock's tags.
+4. **Hardware day.** HW-01 to HW-12 plus the E checks, and correct the mock's tags. The lap-1
+   method no longer waits on this: plan A is confirmed, so set `BLE_CLOCK_HEARTBEAT=throttle`.
+   Do run HW-06, HW-11 and HW-12 in one pass, which is the one piece of HW-12's evidence still
+   cross-run rather than simultaneous.
 5. **Provenance persistence**, if open question 1 says yes. Migration 004 and dbwriter.
 6. **Jump starts:** a separate design discussion, after capability advertising.
 

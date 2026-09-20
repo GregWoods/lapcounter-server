@@ -77,6 +77,7 @@ Re-run with one car, no drift test: `--only HW-02,HW-06,HW-07,HW-11,HW-12,HW-13`
 - **HW-12**: throttleTimestamp runs at 1.0x in ticks, **advances at rest**, halts and zeroes with
   the Slot clock. The offset comparison wasn't gathered (no crossings in the driving window), but
   everything else says same clock, so plan A is back in play. Re-run HW-12 to settle it.
+  *(Settled in the third run below: pass.)*
 - **HW-02**: Slot packets are **20 bytes**, not 18. They also arrived before any Command write
   this time, but the base had been left in `POWER_ON_RACING`. The cadence is confirmed: one packet
   every 300 ms, all 6 IDs whether or not a car is present, so **1.8 s per car**. `btmon` shows
@@ -86,6 +87,62 @@ Re-run with one car, no drift test: `--only HW-02,HW-06,HW-07,HW-11,HW-12,HW-13`
   Throttle byte 18 (car 5's `ctrlVersion`) reading 0xFF, and the button LEDs flashed
   inconsistently even on single clicks. It looks like a side effect of pairing mode, not a
   button report, so it is not usable as a race-control input.
+
+## Third run: 2026-09-20 — HW-12 settled, plan A confirmed
+
+**HW-12 pass**: `conclusion: same_clock`, `live_at_rest: true`, `offsets_agree: true`, over 10
+crossings. **`throttleTimestamp` is a live reading of the Slot clock, so plan A is on**: `ble` can
+publish it as a `layer1_clock` heartbeat and lap 1 needs no power writes at arm or go
+(`docs/lap-timing-plan.md` decision 5).
+
+| | at rest | driving |
+|---|---|---|
+| notifications | 34 in 10s | 225 in 67s |
+| median gap | 300 ms | 300 ms |
+| advancing fraction | 1.000 | 1.000 |
+| device:wall rate | 0.9962 | 0.9989 |
+| lateness median / p95 / max | **1 / 39 / 39 ms** | 38 / 38 / 76 ms |
+
+- **Throttle notifications are 3.3/s (one per 300 ms), not the "several times a second" the
+  protocol doc implies** — the same cadence as Slot packets, consistent with the 37.5 ms
+  connection interval measured in the second run. Still ~15x more often than crossings at
+  ~5 s laps, which is the whole point.
+- **Lateness at rest is a median of 1 ms**, so on a stationary grid the anchor converges to a
+  few ms almost immediately. The arm countdown is ~7.2 s ≈ 24 throttle packets, so lap 1
+  starts with an essentially exact anchor. Contrast the race measured the same day, where the
+  *crossing* anchor started 1.56 s high and took 3 crossings to converge, making lap 1 read
+  long and laps 1–2 read short (see "the anchor converges" in CLAUDE.md).
+- **The two anchors agree to 148 ms** (`slot_minus_throttle_ms: 148`, tolerance 500 ms). The
+  sign matters: `slot_offset` is the *higher* of the two, so even after 10 crossings the
+  crossing-based anchor was still 148 ms less converged than the throttle one. That 148 ms is
+  what plan A removes from lap 1.
+- **`throttle_at_rest_max: [0,0,0,0,0,0]`** — every controller reads a clean zero at rest, so a
+  future jump-start threshold has no noise floor to clear.
+
+⚠️ **The corroboration is cross-run, not simultaneous.** `evidence` shows `halt_matches_slot:
+null` and `zeroing_matches_slot: null` because HW-06 and HW-11 weren't in this run, so
+`conclude_same_clock()` reached `same_clock` on the offsets alone. The throttle clock's own
+measurements were checked by hand against the second run instead: it went `halted` through the
+power cut (`device_s 0.0` across `wall_s 9.037`, vs Slot "pauses", HW-06), and `zeroed: true`
+held at `0` for 4.2 s until command 3 (vs Slot "zeroes and holds until command 3", HW-11). Both
+match, and two free-running timers would have to start within 148 ms of each other *and* both
+freeze on command 4 *and* both zero on command 1. Good enough to build on; run HW-06, HW-11 and
+HW-12 together on the next full run to close it properly.
+
+**Running HW-12 unattended.** The prompts were gated on marker files rather than Enter, so the
+windows could be opened and closed remotely one step at a time (the driving prompt's *duration*
+is the measurement window — `check_throttle_clock()` stamps `driving_from` before the prompt).
+The `ask_yes_no` stand-in returned `None` rather than inventing an observation.
+
+⚠️ **`docker stop ble` leaves BlueZ holding the link.** It SIGKILLs (exit 137) with no clean BLE
+disconnect, so `bluetoothctl info <mac>` still says `Connected: yes`, the powerbase stops
+advertising, and `find_device_by_address` fails with the misleading *"No powerbase found. Is it
+on, in range, and is the ble container stopped?"* — with the container demonstrably stopped.
+Before any hardware run:
+
+```
+docker stop ble && bluetoothctl disconnect EF:2A:C2:EF:D8:AA
+```
 
 ## HW-14: polling the Slot characteristic (2026-09-18)
 
