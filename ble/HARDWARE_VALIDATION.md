@@ -144,6 +144,46 @@ Before any hardware run:
 docker stop ble && bluetoothctl disconnect EF:2A:C2:EF:D8:AA
 ```
 
+## Throttle cadence and fuel integration (2026-09-20)
+
+190 Throttle notifications over 56.7 s of real driving, captured raw to settle two questions.
+
+**1. The 300 ms cadence is the powerbase's, not the Pi's BLE stack.** Two independent proofs:
+
+- **`packetSequence` (byte 0) is counted at the source** — it increments once per notification the
+  base *sends*, so coalescing in BlueZ would show as deltas > 1. Observed: **delta 1 on 188 of 189
+  transitions (99.5%)**, with a single delta of 2. One dropped packet in 190; everything else the
+  base sent, we got.
+- **The base's own clock declares the rate**: `throttleTimestamp` advanced by **median 300 ms, min
+  300, max 300** — zero variance. The powerbase stamps each packet exactly 300 ms after the last.
+
+With the second run's `btmon` evidence (a 37.5 ms connection interval, so the link could carry ~8x
+this), that closes it. The host *does* add jitter but not rate limiting: inter-arrival gaps were
+min 33 ms / median 300 / max 567 ms (the 33 ms a pair delivered back-to-back after a scheduling
+stall, the 567 ms the lost packet). That jitter is exactly what the clock anchoring keeps out of
+lap times.
+
+**2. 3.3 Hz undersamples the signal, but the integral still converges.**
+
+- Median change between consecutive samples: **20** of a 0–63 scale (p95 50, max 63). A typical
+  step is a third of full scale.
+- Autocorrelation **r = +0.27 at 300 ms, +0.00 at 600 ms** — the signal has forgotten itself within
+  two samples. These are near-independent snapshots, not a sampled curve.
+- But splitting the capture into even- and odd-indexed samples gives two *independent* 600 ms
+  samplings of the same 57 s, each a legitimate estimate of the same true integral. They differ by
+  **2.54%** (1572.5 vs 1533.1 throttle-seconds), putting the actual 300 ms estimate at **~1–2%**,
+  falling as 1/√N over a longer race.
+
+⚠️ Treat that as order-of-magnitude: it is a single realisation of the even/odd difference, from one
+capture and one driving style. The naive analytic figure is far worse (±7.8%) because it estimates
+a *population mean*; the integral over one specific window is the right question and the empirical
+test answers it directly.
+
+**Conclusion: cumulative fuel is viable, short-window fuel is not.** A 5 s lap is ~10 effective
+samples, so a per-lap "fuel used" figure carries roughly **±26%** and would visibly jitter. See the
+Throttle bullet in CLAUDE.md for the resulting design rules (integrate continuously, gate on
+`Running`, keep the model in lapdata).
+
 ## HW-14: polling the Slot characteristic (2026-09-18)
 
 No faster. Reads came back ~13/s (two 37.5 ms connection events each) with no errors, but a
