@@ -4,6 +4,7 @@ from next_race import (
     assign_drivers_to_lanes,
     select_balanced_race_drivers,
     build_session_schedule,
+    count_running_race,
 )
 from model import Lane, RaceSession
 from responsemodel import DriverWithLane
@@ -261,3 +262,26 @@ def test_disqualified_not_scheduled_even_when_under_target(test_lanes, test_driv
     assert 1 not in scheduled_ids, "Disqualified driver gets no make-up races"
 
 
+
+def test_regenerate_during_running_race_does_not_reschedule_it(test_lanes, test_drivers):
+    """Regenerating while a race is on track: its drivers have already got that race, so
+    they must not be scheduled for it again. 6 drivers, target 1, all 6 in the running
+    race -> nothing left to schedule."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 0
+    running = [(d.id, lane) for lane, d in enumerate(drivers, start=1)]
+
+    session = make_session(races_per_driver=1)
+    schedule = build_session_schedule(session, count_running_race(drivers, running), test_lanes)
+
+    assert schedule == [], "The running race already covers every driver's target"
+
+
+def test_count_running_race_counts_race_and_lane_without_mutating(test_drivers):
+    drivers = test_drivers[:2]
+    counted = count_running_race(drivers, [(1, 4)])
+
+    assert counted[0].completed_races == 19 and counted[0].lane4_count == 4
+    assert counted[1].completed_races == 18, "Drivers not in the running race are unchanged"
+    assert drivers[0].completed_races == 18, "Input must not be mutated"

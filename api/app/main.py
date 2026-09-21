@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState, RaceSessionSummary
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup
 from points import calculate_race_points
 
 settings = Settings()
@@ -252,7 +252,9 @@ def generate_session_schedule(dbsession: SessionDep, race_session):
     schedule for every outstanding race and persist them as NotStarted races. Assumes
     any stale queue has already been cleared. Returns the number of races created."""
     lanes = get_lanes(dbsession)
-    drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=race_session.id)
+    drivers = count_running_race(
+        get_drivers_for_next_race_sql(dbsession, race_session_id=race_session.id),
+        running_race_lineup(dbsession, race_session.id))
     schedule = build_session_schedule(race_session, drivers, lanes)
     return save_session_schedule(dbsession, schedule, race_session)
 
@@ -318,8 +320,11 @@ def session_regen_status(dbsession: SessionDep):
         return {**quiet, "session_id": session.id, "sit_out_candidates": sit_out_candidates}
 
     target = session.races_per_driver
+    # The Running race counts as scheduled: completed_races only counts Finished races,
+    # so without it every driver whose last race is the one on track looks unscheduled.
     queued_race_ids = [r.id for r in dbsession.exec(
-        select(Race).where(Race.session_id == session.id, Race.state == 'NotStarted')
+        select(Race).where(Race.session_id == session.id,
+                           Race.state.in_(['NotStarted', 'Running']))
     ).all()]
     queued_driver_ids = set()
     if queued_race_ids:

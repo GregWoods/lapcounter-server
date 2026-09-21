@@ -26,21 +26,33 @@ def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
                 d.sit_out_next_race,
                 COALESCE(sd.disqualified, FALSE) as disqualified,
                 COUNT(r.id) as completed_races,
-                COUNT(CASE WHEN dr.lane = 1 THEN 1 END) as lane1_count,
-                COUNT(CASE WHEN dr.lane = 2 THEN 1 END) as lane2_count,
-                COUNT(CASE WHEN dr.lane = 3 THEN 1 END) as lane3_count,
-                COUNT(CASE WHEN dr.lane = 4 THEN 1 END) as lane4_count,
-                COUNT(CASE WHEN dr.lane = 5 THEN 1 END) as lane5_count,
-                COUNT(CASE WHEN dr.lane = 6 THEN 1 END) as lane6_count,
+                COUNT(CASE WHEN mr.id IS NOT NULL AND dr.lane = 1 THEN 1 END) as lane1_count,
+                COUNT(CASE WHEN mr.id IS NOT NULL AND dr.lane = 2 THEN 1 END) as lane2_count,
+                COUNT(CASE WHEN mr.id IS NOT NULL AND dr.lane = 3 THEN 1 END) as lane3_count,
+                COUNT(CASE WHEN mr.id IS NOT NULL AND dr.lane = 4 THEN 1 END) as lane4_count,
+                COUNT(CASE WHEN mr.id IS NOT NULL AND dr.lane = 5 THEN 1 END) as lane5_count,
+                COUNT(CASE WHEN mr.id IS NOT NULL AND dr.lane = 6 THEN 1 END) as lane6_count,
                 RANDOM() as random_value
             FROM
                 drivers d
             LEFT JOIN
+                -- This meeting's row only: a driver in two meetings would otherwise
+                -- appear twice, with every count below doubled.
                 meeting_drivers md ON d.id = md.driver_id
+                    AND md.meeting_id = (SELECT meeting_id FROM sessions WHERE id = :session_id)
             LEFT JOIN
                 driver_races dr ON d.id = dr.driver_id
             LEFT JOIN
+                -- completed_races: Finished races in this session (the races_per_driver target).
                 races r ON dr.race_id = r.id AND r.state = 'Finished' AND r.session_id = :session_id
+            LEFT JOIN
+                -- Lane counts: Finished races across this meeting, so lanes (and the car
+                -- fixed to each) even out over the whole meeting. Queued races, and other
+                -- meetings, must not count.
+                races mr ON dr.race_id = mr.id AND mr.state = 'Finished'
+                    AND mr.session_id IN (
+                        SELECT id FROM sessions
+                        WHERE meeting_id = (SELECT meeting_id FROM sessions WHERE id = :session_id))
             LEFT JOIN
                 session_drivers sd ON d.id = sd.driver_id AND sd.session_id = :session_id
             GROUP BY
@@ -829,6 +841,39 @@ def remove_pending_races(dbsession, session_id):
     return len(pending)
 
 
+def count_running_race(drivers, running_lineup):
+    """Return copies of ``drivers`` with the Running race counted as raced.
+
+    The SQL only counts Finished races, so regenerating while a race is on track would
+    otherwise schedule its drivers for that race a second time. ``running_lineup`` is
+    ``(driver_id, lane)`` pairs. Deliberately not done in the SQL: "Race X of Y" must
+    keep treating the running race as not yet done.
+    """
+    work = [d.model_copy() for d in drivers]
+    by_id = {d.id: d for d in work}
+    for driver_id, lane in running_lineup:
+        d = by_id.get(driver_id)
+        if d is None:
+            continue
+        d.completed_races += 1
+        if lane and 1 <= lane <= 6:
+            attr = f'lane{lane}_count'
+            setattr(d, attr, getattr(d, attr) + 1)
+    return work
+
+
+def running_race_lineup(dbsession, session_id):
+    """``(driver_id, lane)`` for every driver in the session's Running race, if any."""
+    running_ids = [r.id for r in dbsession.exec(
+        select(Race).where(Race.session_id == session_id, Race.state == 'Running')
+    ).all()]
+    if not running_ids:
+        return []
+    return [(dr.driver_id, dr.lane) for dr in dbsession.exec(
+        select(DriverRace).where(DriverRace.race_id.in_(running_ids))
+    ).all()]
+
+
 def build_session_schedule(race_session, drivers, lanes):
     """Compute the full *remaining* race schedule for a session as a list of
     NextRaceSetup, one per race, in running order.
@@ -840,7 +885,8 @@ def build_session_schedule(race_session, drivers, lanes):
     driver ends on `races_per_driver` races, lanes are spread evenly, and the final
     races shrink rather than draining to a single straggler.
 
-    `drivers` already reflects completed (Finished) races, so regenerating mid-session
+    `drivers` already reflects completed (Finished, plus any Running — see
+    count_running_race) races, so regenerating mid-session
     only schedules each driver's *outstanding* races. Sessions with no
     races_per_driver target return a single race (manual-end → stage one at a time).
     """
