@@ -403,9 +403,8 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 - ✅ DB Writer service implemented (`dbwriter/`) — subscribes to `driver_lap`, writes `driver_laps`/`driver_races` straight to PostgreSQL
 - ✅ `race_control` MQTT topic for race prepare/arm/start/pause/resume/end/status from any client (used by the `/racecontrol` page)
 
-**Still needed:**
-- Meeting and session creation UI (Admin page currently only lists existing meetings/sessions)
-- NextRace page: preview the full upcoming queue (`GET /races/queue/`) and edit specific queued races; currently it edits only the head race
-- Sample/reset data: `python sampledata.py` (in the api container) now generates session 2's queue itself, via the same balancer the API uses. The **SQL** path (`sampledata.sql`/`reset-races.sql`) still can't — the schedule is computed in Python — so after loading those, run `POST /sessions/2/regenerate-races` (RaceControl's regenerate prompt does the same). Both files say so at the top. Without it `/races/pending/` 404s, and /nextrace then says *"No races queued for this session"* with a link to RaceControl (it used to claim the session had ended).
+**Still needed:** bugs, to-dos and ideas are tracked in **GitHub issues** (`gh issue list`), not here. Two worth knowing when working in this area:
+- NextRace edits only the head race; previewing/editing the whole queue is #29.
+- Sample/reset data (#33): `python sampledata.py` (in the api container) now generates session 2's queue itself, via the same balancer the API uses. The **SQL** path (`sampledata.sql`/`reset-races.sql`) still can't — the schedule is computed in Python — so after loading those, run `POST /sessions/2/regenerate-races` (RaceControl's regenerate prompt does the same). Both files say so at the top. Without it `/races/pending/` 404s, and /nextrace then says *"No races queued for this session"* with a link to RaceControl (it used to claim the session had ended).
 
-Note: `GET /drivers/nextrace/` (old stateless endpoint) still exists alongside `GET /races/pending/`. The old one is superseded but not yet removed.
+Note: `GET /drivers/nextrace/` (old stateless endpoint) still exists alongside `GET /races/pending/`. The old one is superseded but not yet removed (#30).
