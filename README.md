@@ -6,22 +6,27 @@ Lapcounter-Server is the software portion of a Scalextric Digital Race Managemen
 A combination of hardware and software, which counts laps on a Scalextric Digital slot racing circuit.
 It includes a real time leaderboard viewable in a web browser.
 
-For more technical details, please see **readme.developer.md**
+For more technical details, please see **readme.developer.md**, and for the full technical reference (MQTT contracts, database schema, race lifecycle) see **CLAUDE.md**.
 
 ## Hardware
-The hardware is a Raspberry Pi 3A connected to a 2 lane car id sensor circuit created by [ZoomRoom](https://www.slotforum.com/members/zoomroom.24952/) 
-* A Raspberry Pi 3A
-* Fitted into a 3D printed case clipped to the edge of a modified half straight track piece
-  * which house optical sensors in each lane
-  * The sensors are connected to a transistor circuit to amplify and clean up the edges of the signal
-  * This optical signal feeds into a PIC microcontroller which converts the "PWM-ish" signal from the car's IR LED into numeric Card IDs 1-6
-    * The carID of a car passing the sensor is sent to the Pi over a parallel 3 bit signal via the IO header pins
-* [Optional] A Wirelesss Access Point so that the whole system is standalone and transportable (i.e. it is not tied to your home WiFi, and can be run without any internet access)
+A Raspberry Pi, plus a way to read each car's digital ID as it crosses the start/finish line. Two options, picked at deploy time — exactly one runs at a time, and everything above it (race management, the leaderboard) works identically either way:
+
+* **Bluetooth LE** (the default on the live Pi) — talks directly to a Scalextric ARC Pro powerbase, reading all 6 digital car IDs over Bluetooth. No extra hardware beyond the powerbase you already have to run digital Scalextric.
+* **GPIO** (the original hardware, still supported as a fallback) — a 2 lane car id sensor circuit created by [ZoomRoom](https://www.slotforum.com/members/zoomroom.24952/):
+  * A Raspberry Pi 3A
+  * Fitted into a 3D printed case clipped to the edge of a modified half straight track piece
+    * which house optical sensors in each lane
+    * The sensors are connected to a transistor circuit to amplify and clean up the edges of the signal
+    * This optical signal feeds into a PIC microcontroller which converts the "PWM-ish" signal from the car's IR LED into numeric Card IDs 1-6
+      * The carID of a car passing the sensor is sent to the Pi over a parallel 3 bit signal via the IO header pins
+
+Either way: [Optional] A Wireless Access Point so that the whole system is standalone and transportable (i.e. it is not tied to your home WiFi, and can be run without any internet access)
 
 ## Software
-The project upon which this is based, is well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/). Whilst it was a great accomplishment during a few months of lockdown. I did dislike the UI. So, I developed my own ReactJs based front end. Once that was in a decent state, I started to look at reworking the backend so I could add features not possible with all the logic in the front end code.
+The project upon which this is based, is well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/). Whilst it was a great accomplishment during a few months of lockdown, I did dislike the UI. So, I developed my own ReactJs based front end. Once that was in a decent state, I reworked the backend so I could add features not possible with all the logic in the front end code: the race manager now runs server-side (in a container called `lapdata`), race meets/sessions/drivers are persisted in a PostgreSQL database, and React is a pure display and control layer that talks to it all over MQTT — so a browser refresh, or even nobody watching at all, no longer loses the current race.
 
 ![My reworked React JS UI](docs/shakedown.gif)
+*(this GIF predates the database/race-meet-manager work above — a refresh is due, see [#65](https://github.com/GregWoods/lapcounter-server/issues/65))*
 
 ## Features
 
@@ -31,15 +36,16 @@ The project upon which this is based, is well documented on [slotforum](https://
 * Once the winning driver crosses the line, each driver finishes their lap, then the race is over
     * This can give some odd looking ordering of events, as seen in the GIF, where the race results appear in the following order due to drivers being one or more laps behind - demo results: P1, P6, P3, P4, P2, P5.
     * The logic is correct, as is based on a greater number of laps completed beats less laps completed, and for drivers on the same lap, lower total race time beats higher total race time
-* There are just a few predefined race types, because I got tired of drivers debating whether to run a 20 or 25 lap race. Each race type is kept substantially different from the others, with choices intentionally limited (but can be hacked)
-* Yellow flag can be triggered by hitting the space bar of an attached keyboard
-    * Crossing the finish line under yellow flag results in lap being discarded
-    * When a driver deslots, they hit the spacebar on the keyboard. a 3 seond countdone begins where all drivers can continue racing. Once the countdown finishes all drivers must stop. Laps are not counted at this point.
-    * The deslotted driver retreives their car. The green flag icon is clicked and a brief countdown resumes the race.
-    * Unfortunately we cannot stop cars during a yellow flag event, as we have no control over the track signals.  
-        * Actually, we could use a smart plug to kill all power to the powerbase. 
-        * In lieu of stopping cars, we simply stop counting their laps. This means that sneaky drivers can gain more than the 3 second advantage if they continue their lap to just before the lap counting sensor. When the race resumes they immediately register a lap. 
-            * In real races, this will result in frequent pileups on the the restart, so should probably be disallowed by the marshalls
+* Two race types — Finishing Position (fixed lap count) and Fastest Lap (fixed time, ranked by personal best) — because I got tired of drivers debating whether to run a 20 or 25 lap race. Each is kept substantially different from the other, with choices intentionally limited (but can be hacked)
+* Yellow flag, triggered from the operator's race control page (`/racecontrol`), not a keyboard shortcut on the display screen
+    * A grace period (a few seconds, configurable per session) lets everyone finish the corner and get clear — laps still count during it, since the cars are still under power and still racing
+    * On a Bluetooth LE powerbase, power is genuinely cut to every car once the grace period ends, so the field actually stops — no more "sneaky driver keeps going" advantage
+    * On the older GPIO hardware there's no way to cut power at all, so a yellow flag there is bookkeeping only: it still hides positions and stops counting laps, just without physically stopping any cars
+    * The operator can end the yellow flag early ("Resume Now"), or the race can finish during the grace period like any other lap
+* Full race meet management: meetings, sessions and drivers are all persisted, not just the one race on screen
+    * A session runs a whole queue of races back-to-back, automatically balanced so every driver races the same number of times and rotates through lanes fairly
+    * An operator can pull a driver from one race without losing their place in the rest of the session (with a configurable limit on how many times before a "disqualify from the rest of the session?" prompt appears)
+    * Results and lap history are kept per session, for after-the-meet analysis
 * Driver with fastest lap of the race has their fastest lap time shown in purple
 * Driver names quickly editable (not shown)
 * Previously uploaded car images can be quickly selected
