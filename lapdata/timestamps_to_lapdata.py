@@ -413,13 +413,29 @@ def handle_race_control(data: dict, arrival: float):
         # would silently leave those drivers' laps uncounted. The race is still
         # NotStarted, so the queue head is this race. The cache is only the fallback
         # for an API that is unreachable at the moment of arming.
+        #
+        # ⚠️ "Unreachable" means `fresh` itself is falsy — not merely that its race_id
+        # disagrees with the caller's. A stale `race_id` in the request (an operator's
+        # browser tab that hasn't refreshed since the queue changed underneath it — e.g.
+        # a database reseed, or another client's regenerate-races) must still arm
+        # whatever the live API says is actually pending, not a same-numbered leftover
+        # in `pending_race_cache` from a previous, unrelated race. Once bit us for real:
+        # after a full DB reseed mid-session, lapdata (never restarted, so still holding
+        # a pre-reseed cache) armed and ran an entire race on stale cached data — wrong
+        # driver names throughout, and its start/finish POSTs landed on whatever race the
+        # reused id now pointed to post-reseed.
         fresh = fetch_pending_race()
-        if fresh and (race_id is None or fresh.get('race_id') == race_id):
+        if fresh:
+            if race_id is not None and fresh.get('race_id') != race_id:
+                logger.warning(
+                    f"arm requested race {race_id} but the live queue head is "
+                    f"{fresh.get('race_id')} — arming the live one"
+                )
             pending = fresh
         elif pending_race_cache and pending_race_cache.get('race_id') == race_id:
             pending = pending_race_cache
         else:
-            pending = fresh
+            pending = None
 
         if not pending:
             logger.error("Cannot arm: failed to load pending race from API")
