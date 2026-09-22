@@ -324,7 +324,7 @@ PostgreSQL with SQLModel ORM (no relationships defined yet, uses raw SQL for com
 docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
 docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
 ```
-Alternatively, run `python sampledata.py` inside the `api` container (drops all tables, recreates, seeds).
+Alternatively, run `python sampledata.py` inside the `api` container (drops all tables, recreates from `model.py`, then executes `database/sampledata.sql` itself — see #33 below — before generating session 2's race queue).
 
 ### Upgrading a database that holds real data
 

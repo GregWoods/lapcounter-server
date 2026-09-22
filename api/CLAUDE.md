@@ -169,9 +169,11 @@ Run directly to drop all tables, recreate them from SQLModel metadata, and inser
 ```
 python sampledata.py
 ```
-Requires env vars to be set (use `setenv.ps1` or run inside Docker container). Inserts data in FK dependency order: manufacturers → categories → models → tyres → chips → cars → drivers → meetings → junction tables → sessions → races → driver_races → driver_laps → lanes.
+Requires env vars to be set (use `setenv.ps1` or run inside Docker container). The row data itself is **not** duplicated here — it creates the schema, then executes `database/sampledata.sql` verbatim as one script (via a raw DBAPI/psycopg2 connection, since that file's FastestLap-session generator is a `DO $$ ... $$` PL/pgSQL block whose embedded semicolons rule out naive statement-splitting). That file also fixes up every table's id sequence itself, at the end. Locating it works both from a full repo checkout (this file is two levels below the repo root) and inside the api Docker container, where `compose.dev.yaml` mounts `database/` read-only alongside `app/` for exactly this — see `_find_repo_file()`.
 
-It finishes with `add_race_queue()`, which generates session 2's upcoming races through the same `build_session_schedule()`/`save_session_schedule()` path as `POST /sessions/{id}/regenerate-races`. Without it a fresh database has an InProgress session with **no** queue, so `/races/pending/` 404s and NextRace looks like the session has ended. It also fixes up each table's id sequence first: every row above is inserted with an explicit id, which leaves the sequences at 1. `database/sampledata.sql` cannot do this (the schedule is balanced in Python), so that path still needs the regenerate call.
+It finishes with `add_race_queue()`, the one thing that can't be plain SQL: it generates session 2's upcoming races through the same `build_session_schedule()`/`save_session_schedule()` path as `POST /sessions/{id}/regenerate-races`. Without it a fresh database has an InProgress session with **no** queue, so `/races/pending/` 404s and NextRace looks like the session has ended. `database/sampledata.sql` cannot do this (the schedule is balanced in Python), so the plain `psql < database/sampledata.sql` path still needs the regenerate call.
+
+Keeping the row data in one file (`database/sampledata.sql`) means this path and the plain `psql` path can't drift apart the way they once did — `sampledata.py` used to hand-duplicate a *different*, smaller set of sample data (9 placeholder-named drivers vs. the real 13 in `sampledata.sql`) that nobody had kept in sync.
 
 ## Docker
 

@@ -140,6 +140,9 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./api/app:/usr/src/app
+      # Read-only: lets sampledata.py execute database/sampledata.sql directly instead
+      # of duplicating its data in Python (see sampledata.py's _find_repo_file()).
+      - ./database:/usr/src/database:ro
     ports:
       - "8000:8000"
 

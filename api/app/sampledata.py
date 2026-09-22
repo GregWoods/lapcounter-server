@@ -1,302 +1,72 @@
 # Running this script will drop all tables and create them again, then add sample data.
 # Before running this script, make sure you set the environment variables, or Pydantic validation will fail
 # There is a setenv.ps1 file to do this, or running inside the "dev" Docker compose based container will set them for you.
+#
+# The actual sample data (drivers, cars, meetings, sessions, finished races and their
+# laps) lives in one place: database/sampledata.sql. This script creates the schema,
+# executes that file verbatim, then adds the one thing raw SQL can't express: session
+# 2's upcoming race queue, which is a balanced schedule computed in Python
+# (build_session_schedule(), the same function POST /sessions/{id}/regenerate-races
+# uses). Keeping the row data in a single SQL file means this Python path and the
+# `psql < database/sampledata.sql` path can never drift apart, the way a hand-maintained
+# second copy of driver names once did.
 
-from datetime import date, datetime, time
-from decimal import Decimal
-from typing import Optional
+from pathlib import Path
 from sqlmodel import Session, SQLModel, create_engine
-from model import (
-    CarManufacturer, CarCategory, CarModel, Car,
-    CarTyre, ChipHardware, ChipFirmware,
-    Driver, Meeting, MeetingDriver, MeetingCar,
-    RaceSession, Race, DriverRace, DriverLap,
-    Lane
-)
+from model import RaceSession, Lane
 from settings import Settings
 
-def add_car_manufacturers(session: Session):
-    session.add_all([
-        CarManufacturer(id=1, name='Scalextric'),
-        CarManufacturer(id=2, name='Policar')
-    ])
-    session.commit()
+
+def _create_engine():
+    try:
+        settings = Settings()
+        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
+        print(f"Connection string: {connection_string}")
+        return create_engine(connection_string)
+    except Exception as e:
+        print(f"Error creating engine: {e}")
+        raise
 
 
-def add_car_categories(session: Session):
-    session.add_all([
-        CarCategory(id=1, name='Porsche'),
-        CarCategory(id=2, name='Modern GT'),
-        CarCategory(id=3, name='Rally & Rallycross'),
-        CarCategory(id=4, name='Modern F1'),
-        CarCategory(id=5, name='Other')
-    ])
-    session.commit()
-
-
-def add_car_models(session: Session):
-    session.add_all([
-        CarModel(id=1, car_category_id=1, manufacturer_id=1, name='Porsche 997 Red Teco/Burgfonds', race_number='2', model_number='C2899'),
-        CarModel(id=2, car_category_id=1, manufacturer_id=1, name='Porsche 997 Blue Morellato', race_number='17', model_number='C2990'),
-        CarModel(id=3, car_category_id=1, manufacturer_id=1, name='Porsche 997 Yellow Forum Gelb', race_number='46', model_number='C2691'),
-        CarModel(id=4, car_category_id=1, manufacturer_id=1, name='Porsche 997 Black Mad Butcher', race_number='1', model_number='C3132'),
-        CarModel(id=5, car_category_id=1, manufacturer_id=1, name='Porsche 997 Green Street', race_number='', model_number='C3074'),
-        CarModel(id=6, car_category_id=1, manufacturer_id=1, name='Porsche 997 Orange Street', race_number='', model_number='C2871'),
-        CarModel(id=7, car_category_id=1, manufacturer_id=1, name='Porsche 997 Silver Street', race_number='', model_number='C3021')
-    ])
-    session.commit()
-
-
-def add_car_tyres(session: Session):
-    session.add_all([
-        CarTyre(id=1, brand='Scalextric', compound=' Factory Rubber', size=''),
-        CarTyre(id=2, brand='WASP', compound='WASP 04', size=''),
-        CarTyre(id=3, brand='Slot.it', compound='P6', size='18x10 Dwg 1207'),
-        CarTyre(id=4, brand='PCS', compound='F22 Grey Race Control Tyre', size='18x10')
-    ])
-    session.commit()
-
-
-def add_chip_hardwares(session: Session):
-    session.add_all([
-        ChipHardware(id=1, name='Scalextric C8515 Rev H'),
-        ChipHardware(id=2, name='Scalextric C8515 Rev G'),
-        ChipHardware(id=3, name='Scalextric C8515 Rev F'),
-        ChipHardware(id=4, name='Scalextric C7005')
-    ])
-    session.commit()
-
-
-def add_chip_firmwares(session: Session):
-    session.add_all([
-        ChipFirmware(id=1, name='Scalextric Factory Firmware'),
-        ChipFirmware(id=2, name='InCar Pro 3.3'),
-        ChipFirmware(id=3, name='InCar Pro 4.0'),
-        ChipFirmware(id=4, name='InCar Pro 4.01')
-    ])
-    session.commit()
-
-
-def add_cars(session: Session):
-    session.add_all([
-        Car(id=1, name='Porsche Red/Black', car_model_id=1, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_RedBlack.jpg', rfid=''),
-        Car(id=2, name='Porsche Red/silver', car_model_id=1, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_RedSilver.jpg', rfid=''),
-        Car(id=3, name='Porsche Blue/silver', car_model_id=2, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_BlueSilver.jpg', rfid=''),
-        Car(id=4, name='Porsche Blue/Black', car_model_id=2, tyre_id=1, magnet=False, 
-            modifications_notes='Slot.it Starter Kit Sidewinder 36t 17.3x8.25mm Wheels', 
-            weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_BlueBlack.jpg', rfid=''),
-        Car(id=5, name='Porsche Yellow', car_model_id=3, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_Yellow.jpg', rfid=''),
-        Car(id=6, name='Porsche Black', car_model_id=4, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_Black.jpg', rfid=''),
-        Car(id=7, name='Porsche Green', car_model_id=5, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_Green.jpg', rfid=''),
-        Car(id=8, name='Porsche Orange', car_model_id=6, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_Orange.jpg', rfid=''),
-        Car(id=9, name='Porsche Silver', car_model_id=7, tyre_id=1, magnet=False, 
-            modifications_notes='', weight_added=20.0, chip_hardware_id=1, chip_firmware_id=1, 
-            picture='GT_Porsche_Silver.jpg', rfid='')
-    ])
-    session.commit()
-
-
-def add_drivers(session: Session):
-    session.add_all([
-        Driver(id=1, first_name='Driver A', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=2, first_name='Driver B', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=3, first_name='Driver C', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=4, first_name='Driver D', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=5, first_name='Driver E', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=6, first_name='Driver F', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=7, first_name='Driver G', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=8, first_name='Driver H', last_name='', mobile_number='', picture='', rfid=''),
-        Driver(id=9, first_name='Driver J', last_name='', mobile_number='', picture='', rfid='', sit_out_next_race=True)
-    ])
-    session.commit()
-
-
-def add_meetings(session: Session):
-    session.add_all([
-        Meeting(id=1, name='Junior Championship', date=date(2024, 6, 1), venue='Village Hall'),
-        Meeting(id=2, name='Garage Raceway', date=date(2024, 8, 1), venue='My Garage'),
-        Meeting(id=3, name='Village Hall Grand Prix', date=date(2030, 1, 1), venue='Village Hall'),
-        Meeting(id=4, name='2031 Village Hall Grand Prix', date=date(2031, 2, 1), venue='Village Hall')
-    ])
-    session.commit()
-
-
-def add_meeting_drivers(session: Session):
-    session.add_all([
-        MeetingDriver(meeting_id=3, driver_id=1, driver_name='Driver xA'),
-        MeetingDriver(meeting_id=3, driver_id=2, driver_name='Driver xB'),
-        MeetingDriver(meeting_id=3, driver_id=3, driver_name='Driver xC'),
-        MeetingDriver(meeting_id=3, driver_id=4, driver_name='Driver xD'),
-        MeetingDriver(meeting_id=3, driver_id=5, driver_name='Driver xE'),
-        MeetingDriver(meeting_id=3, driver_id=6, driver_name='Driver xF'),
-        MeetingDriver(meeting_id=3, driver_id=7, driver_name='Driver xG'),
-        MeetingDriver(meeting_id=3, driver_id=8, driver_name='Driver xH'),
-        MeetingDriver(meeting_id=3, driver_id=9, driver_name='Driver xJ')
-    ])
-    session.commit()
-
-
-def add_meeting_cars(session: Session):
-    session.add_all([
-        MeetingCar(meeting_id=3, car_id=1),
-        MeetingCar(meeting_id=3, car_id=2),
-        MeetingCar(meeting_id=3, car_id=3),
-        MeetingCar(meeting_id=3, car_id=4),
-        MeetingCar(meeting_id=3, car_id=5),
-        MeetingCar(meeting_id=3, car_id=6)
-    ])
-    session.commit()
-
-
-def add_sessions(session: Session):
-    # States match database/sampledata.sql: a finished warm-up session, then an
-    # in-progress one whose queue add_race_queue() generates.
-    session.add_all([
-        RaceSession(id=1, meeting_id=3, session_type='FastestLap',
-                   end_condition='Time', end_condition_info=3,
-                   races_per_driver=2,
-                   scoring_method='FastestLap', scoring_points=None,
-                   start_time=None, end_time=None, state='Finished'),
-        RaceSession(id=2, meeting_id=3, session_type='Points',
-                   end_condition='Laps', end_condition_info=5,
-                   races_per_driver=3, max_sit_outs=2,
-                   scoring_method='PositionPoints', scoring_points='[10, 8, 6, 4, 3, 2]',
-                   start_time=None, end_time=None, state='InProgress')
-    ])
-    session.commit()
-
-
-def add_races(session: Session):
-    session.add_all([
-        Race(id=1, session_id=2, state='Finished'),
-        Race(id=2, session_id=2, state='Finished')
-    ])
-    # No NotStarted race here on purpose: the queue for session 2 is generated by
-    # add_race_queue() below, the same way the API builds it.
-    session.commit()
-
-
-def add_driver_races(session: Session):
-    session.add_all([
-        DriverRace(id=1, driver_id=1, race_id=2, car_id=1, lane=1),
-        DriverRace(id=2, driver_id=2, race_id=2, car_id=1, lane=2),
-        DriverRace(id=3, driver_id=3, race_id=2, car_id=2, lane=3),
-        DriverRace(id=4, driver_id=4, race_id=2, car_id=3, lane=4),
-        DriverRace(id=5, driver_id=5, race_id=2, car_id=4, lane=5),
-        DriverRace(id=6, driver_id=6, race_id=2, car_id=5, lane=6),
-        DriverRace(id=7, driver_id=1, race_id=1, car_id=1, lane=1),
-    ])
-    session.commit()
-
-
-def add_driver_laps(session: Session):
-    # Driver 1, 5 laps
-    session.add_all([
-        DriverLap(id=1, driver_race_id=1, lap_time=Decimal('12.345'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
-        DriverLap(id=2, driver_race_id=1, lap_time=Decimal('11.567'), created_at=datetime(2024, 6, 1, 14, 30, 10)),
-        DriverLap(id=3, driver_race_id=1, lap_time=Decimal('9.789'), created_at=datetime(2024, 6, 1, 14, 30, 20)),
-        DriverLap(id=4, driver_race_id=1, lap_time=Decimal('14.345'), created_at=datetime(2024, 6, 1, 14, 30, 30)),
-        DriverLap(id=5, driver_race_id=1, lap_time=Decimal('16.678'), created_at=datetime(2024, 6, 1, 14, 30, 40))
-    ])
-    session.commit()
-    
-    # Driver 2, 6 laps
-    session.add_all([
-        DriverLap(id=6, driver_race_id=2, lap_time=Decimal('13.456'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
-        DriverLap(id=7, driver_race_id=2, lap_time=Decimal('12.678'), created_at=datetime(2024, 6, 1, 14, 30, 10)),
-        DriverLap(id=8, driver_race_id=2, lap_time=Decimal('11.789'), created_at=datetime(2024, 6, 1, 14, 30, 20)),
-        DriverLap(id=9, driver_race_id=2, lap_time=Decimal('10.345'), created_at=datetime(2024, 6, 1, 14, 30, 30)),
-        DriverLap(id=10, driver_race_id=2, lap_time=Decimal('14.678'), created_at=datetime(2024, 6, 1, 14, 30, 40)),
-        DriverLap(id=11, driver_race_id=2, lap_time=Decimal('15.789'), created_at=datetime(2024, 6, 1, 14, 30, 50))
-    ])
-    session.commit()
-    
-    # Driver 3, 2 laps
-    session.add_all([
-        DriverLap(id=12, driver_race_id=3, lap_time=Decimal('10.123'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
-        DriverLap(id=13, driver_race_id=3, lap_time=Decimal('11.456'), created_at=datetime(2024, 6, 1, 14, 30, 10))
-    ])
-    session.commit()
-    
-    # Driver 4, 5 laps
-    session.add_all([
-        DriverLap(id=14, driver_race_id=4, lap_time=Decimal('13.567'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
-        DriverLap(id=15, driver_race_id=4, lap_time=Decimal('12.789'), created_at=datetime(2024, 6, 1, 14, 30, 10)),
-        DriverLap(id=16, driver_race_id=4, lap_time=Decimal('11.345'), created_at=datetime(2024, 6, 1, 14, 30, 20)),
-        DriverLap(id=17, driver_race_id=4, lap_time=Decimal('14.678'), created_at=datetime(2024, 6, 1, 14, 30, 30)),
-        DriverLap(id=18, driver_race_id=4, lap_time=Decimal('15.789'), created_at=datetime(2024, 6, 1, 14, 30, 40))
-    ])
-    session.commit()
-    
-    # Driver 5, 6 laps
-    session.add_all([
-        DriverLap(id=19, driver_race_id=5, lap_time=Decimal('12.123'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
-        DriverLap(id=20, driver_race_id=5, lap_time=Decimal('11.456'), created_at=datetime(2024, 6, 1, 14, 30, 10)),
-        DriverLap(id=21, driver_race_id=5, lap_time=Decimal('10.789'), created_at=datetime(2024, 6, 1, 14, 30, 20)),
-        DriverLap(id=22, driver_race_id=5, lap_time=Decimal('13.345'), created_at=datetime(2024, 6, 1, 14, 30, 30)),
-        DriverLap(id=23, driver_race_id=5, lap_time=Decimal('14.678'), created_at=datetime(2024, 6, 1, 14, 30, 40)),
-        DriverLap(id=24, driver_race_id=5, lap_time=Decimal('15.789'), created_at=datetime(2024, 6, 1, 14, 30, 50))
-    ])
-    session.commit()
-    
-    # Driver 6, 2 laps
-    session.add_all([
-        DriverLap(id=25, driver_race_id=6, lap_time=Decimal('12.345'), created_at=datetime(2024, 6, 1, 14, 30, 0)),
-        DriverLap(id=26, driver_race_id=6, lap_time=Decimal('11.567'), created_at=datetime(2024, 6, 1, 14, 30, 10))
-    ])
-    session.commit()
-    
-    # Add the 6 lanes
-    session.add_all([
-        Lane(lane_number=1, color='red', enabled=True),
-        Lane(lane_number=2, color='green', enabled=True),
-        Lane(lane_number=3, color='blue', enabled=True),
-        Lane(lane_number=4, color='yellow', enabled=True),
-        Lane(lane_number=5, color='orange', enabled=True),
-        Lane(lane_number=6, color="white", enabled=True)
-    ])
-    session.commit()
-
-
-
+def _find_repo_file(*relative_parts: str) -> Path:
+    """Locate a file that lives outside api/app/, in either environment this script
+    runs in: a full repo checkout (this file is api/app/sampledata.py, so the repo
+    root is two levels up), or the api Docker container, where compose.dev.yaml mounts
+    the repo's database/ folder read-only alongside app/ (one level up from this file,
+    since only api/app/ itself — not api/ — is mounted into the container)."""
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[2].joinpath(*relative_parts),  # repo root (local run)
+        here.parents[1].joinpath(*relative_parts),  # Docker: database/ mounted beside app/
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    tried = ", ".join(str(c) for c in candidates)
+    raise FileNotFoundError(f"Could not find {Path(*relative_parts)} — tried: {tried}")
 
 
 def drop_tables():
-    try:
-        settings = Settings()
-        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
-        print(f"Connection string: {connection_string}")
-        engine = create_engine(connection_string)
-    except Exception as e:
-        print(f"Error creating engine: {e}")
-        raise    
-    SQLModel.metadata.drop_all(engine)
+    SQLModel.metadata.drop_all(_create_engine())
+
 
 def create_db_and_tables():
+    SQLModel.metadata.create_all(_create_engine())
+
+
+def run_sql_file(engine, sql_path: Path):
+    """Execute a .sql file's full text as one script, including sampledata.sql's
+    multi-statement DO $$ ... $$ block. That block's embedded semicolons rule out
+    naively splitting the file on ';' and running each piece through SQLModel's
+    text(), so this goes straight to the DBAPI (psycopg2) connection instead, the
+    same way `psql < file.sql` runs it."""
+    raw = engine.raw_connection()
     try:
-        settings = Settings()
-        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
-        print(f"Connection string: {connection_string}")
-        engine = create_engine(connection_string)
-    except Exception as e:
-        print(f"Error creating engine: {e}")
-        raise    
-    SQLModel.metadata.create_all(engine)
+        raw.cursor().execute(sql_path.read_text())
+        raw.commit()
+    finally:
+        raw.close()
+
 
 def add_race_queue(session: Session):
     """Generate the upcoming race queue for the in-progress session, exactly as
@@ -305,23 +75,14 @@ def add_race_queue(session: Session):
     Without this a fresh database has an InProgress session with no NotStarted races,
     so /races/pending/ 404s and NextRace shows an empty page until someone regenerates
     by hand. The schedule is balanced per driver and lane, so it cannot be written as
-    fixed INSERTs - hence Python, not sampledata.sql.
+    fixed INSERTs - hence Python, not sampledata.sql. (sampledata.sql's own trailing
+    setval() calls already sync every sequence this reads from — races, driver_races,
+    driver_laps, drivers, meetings, sessions — so there's nothing to fix up here.)
     """
-    from sqlalchemy import text
     from sqlmodel import select
     from next_race import (
         build_session_schedule, get_drivers_for_next_race_sql, save_session_schedule,
     )
-    # Every row above was inserted with an explicit id, which leaves each table's id
-    # sequence at 1 — so the first generated race would collide with race 1. Postgres only
-    # advances a sequence when it supplies the value itself.
-    for table in ('races', 'driver_races', 'driver_laps', 'sessions', 'meetings', 'drivers'):
-        session.exec(text(
-            f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
-            f"COALESCE((SELECT MAX(id) FROM {table}), 1))"
-        ))
-    session.commit()
-
     race_session = session.get(RaceSession, 2)
     lanes = session.exec(select(Lane).order_by(Lane.lane_number)).all()
     drivers = get_drivers_for_next_race_sql(session, race_session_id=race_session.id)
@@ -332,33 +93,13 @@ def add_race_queue(session: Session):
 
 
 def add_sample_data():
-    try:
-        settings = Settings()
-        connection_string = f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_DATABASE}"
-        print(f"Connection string: {connection_string}")
-        engine = create_engine(connection_string)
-    except Exception as e:
-        print(f"Error creating engine: {e}")
-        raise    
+    engine = _create_engine()
+    run_sql_file(engine, _find_repo_file('database', 'sampledata.sql'))
+    print("Ran database/sampledata.sql")
     with Session(engine) as session:
-        # Add data in the correct dependency order
-        add_car_manufacturers(session)
-        add_car_categories(session)
-        add_car_models(session)
-        add_car_tyres(session)
-        add_chip_hardwares(session)
-        add_chip_firmwares(session)
-        add_cars(session)
-        add_drivers(session)
-        add_meetings(session)
-        add_meeting_drivers(session)
-        add_meeting_cars(session)
-        add_sessions(session)
-        add_races(session)
-        add_driver_races(session)
-        add_driver_laps(session)
         add_race_queue(session)
     print("Sample data has been added successfully!")
+
 
 if __name__ == "__main__":
     drop_tables()
@@ -367,6 +108,3 @@ if __name__ == "__main__":
     print("All tables created successfully")
     add_sample_data()
     print("Sample data added successfully")
-
-
-

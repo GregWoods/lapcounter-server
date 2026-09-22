@@ -79,32 +79,32 @@ INSERT INTO cars (id, name, car_model_id, tyre_id, magnet, modifications_notes, 
     ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (1, 'Alice', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (2, 'Bob', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (3, 'Charlie', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (4, 'Dave', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (5, 'Eve', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (6, 'Frank', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (7, 'Greg', 'Woods', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (8, 'Hannah', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (9, 'Jake', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (10, 'Liam', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (11, 'Mia', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (12, 'Noah', '', '', '', '') ON CONFLICT (id) DO NOTHING;
-INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid)
-    VALUES (13, 'Olivia', '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (1, 'Alice', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (2, 'Bob', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (3, 'Charlie', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (4, 'Dave', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (5, 'Eve', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (6, 'Frank', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (7, 'Greg', 'Woods', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (8, 'Hannah', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (9, 'Jake', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (10, 'Liam', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (11, 'Mia', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (12, 'Noah', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
+INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, sit_out_next_race)
+    VALUES (13, 'Olivia', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO meetings (id, name, date, venue, count_first_crossing)
@@ -143,10 +143,10 @@ INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 4, NULL) ON CONFL
 INSERT INTO meeting_cars (meeting_id, car_id, lane) VALUES (3, 6, NULL) ON CONFLICT (meeting_id, car_id) DO NOTHING;
 
 
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, scoring_method, scoring_points, start_time, end_time, state)
-    VALUES (1, 3, 'FastestLap', 'Time', 3, 2, NULL, 'FastestLap', NULL, NULL, NULL, 'Finished') ON CONFLICT (id) DO NOTHING;
-INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, scoring_method, scoring_points, start_time, end_time, state)
-    VALUES (2, 3, 'Points', 'Laps', 5, 3, 2, 'PositionPoints', '[10, 8, 6, 4, 3, 2]', NULL, NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, yellow_grace_seconds, scoring_method, scoring_points, start_time, end_time, state)
+    VALUES (1, 3, 'FastestLap', 'Time', 3, 2, NULL, 5, 'FastestLap', NULL, NULL, NULL, 'Finished') ON CONFLICT (id) DO NOTHING;
+INSERT INTO sessions (id, meeting_id, session_type, end_condition, end_condition_info, races_per_driver, max_sit_outs, yellow_grace_seconds, scoring_method, scoring_points, start_time, end_time, state)
+    VALUES (2, 3, 'Points', 'Laps', 5, 3, 2, 5, 'PositionPoints', '[10, 8, 6, 4, 3, 2]', NULL, NULL, 'InProgress') ON CONFLICT (id) DO NOTHING;
 
 
 INSERT INTO lanes (lane_number, color, enabled) VALUES (1, 'red', true) ON CONFLICT (lane_number) DO NOTHING;
@@ -323,7 +323,7 @@ BEGIN
     LOOP
       v_lt := round((v_base + random() * v_range)::numeric, 3);
       EXIT WHEN v_elapsed + v_lt > race_seconds;
-      INSERT INTO driver_laps (driver_race_id, lap_time) VALUES (v_dr_id, v_lt);
+      INSERT INTO driver_laps (driver_race_id, lap_time, created_at) VALUES (v_dr_id, v_lt, now());
       v_elapsed := v_elapsed + v_lt;
       v_nlaps := v_nlaps + 1;
       v_last := v_lt;
