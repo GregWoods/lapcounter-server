@@ -75,6 +75,14 @@ def on_driver_lap(payload: dict):
             dr = cur.fetchone()
             if not dr:
                 log.warning("No driver_race for race %s driver %s", race_id, driver_id)
+                # The SELECT above already opened a transaction (psycopg2 is not
+                # autocommit) — returning without ending it left the connection idle in
+                # transaction indefinitely, holding whatever locks it acquired, until (if
+                # ever) a later successful lap happened to commit it along the way. Bit
+                # us for real: a stray driver_lap for a race_id/driver_id with no
+                # matching driver_races row left this connection idle in transaction for
+                # 12+ minutes, blocking an unrelated `DROP TABLE` elsewhere.
+                conn.rollback()
                 return
 
             cur.execute(
