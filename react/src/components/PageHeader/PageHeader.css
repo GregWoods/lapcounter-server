@@ -1,0 +1,34 @@
+/*
+ * Shared page header — keeps /currentrace and /nextrace the same height.
+ * Sized in vw (not rem) on purpose: the two pages set different html font-size
+ * bases (currentrace 0.833vw, nextrace 1.666vw), so rem would render at different
+ * sizes. vw is page-independent, so the header is identical on both.
+ */
+.page-header {
+    display: flex;
+    align-items: center;
+    gap: 1vw;
+    margin-bottom: 1vw;
+    padding: 0.8vw 0;
+    color: #fff;
+}
+
+.page-header-home {
+    color: #888;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: color 0.15s;
+}
+
+.page-header-home:hover { color: #ccc; }
+.page-header-home svg { width: 2.8vw; height: 2.8vw; }
+
+.page-header h1 {
+    font-size: 2.6vw;
+    margin: 0;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

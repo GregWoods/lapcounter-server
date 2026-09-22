@@ -1,0 +1,54 @@
+/* A deliberately NEW overlay class, not the shared .ReactModalOverlay — that one fades
+   to a dark, blurred backdrop on open (.ReactModal__Overlay--after-open in
+   LapCounter.css), which is exactly what this modal must not do: the upcoming race's
+   driver lineup needs to stay visible behind it. react-modal still applies its own
+   built-in .ReactModal__Overlay(--after-open/--before-close) classes alongside whatever
+   overlayClassName is given, so background/backdrop-filter are pinned explicitly on
+   every state below rather than left to cascade order to sort out. */
+.soundBlockedModalOverlay,
+.soundBlockedModalOverlay.ReactModal__Overlay--after-open,
+.soundBlockedModalOverlay.ReactModal__Overlay--before-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: transparent;
+    backdrop-filter: none;
+}
+
+.soundBlockedModal {
+    position: relative;
+}
+
+#soundBlockedContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    color: white;
+    cursor: pointer;
+    background: rgba(20, 20, 20, 0.94);
+    border: 0.15rem solid white;
+    border-radius: 1.5rem;
+    padding: 2.5rem 5rem;
+    box-shadow: 0 0 3rem rgba(0, 0, 0, 0.7);
+}
+
+#soundBlockedIcon {
+    font-size: 8rem;
+    line-height: 1;
+    margin-bottom: 0.3em;
+}
+
+#soundBlockedContainer h1 {
+    font-size: 3rem;
+    margin: 0 0 0.3em 0;
+}
+
+#soundBlockedContainer p {
+    font-size: 1.5rem;
+    margin: 0;
+    opacity: 0.85;
+}

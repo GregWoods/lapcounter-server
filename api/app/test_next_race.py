@@ -1,8 +1,23 @@
 import pytest
-from next_race import assign_drivers_to_lanes
-from model import Lane
+from collections import Counter
+from next_race import (
+    assign_drivers_to_lanes,
+    select_balanced_race_drivers,
+    build_session_schedule,
+    count_running_race,
+)
+from model import Lane, RaceSession
 from responsemodel import DriverWithLane
 from pprint import pprint
+
+
+def make_session(races_per_driver=None):
+    """A minimal in-memory RaceSession for the pure-logic scheduler tests."""
+    return RaceSession(
+        meeting_id=1, session_type='Points', end_condition='Laps',
+        end_condition_info=20, races_per_driver=races_per_driver,
+        scoring_method='PositionPoints',
+    )
 
 
 @pytest.fixture
@@ -20,15 +35,15 @@ def test_lanes():
 @pytest.fixture
 def test_drivers():
      return[
-        DriverWithLane(id=1, first_name='Driver A', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=2, first_name='Driver B', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=3, first_name='Driver C', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=4, first_name='Driver D', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=5, first_name='Driver E', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=6, first_name='Driver F', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=7, first_name='Driver G', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=8, first_name='Driver H', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
-        DriverWithLane(id=9, first_name='Driver J', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3)
+        DriverWithLane(id=1, driver_name='Driver AA', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=2, driver_name='Driver BB', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=3, driver_name='Driver CC', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=4, driver_name='Driver DD', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=5, driver_name='Driver EE', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=6, driver_name='Driver FF', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=7, driver_name='Driver GG', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=8, driver_name='Driver HH', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3),
+        DriverWithLane(id=9, driver_name='Driver JJ', completed_races=18, lane1_count=3, lane2_count=3, lane3_count=3, lane4_count=3, lane5_count=3, lane6_count=3)
      ]
 
 
@@ -171,3 +186,102 @@ def test_lane_preference(test_lanes, test_drivers):
     assert result.lane_assignments[4].id == 8, "Driver H should be in lane 5"
     assert result.lane_assignments[5].id == 9, "Driver J should be in lane 6"
 
+    #Check the driver names - to make sure we are not just using first_name, but the name which we will calculate
+    assert result.lane_assignments[0].driver_name == "Driver BB"
+    assert result.lane_assignments[1].driver_name == "Driver CC"
+    assert result.lane_assignments[2].driver_name == "Driver FF"
+    assert result.lane_assignments[3].driver_name == "Driver GG"
+    assert result.lane_assignments[4].driver_name == "Driver HH"
+    assert result.lane_assignments[5].driver_name == "Driver JJ"
+
+
+# ── Disqualification (per-session sit-out limit) ──────────────────────
+
+def test_disqualified_driver_excluded_from_lanes(test_lanes, test_drivers):
+    """A disqualified driver is treated like sitting out: never assigned a lane, always
+    pushed to other_drivers — even with a free lane available."""
+    drivers = test_drivers[:6]
+    drivers[2].disqualified = True  # Driver CC (id=3) is out of the session
+    result = assign_drivers_to_lanes(drivers, test_lanes)
+
+    assert all(d.id != 3 for d in result.lane_assignments), "Disqualified driver should not race"
+    assert any(d.id == 3 for d in result.other_drivers), "Disqualified driver should be in other_drivers"
+    # 5 remaining drivers fill 5 of the 6 lanes.
+    assert_common_test_conditions(result, len(drivers), 5)
+
+
+def test_disqualified_excluded_from_balanced_selection(test_lanes, test_drivers):
+    """select_balanced_race_drivers ignores disqualified drivers when picking a race."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 0
+    drivers[0].disqualified = True  # id=1 out
+
+    session = make_session(races_per_driver=2)
+    selected, complete = select_balanced_race_drivers(session, drivers, test_lanes)
+
+    assert not complete
+    assert all(d.id != 1 for d in selected), "Disqualified driver must never be selected"
+
+
+def test_schedule_refills_after_disqualification(test_lanes, test_drivers):
+    """The user's scenario: with a driver removed from the session, the remaining schedule
+    covers exactly the active drivers' outstanding races and never schedules the DQ'd one.
+    6 drivers, target 2, all fresh, one DQ'd -> 5 drivers x 2 slots = 10 over 6 lanes =>
+    two races of 5, and each active driver races exactly twice."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 0
+    drivers[0].disqualified = True  # id=1 out
+
+    session = make_session(races_per_driver=2)
+    schedule = build_session_schedule(session, drivers, test_lanes)
+
+    scheduled_ids = [la.id for setup in schedule for la in setup.lane_assignments if la.id != 0]
+    assert 1 not in scheduled_ids, "Disqualified driver must not appear in the schedule"
+
+    appearances = Counter(scheduled_ids)
+    active_ids = {d.id for d in drivers if not d.disqualified}
+    assert set(appearances) == active_ids, "Every active driver should be scheduled"
+    assert all(appearances[i] == 2 for i in active_ids), "Each active driver races exactly twice"
+    assert len(schedule) == 2, "10 slots over 6 lanes should be two balanced races"
+
+
+def test_disqualified_not_scheduled_even_when_under_target(test_lanes, test_drivers):
+    """A DQ'd driver who is behind on races is still not given make-up races."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 2
+    drivers[0].disqualified = True
+    drivers[0].completed_races = 0  # behind, but disqualified
+
+    session = make_session(races_per_driver=3)
+    schedule = build_session_schedule(session, drivers, test_lanes)
+
+    scheduled_ids = [la.id for setup in schedule for la in setup.lane_assignments if la.id != 0]
+    assert 1 not in scheduled_ids, "Disqualified driver gets no make-up races"
+
+
+
+def test_regenerate_during_running_race_does_not_reschedule_it(test_lanes, test_drivers):
+    """Regenerating while a race is on track: its drivers have already got that race, so
+    they must not be scheduled for it again. 6 drivers, target 1, all 6 in the running
+    race -> nothing left to schedule."""
+    drivers = test_drivers[:6]
+    for d in drivers:
+        d.completed_races = 0
+    running = [(d.id, lane) for lane, d in enumerate(drivers, start=1)]
+
+    session = make_session(races_per_driver=1)
+    schedule = build_session_schedule(session, count_running_race(drivers, running), test_lanes)
+
+    assert schedule == [], "The running race already covers every driver's target"
+
+
+def test_count_running_race_counts_race_and_lane_without_mutating(test_drivers):
+    drivers = test_drivers[:2]
+    counted = count_running_race(drivers, [(1, 4)])
+
+    assert counted[0].completed_races == 19 and counted[0].lane4_count == 4
+    assert counted[1].completed_races == 18, "Drivers not in the running race are unchanged"
+    assert drivers[0].completed_races == 18, "Input must not be mutated"

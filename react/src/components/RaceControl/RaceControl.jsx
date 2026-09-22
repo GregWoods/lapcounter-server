@@ -1,0 +1,297 @@
+import './RaceControl.css';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { House, Flag, Pause, Play } from 'lucide-react';
+import MqttSubscriber from '../MqttSubscriber';
+import ChequeredFlagIcon from '../ChequeredFlagIcon';
+import { API_URL, MQTT_URL } from '../../endpoints.js';
+
+
+const STATE_LABELS = {
+    NotStarted: 'Staged',
+    ArmedForStart: 'Starting…',
+    Running: 'Running',
+    Yellow: 'Yellow Flag',
+    Paused: 'Paused',
+    Finished: 'Finished',
+};
+
+export default function RaceControl() {
+    const [raceState, setRaceState] = useState(null);
+    const [infoLoaded, setInfoLoaded] = useState(false);
+    const [info, setInfo] = useState({
+        meetingName: '', sessionType: null, sessionNumber: null, raceNumber: null,
+        racesTotal: null, targetLaps: 20, pendingRaceId: null,
+        sessionInProgress: false, nextSessionAvailable: false, activeSessionId: null,
+        needsRegen: false, missingDrivers: [], sitOutCandidates: [],
+    });
+    const clientRef = useRef(null);
+
+    // Pull session / next-race details the MQTT race_state doesn't carry. Pending and
+    // regen-status are read-only (races are pre-populated when a session starts); a 404
+    // on pending just means no session is in progress, not that one should be created.
+    const loadInfo = useCallback(async () => {
+        try {
+            const [pendingRes, meetingRes, regenRes] = await Promise.all([
+                fetch(`${API_URL}/races/pending/`),
+                fetch(`${API_URL}/meetings/active`),
+                fetch(`${API_URL}/sessions/active/regen-status`),
+            ]);
+            const pending = pendingRes.ok ? await pendingRes.json() : null;
+            const meeting = meetingRes.ok ? await meetingRes.json() : null;
+            const regen = regenRes.ok ? await regenRes.json() : null;
+
+            let targetLaps = 20;
+            let sessionInProgress = false, nextSessionAvailable = false, activeSessionId = null;
+            if (meeting?.id) {
+                const sRes = await fetch(`${API_URL}/sessions?meeting_id=${meeting.id}`);
+                if (sRes.ok) {
+                    const sessions = await sRes.json();
+                    const inProgress = sessions.find(s => s.state === 'InProgress');
+                    const upcoming = sessions.find(s => s.state === 'NotStarted');
+                    sessionInProgress = !!inProgress;
+                    nextSessionAvailable = !!upcoming;
+                    activeSessionId = inProgress?.id ?? null;
+                    const active = inProgress ?? upcoming;
+                    if (active?.end_condition === 'Laps' && active.end_condition_info) {
+                        targetLaps = active.end_condition_info;
+                    }
+                }
+            }
+            setInfo({
+                meetingName: meeting?.name ?? '',
+                sessionType: pending?.session_type ?? null,
+                sessionNumber: pending?.session_number ?? null,
+                raceNumber: pending?.race_number ?? null,
+                racesTotal: pending?.session_races_total ?? null,
+                targetLaps,
+                pendingRaceId: pending?.race_id ?? null,
+                sessionInProgress, nextSessionAvailable, activeSessionId,
+                needsRegen: regen?.needs_regeneration ?? false,
+                missingDrivers: regen?.missing_driver_names ?? [],
+                sitOutCandidates: regen?.sit_out_candidates ?? [],
+            });
+        } catch {
+            /* leave previous info in place */
+        } finally {
+            setInfoLoaded(true);
+        }
+    }, []);
+
+    useEffect(() => { loadInfo(); }, [loadInfo]);
+
+    // Ask lapdata for the current state once (race_state is not retained on the broker).
+    useEffect(() => {
+        const t = setTimeout(() => publish('status'), 500);
+        return () => clearTimeout(t);
+    }, []);
+
+    const publish = (command, extra = {}) => {
+        clientRef.current?.publish('race_control', JSON.stringify({ command, ...extra }));
+    };
+
+    // Session / next-race details only move when the race changes or transitions — not
+    // on every lap crossing or yellow countdown tick — so refetch (4 requests) only then.
+    const lastRaceKeyRef = useRef(null);
+    const onRaceState = (rs) => {
+        setRaceState(rs);
+        const raceKey = `${rs.race_id}:${rs.state}`;
+        if (raceKey !== lastRaceKeyRef.current) {
+            lastRaceKeyRef.current = raceKey;
+            loadInfo();
+        }
+    };
+
+    // A live race_state can legitimately lag one prepare/arm cycle behind `info` — e.g.
+    // it still names the just-finished race while /races/pending/ already answers with
+    // the next one — and that's fine, because `race_number` falls back through the live
+    // value first below. But race numbers reset per session, so a race_state naming a
+    // number higher than the current session's own total can only be a leftover from a
+    // DIFFERENT, older session — "Next Session" (POST /sessions/start-next) starts a new
+    // one through the API alone, with no MQTT message telling lapdata, so its last
+    // broadcast can sit there naming a race from the session that just ended. Mixing
+    // that stale race_number with the new session's fresh racesTotal produced the
+    // impossible "Race 5 of 4" — a race number can never exceed its own session's total,
+    // which is exactly the tell. Discard the whole stale message rather than one field,
+    // the same way `info.pendingRaceId` is treated as "no live message yet".
+    const raceStateStale = raceState && info.racesTotal != null && raceState.race_number > info.racesTotal;
+    const liveRaceState = raceStateStale ? null : raceState;
+
+    // Live values win; fall back to the API snapshot before the first MQTT message.
+    const state = liveRaceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
+    const sessionType = liveRaceState?.session_type ?? info.sessionType;
+    // ⚠️ `||`, not `??`. lapdata now publishes `race_number: null` when no race is loaded, so
+    // `??` would be correct against current lapdata — but an older lapdata image publishes 0
+    // (it used to default to 0), and `??` passes a 0 straight through. 0 is falsy, so the title
+    // rendered "No race" even though the API had already supplied the number. Race numbers are
+    // 1-based, so treating 0 as "no race" can never discard a real one, and this keeps the page
+    // right against a Pi whose lapdata hasn't been redeployed yet.
+    const raceNumber = liveRaceState?.race_number || info.raceNumber;
+    const raceId = liveRaceState?.race_id ?? info.pendingRaceId;
+    const isFastestLap = sessionType === 'FastestLap';
+
+    const live = state === 'Running' || state === 'ArmedForStart';
+
+    // Seconds until a yellow flag's grace period cuts power. lapdata ticks this down and
+    // publishes it (like the start lights), so no viewer depends on its own clock.
+    const yellowSecondsLeft = raceState?.yellow_seconds_left ?? null;
+
+    const apiPost = async (path) => {
+        try { await fetch(`${API_URL}${path}`, { method: 'POST' }); } catch { /* ignore */ }
+    };
+
+    const nextRace = () => { publish('prepare', { race_id: info.pendingRaceId }); setTimeout(loadInfo, 300); };
+    const startRace = () => publish('arm', { race_id: raceId, target_laps: info.targetLaps });
+    const endRace = () => publish('end');
+    const yellowFlag = () => publish('yellow');
+    const resumeRace = () => publish('resume');
+
+    // "Next Session": begin the next NotStarted session and pre-populate its queue.
+    const nextSession = async () => { await apiPost('/sessions/start-next'); await loadInfo(); };
+
+    // Regenerate the upcoming queue after the roster changed. If a race is staged but
+    // not yet running, re-stage the new head so the display reflects the new lineup.
+    const regenerate = async () => {
+        if (!info.activeSessionId) return;
+        await apiPost(`/sessions/${info.activeSessionId}/regenerate-races`);
+        await loadInfo();
+        if (!live) publish('prepare', {});
+    };
+
+    // Disqualify a driver who has sat out too many races: drops them from the rest of the
+    // session and rebuilds the upcoming queue so remaining races refill without them.
+    const disqualify = async (driverId) => {
+        if (!info.activeSessionId) return;
+        await apiPost(`/sessions/${info.activeSessionId}/drivers/${driverId}/disqualify`);
+        await loadInfo();
+        if (!live) publish('prepare', {});
+    };
+
+    return (
+        <div className="rc-page">
+            <MqttSubscriber
+                mqttHost={MQTT_URL}
+                onRaceStateMessage={onRaceState}
+                onAdminUpdateMessage={loadInfo}
+                clientRef={clientRef}
+            />
+
+            <header className="rc-header">
+                <Link to="/" className="rc-home"><House size={22} /></Link>
+                <h1>Race Control</h1>
+            </header>
+
+            <section className="rc-info">
+                <div className="rc-meeting">{info.meetingName || '—'}</div>
+                <div className="rc-session">
+                    {info.sessionNumber != null ? `Session ${info.sessionNumber}` : '—'}
+                </div>
+                <div className="rc-racenum">
+                    {/* "of N" hangs off the race number rather than standing alone, or a missing
+                        number leaves the nonsense "No race of 7" — same rule as LapCounter's Header. */}
+                    {raceNumber
+                        ? `Race ${raceNumber}${info.racesTotal ? ` of ${info.racesTotal}` : ''}`
+                        : 'No race'}
+                </div>
+                <div className={`rc-state rc-state--${(state ?? 'unknown').toLowerCase()}`}>
+                    {STATE_LABELS[state] ?? 'Connecting…'}
+                </div>
+            </section>
+
+            {info.needsRegen && (
+                <div className="rc-regen-banner">
+                    <span>
+                        New driver added{info.missingDrivers.length ? ` (${info.missingDrivers.join(', ')})` : ''},
+                        {' '}regenerate upcoming races?
+                    </span>
+                    <button className="rc-btn rc-btn--regen" onClick={regenerate}>Regenerate</button>
+                </div>
+            )}
+
+            {info.sitOutCandidates.map((c) => (
+                <div key={c.driver_id} className="rc-regen-banner rc-sitout-banner">
+                    <span>
+                        {c.driver_name} has sat out {c.sit_outs} race{c.sit_outs === 1 ? '' : 's'} —
+                        {' '}disqualify from the rest of the session?
+                    </span>
+                    <button className="rc-btn rc-btn--regen" onClick={() => disqualify(c.driver_id)}>
+                        Disqualify
+                    </button>
+                </div>
+            ))}
+
+            <section className="rc-actions">
+                {live && (
+                    <>
+                        {!isFastestLap && (
+                            <button className="rc-btn rc-btn--yellow" onClick={yellowFlag}>
+                                <Pause size={32} /> Yellow Flag
+                            </button>
+                        )}
+                        <button className="rc-btn rc-btn--end" onClick={endRace}>
+                            <ChequeredFlagIcon /> End Race
+                        </button>
+                    </>
+                )}
+
+                {state === 'Yellow' && (
+                    <>
+                        <div className="rc-yellow-countdown">
+                            Race pauses in {yellowSecondsLeft}s
+                        </div>
+                        <button className="rc-btn rc-btn--start" onClick={resumeRace}>
+                            <Play size={32} /> Resume Now
+                        </button>
+                        <button className="rc-btn rc-btn--end" onClick={endRace}>
+                            <ChequeredFlagIcon /> End Race
+                        </button>
+                    </>
+                )}
+
+                {state === 'Paused' && (
+                    <>
+                        <button className="rc-btn rc-btn--start" onClick={resumeRace}>
+                            <Play size={32} /> Resume Race
+                        </button>
+                        <button className="rc-btn rc-btn--end" onClick={endRace}>
+                            <ChequeredFlagIcon /> End Race
+                        </button>
+                    </>
+                )}
+
+                {state === 'NotStarted' && (
+                    <>
+                        <button className="rc-btn rc-btn--start" onClick={startRace}>
+                            <Play size={32} /> Start Race
+                        </button>
+                        <button className="rc-btn rc-btn--ghost" onClick={nextRace}>
+                            Reload Lineup
+                        </button>
+                    </>
+                )}
+
+                {/* Idle (Finished / not connected): advance the race queue, start the
+                    next session, or report completion. */}
+                {!live && state !== 'Yellow' && state !== 'Paused' && state !== 'NotStarted' && (
+                    info.pendingRaceId ? (
+                        <button className="rc-btn rc-btn--next" onClick={nextRace}>
+                            <Flag size={32} /> Next Race
+                        </button>
+                    ) : info.nextSessionAvailable ? (
+                        <button className="rc-btn rc-btn--next" onClick={nextSession}>
+                            <Flag size={32} /> Next Session
+                        </button>
+                    ) : info.sessionInProgress ? (
+                        <p className="rc-session-complete">
+                            Session complete — every driver has run all their races.
+                        </p>
+                    ) : infoLoaded ? (
+                        <p className="rc-session-complete">Meeting complete — no more sessions.</p>
+                    ) : (
+                        <p className="rc-connecting">Connecting…</p>
+                    )
+                )}
+            </section>
+        </div>
+    );
+}

@@ -17,7 +17,6 @@ const RaceTypeModal = ({ showMe, onClose, onStartCountdown }) => {
 
     //WARNING: at the moment, id must match array index
     //TODO: going to need a more comprehensive data structure for the different types of races
-    // eslint-disable-next-line no-unused-vars
 
     const [config] = useLocalStorageState('config');
     const raceDurationPresets = config.racepresets;

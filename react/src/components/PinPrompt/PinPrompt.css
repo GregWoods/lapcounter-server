@@ -1,0 +1,95 @@
+.pin-page {
+    min-height: 100vh;
+    background: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    box-sizing: border-box;
+}
+
+.pin-card {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.pin-title {
+    color: #fff;
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+    text-align: center;
+}
+
+.pin-subtitle {
+    color: #888;
+    font-size: 1rem;
+    margin: 0;
+    text-align: center;
+}
+
+.pin-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.pin-input {
+    background: #222;
+    border: 2px solid #444;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 1.5rem;
+    letter-spacing: 0.3em;
+    padding: 16px;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.pin-input:focus {
+    border-color: #1a7fd4;
+}
+
+.pin-error {
+    color: #e84040;
+    font-size: 0.95rem;
+    margin: 0;
+    text-align: center;
+}
+
+.pin-btn {
+    background: #1a7fd4;
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 1.15rem;
+    font-weight: 700;
+    padding: 16px;
+    transition: background 0.15s;
+    width: 100%;
+}
+
+.pin-btn:hover {
+    background: #1a6aab;
+}
+
+.pin-back {
+    color: #666;
+    font-size: 0.95rem;
+    text-decoration: none;
+    margin-top: 8px;
+}
+
+.pin-back:hover {
+    color: #aaa;
+}

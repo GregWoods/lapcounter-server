@@ -17,14 +17,75 @@ services:
 
 
 
+  # The older dev Layer 1: publishes car_timestamp directly, so it tests lapdata and
+  # React but none of ble/. Behind a profile since mocked-ble became the dev default.
+  # Only one Layer 1 may run, and mocked-ble has no profile, so stop it:
+  #   docker compose -f compose.dev.yaml stop mocked-ble
+  #   docker compose -f compose.dev.yaml --profile mocked-gpio up -d mocked-gpio
   mocked-gpio:
+    profiles: ["mocked-gpio"]
     container_name: mocked-gpio
     environment:
       - MQTT_HOSTNAME=mosquitto
       - MOCK_NUMBER_OF_DRIVERS=6
-    build: 
+    build:
       context: ./gpio
-      dockerfile: Dockerfile.Mocked 
+      dockerfile: Dockerfile.Mocked
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+
+  # Alternative Layer 1: reads lap crossings from a Scalextric ARC Pro powerbase
+  # over BLE instead of the GPIO finish-line sensors, republishing the same
+  # car_timestamp contract. Needs a real powerbase in range and BlueZ's D-Bus
+  # socket, so this only runs meaningfully on the Pi, not this dev machine.
+  #
+  # DEV DEFAULTS TO mocked-ble (the same code as this service, against a simulated
+  # powerbase). Only one Layer 1 may publish car_timestamp; two double-counts every lap.
+  #
+  # ⚠️ `docker compose --profile ble up` on its own is NOT the way to run this:
+  # mocked-ble has no profile, so it starts too and you get both, and both would
+  # compete for the one powerbase connection too. Name the services explicitly,
+  # or stop mocked-ble first:
+  #   docker compose -f compose.dev.yaml stop mocked-ble
+  #   docker compose -f compose.dev.yaml --profile ble up -d ble
+  ble:
+    profiles: ["ble"]
+    container_name: ble
+    build: ./ble
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - BLE_ADDRESS=            # set to the powerbase's MAC to skip the discovery scan
+    volumes:
+      - /var/run/dbus:/var/run/dbus
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+
+  # THE DEV DEFAULT LAYER 1: the real ble_to_timestamps.py against a simulated
+  # powerbase, no Bluetooth needed (docs/mocked-ble-plan.md). Being unprofiled, it
+  # starts alongside any profiled Layer 1 you ask for: stop it first (see above).
+  # Watch the simulated power state: docker exec mosquitto mosquitto_sub -t mock/powerbase
+  # The volume is required, not just for live editing: ble/.dockerignore keeps the
+  # mock_*.py files out of the (production) image. No hot reload: restart it after
+  # editing ./ble, like lapdata.
+  mocked-ble:
+    container_name: mocked-ble
+    build: ./ble
+    command: ["python", "mock_ble_to_timestamps.py"]
+    volumes:
+      - ./ble:/app
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - MOCK_CARS=6
+      # - MOCK_DISCONNECT_POWER=hold      # hold|off|on (HW-07)
+      # - MOCK_DROP_EVERY_S=60
+      # - MOCK_WRITE_FAIL_RATE=0.2
+      # - MOCK_NO_COMMAND_CHARACTERISTIC=true
     depends_on:
       - mosquitto
     restart: unless-stopped
@@ -35,9 +96,15 @@ services:
     environment:
       - MQTT_HOSTNAME=mosquitto
       - MINIMUM_LAP_TIME=2
+      - API_URL=http://api:8000
     build: ./lapdata
+    volumes:
+      - ./lapdata:/app
+    # Not on a Layer 1: lapdata just waits for car_timestamp from whichever one runs, and
+    # depending on one would drag it in alongside a profiled alternative.
     depends_on:
-      - mocked-gpio
+      - mosquitto
+      - api
     restart: unless-stopped
     
 
@@ -48,22 +115,19 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./react/src:/app/src
-      - react_node_modules:/app/node_modules # this anonymous volume prevents the local directory from overwriting the container's node_modules directory.
     ports:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
     environment:
-      - VITE_CIRCUIT_NAME=Wellington Raceway
-      - VITE_MQTT_URL=ws://localhost:8080
-      - VITE_API_URL=http://localhost:8000
       - VITE_CAR_MEDIA_FOLDER=media/cars
+      - VITE_ADMIN_PIN=1234
 
 
   api:
     container_name: api
+    cap_add:
+      - SYS_TIME
     environment:
-      - API_URL=http://localhost:8000   # as seen by external users including the react app
-      - REACT_URL=http://localhost:8088
       - MEDIA_FOLDER=media
       - CARS_MEDIA_FOLDER=media/cars
       - DB_DATABASE=lapcounter_server
@@ -76,8 +140,29 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./api/app:/usr/src/app
+      # Read-only: lets sampledata.py execute database/sampledata.sql directly instead
+      # of duplicating its data in Python (see sampledata.py's _find_repo_file()).
+      - ./database:/usr/src/database:ro
     ports:
       - "8000:8000"
+
+
+  dbwriter:
+    container_name: dbwriter
+    environment:
+      - MQTT_HOSTNAME=mosquitto
+      - DB_HOST=database
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_PORT=5432
+    build: ./dbwriter
+    volumes:
+      - ./dbwriter:/app
+    depends_on:
+      - mosquitto
+      - database
+    restart: unless-stopped
 
 
   database:
@@ -140,4 +225,3 @@ services:
 
 volumes:
   postgres_data:
-  react_node_modules:

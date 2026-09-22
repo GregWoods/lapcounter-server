@@ -1,0 +1,455 @@
+.admin-page {
+    min-height: 100vh;
+    background: #111;
+    padding: 32px;
+    box-sizing: border-box;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.admin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    gap: 16px;
+}
+
+.admin-header-left {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.admin-title {
+    color: #fff;
+    font-size: 1.8rem;
+    margin: 0;
+    font-weight: 700;
+}
+
+.admin-empty {
+    color: #555;
+    font-size: 0.95rem;
+    text-align: center;
+    padding: 48px 0;
+}
+
+/* Cards */
+
+.admin-card {
+    background: #1c1c1c;
+    border: 1px solid #2e2e2e;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+}
+
+.admin-card-title {
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 16px;
+    letter-spacing: 0.02em;
+}
+
+/* Meeting header */
+
+.admin-meeting-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.admin-meeting-header--toggle {
+    align-items: center;
+    cursor: pointer;
+    margin-bottom: 0;
+}
+
+.admin-meeting-header--toggle:hover .admin-meeting-name {
+    color: #fff;
+}
+
+.admin-collapse-chevron {
+    display: flex;
+    align-items: center;
+    color: #888;
+    flex-shrink: 0;
+}
+
+.admin-meeting-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.admin-meeting-name {
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-active-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: #1a3a1a;
+    color: #5bc75b;
+    border: 1px solid #2d5e2d;
+    border-radius: 5px;
+    padding: 2px 8px;
+}
+
+.admin-meeting-meta {
+    color: #777;
+    font-size: 0.85rem;
+}
+
+/* Sessions sub-list */
+
+.admin-sessions {
+    border-top: 1px solid #2a2a2a;
+    padding-top: 16px;
+}
+
+.admin-sessions-title {
+    color: #666;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 10px;
+}
+
+.admin-sessions-empty {
+    color: #444;
+    font-size: 0.85rem;
+    margin: 0 0 10px;
+}
+
+.admin-session-row {
+    border-top: 1px solid #252525;
+    padding: 10px 0;
+}
+
+.admin-session-row:first-of-type {
+    border-top: none;
+}
+
+.admin-session-display {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+/* Session-type icon (podium = Finishing Position, tortoise = Fastest Lap) */
+.admin-session-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #b9c2d0;
+}
+
+/* Session "title" — larger/bold; intended to become editable later */
+.admin-session-title {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.15rem;
+    min-width: 100px;
+}
+
+.admin-session-detail {
+    color: #888;
+    font-size: 0.9rem;
+}
+
+.admin-session-state {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 5px;
+    letter-spacing: 0.03em;
+    margin-left: auto;
+}
+
+.admin-session-state--notstarted { background: #2a2a2a; color: #666; }
+.admin-session-state--inprogress { background: #1a3a1a; color: #5bc75b; }
+.admin-session-state--finished   { background: #222; color: #555; }
+
+/* Non-clickable "In Progress" badge shown right after the session type */
+.admin-session-badge {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 5px;
+    letter-spacing: 0.03em;
+    background: #1a3a1a;
+    color: #5bc75b;
+    border: 1px solid #2d5e2d;
+    white-space: nowrap;
+}
+
+/* Right-aligned action group (End Session + Results/Edit) */
+.admin-session-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-end-session-btn {
+    border-color: #5a2d2d;
+    color: #d98b8b;
+}
+
+.admin-end-session-btn:hover {
+    border-color: #9b4040;
+    color: #f0a8a8;
+}
+
+.admin-form-suffix {
+    color: #999;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+/* Add session button */
+
+.admin-btn-add-session {
+    background: none;
+    border: 1px dashed #333;
+    border-radius: 8px;
+    color: #555;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 9px 14px;
+    width: 100%;
+    margin-top: 10px;
+    text-align: left;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.admin-btn-add-session:hover {
+    border-color: #666;
+    color: #aaa;
+}
+
+/* Forms */
+
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.admin-form-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-form-row label {
+    color: #999;
+    font-size: 0.85rem;
+}
+
+.admin-form-row input:not([type="checkbox"]),
+.admin-form-row select {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9rem;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.admin-form-row input:focus,
+.admin-form-row select:focus {
+    border-color: #e84040;
+}
+
+.admin-form-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #e84040;
+    cursor: pointer;
+    justify-self: start;
+}
+
+/* A checkbox whose meaning needs a sentence: the tickbox and its wording on one line,
+   with the explanation underneath, still inside the row's second grid column. */
+.admin-form-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* Out-specifies `.admin-form-row label`, which would otherwise grey this one out too. */
+.admin-form-row label.admin-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.admin-form-hint {
+    margin: 0;
+    color: #999;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.admin-form-hint strong {
+    color: #ccc;
+    font-weight: 600;
+}
+
+.admin-form-inline {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.admin-form-inline select {
+    flex: 1;
+}
+
+.admin-input-narrow {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9rem;
+    padding: 8px 12px;
+    outline: none;
+    width: 90px !important;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.admin-input-narrow:focus {
+    border-color: #e84040;
+}
+
+.admin-session-form {
+    background: #202020;
+    border-radius: 8px;
+    padding: 14px;
+}
+
+.admin-form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+/* Buttons */
+
+.admin-btn-primary {
+    background: #e84040;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.admin-btn-primary:hover:not(:disabled) { background: #c83030; }
+.admin-btn-primary:disabled { background: #555; cursor: not-allowed; }
+
+.admin-btn-ghost {
+    background: transparent;
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    color: #999;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 8px 16px;
+    transition: border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+.admin-btn-ghost:hover { border-color: #777; color: #ddd; }
+
+.admin-btn-sm { padding: 5px 12px; font-size: 0.82rem; }
+
+.admin-error {
+    color: #e84040;
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.admin-session-state--end-btn {
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    transition: background 0.15s, color 0.15s;
+}
+
+.admin-session-state--end-btn:hover {
+    background: #254825;
+    color: #7de87d;
+}
+
+/* End session confirmation modal */
+
+.admin-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.admin-modal {
+    background: #1c1c1c;
+    border: 1px solid #3a3a3a;
+    border-radius: 12px;
+    padding: 28px 32px;
+    max-width: 380px;
+    width: 90%;
+}
+
+.admin-modal-title {
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 8px;
+}
+
+.admin-modal-body {
+    color: #888;
+    font-size: 0.9rem;
+    margin: 0 0 24px;
+    line-height: 1.5;
+}
+
+.admin-modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}

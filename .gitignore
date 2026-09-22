@@ -2,6 +2,11 @@
 .vscode/
 .vite/
 
+# Python bytecode - regenerated on every run, and the dbwriter/lapdata
+# directories are bind-mounted into containers so these appear constantly.
+__pycache__/
+*.py[cod]
+
 build
 public
 /data/logs
@@ -11,3 +16,4 @@ react/.env.development
 
 #This file is a copy of ./.env.production. Not to be edited
 react/.env.production
+.claude/settings.local.json

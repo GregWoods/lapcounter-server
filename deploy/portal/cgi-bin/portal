@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# Captive-portal catch-all. uhttpd runs this as its error_page handler, so ANY
+# unknown URL - which includes every OS connectivity-probe URL - gets a proper
+# 302 to the landing page.
+#
+# A 302 matters: Android treats a bare 404 inconsistently (it may decide the
+# network simply has no internet and never offer the portal), whereas a
+# redirect reliably flags "captive portal" on iOS, Android and Windows alike.
+#
+printf 'Status: 302 Found\r\n'
+printf 'Location: http://192.168.8.1/index.html\r\n'
+printf 'Cache-Control: no-store, no-cache, must-revalidate\r\n'
+printf 'Content-Type: text/html\r\n'
+printf '\r\n'
+printf '<html><body><a href="http://192.168.8.1/index.html">Race Meet</a></body></html>\r\n'

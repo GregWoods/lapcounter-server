@@ -1,0 +1,22 @@
+[Unit]
+Description=Lap Counter first-boot provisioning
+Documentation=https://github.com/GregWoods/lapcounter-server
+# Needs NetworkManager up to create the WiFi profile, and dockerd available to
+# load the pre-baked images. Deliberately ordered BEFORE lapcounter.service so
+# the stack is not started until images exist and the network is configured.
+After=NetworkManager.service docker.service
+Wants=NetworkManager.service
+Before=lapcounter.service
+ConditionPathExists=!/var/lib/lapcounter/firstboot-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/lapcounter-firstboot
+# Loading ~2GB of images on a Pi 3A+ is slow; do not let systemd give up.
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

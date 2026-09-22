@@ -1,0 +1,102 @@
+{
+  "started": "2026-09-20T21:33:31.002229+00:00",
+  "device": {
+    "address": "EF:2A:C2:EF:D8:AA",
+    "name": "'Scalextric ARC  '",
+    "name_matches_ble_filter": true
+  },
+  "checks": {
+    "HW-03": {
+      "title": "Power multiplier sweep: 100% -> 75% -> 50% -> 0%, trigger held flat",
+      "verdict": "info",
+      "car": 5,
+      "steps": [
+        {
+          "label": "100%",
+          "power_byte": 63,
+          "fraction": 1.0,
+          "write": {
+            "command": 3,
+            "power": 63,
+            "ok": true,
+            "at": 1789940167.218604,
+            "acked_at": 1789940167.2835577,
+            "latency_ms": 65
+          },
+          "throttle_samples": 6,
+          "trigger_held_min": 63,
+          "trigger_held_throughout": true,
+          "counter_rate": 1.0,
+          "crossings": []
+        },
+        {
+          "label": "75%",
+          "power_byte": 47,
+          "fraction": 0.75,
+          "write": {
+            "command": 3,
+            "power": 47,
+            "ok": true,
+            "at": 1789940169.2877514,
+            "acked_at": 1789940169.3462512,
+            "latency_ms": 58
+          },
+          "throttle_samples": 6,
+          "trigger_held_min": 63,
+          "trigger_held_throughout": true,
+          "counter_rate": 1.0,
+          "crossings": []
+        },
+        {
+          "label": "50%",
+          "power_byte": 32,
+          "fraction": 0.5,
+          "write": {
+            "command": 3,
+            "power": 32,
+            "ok": true,
+            "at": 1789940171.3508086,
+            "acked_at": 1789940171.4834538,
+            "latency_ms": 133
+          },
+          "throttle_samples": 7,
+          "trigger_held_min": 63,
+          "trigger_held_throughout": true,
+          "counter_rate": 1.043,
+          "crossings": []
+        },
+        {
+          "label": "0%",
+          "power_byte": 0,
+          "fraction": 0.0,
+          "write": {
+            "command": 3,
+            "power": 0,
+            "ok": true,
+            "at": 1789940173.4878328,
+            "acked_at": 1789940173.5461237,
+            "latency_ms": 58
+          },
+          "throttle_samples": 6,
+          "trigger_held_min": 63,
+          "trigger_held_throughout": true,
+          "counter_rate": 1.0,
+          "crossings": []
+        }
+      ],
+      "sweep_attempts": 5,
+      "restore_write": {
+        "command": 3,
+        "power": 63,
+        "ok": true,
+        "at": 1789940175.6085262,
+        "acked_at": 1789940175.6835752,
+        "latency_ms": 75
+      },
+      "trigger_held_all_steps": true,
+      "counter_through_zero_power": "counter_ran",
+      "code_impact": "As designed: the counter runs through a zero-multiplier stop, so the lap spanning a yellow flag stays an exact counter subtraction with the stopped time in it. This is the whole reason CARS_STOPPED is command 3 at power 0 rather than command 4.",
+      "operator_reports": "Record what the car did at each step: full speed / slower / much slower / stopped, and whether it coasted or braked."
+    }
+  }
+}

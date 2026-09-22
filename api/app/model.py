@@ -2,6 +2,7 @@ from typing import Optional
 from decimal import Decimal
 from datetime import date, datetime, time
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
+from sqlalchemy import Column, DateTime
 
 class CarManufacturer(SQLModel, table=True):
     __tablename__ = "car_manufacturers"
@@ -75,39 +76,53 @@ class Meeting(SQLModel, table=True):
     name: str
     date: date
     venue: Optional[str]
+    count_first_crossing: bool = Field(default=False)
 
 
 class MeetingDriver(SQLModel, table=True):
     __tablename__ = "meeting_drivers"
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id", primary_key=True)
     driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
-    #driver_name: str    #Removed. Generate on the fly in cas enew drivers are added mid-meeting. #Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
-
+    driver_name: str    #Usually just first_name, but may include last_name initial if 2 drivers have the same first name
+    #Note: when a driver is added to a meeting, driver_names for that meeting need to be recalculated
 
 class MeetingCar(SQLModel, table=True):
     __tablename__ = "meeting_cars"
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id", primary_key=True)
     car_id: Optional[int] = Field(default=None, foreign_key="cars.id", primary_key=True)
+    lane: Optional[int] = Field(default=None)   # default lane assignment for this car at this meeting (1-6, nullable for spare cars)
 
 
-class RaceSession(SQLModel, table=True): 
+class RaceSession(SQLModel, table=True):
     __tablename__ = "sessions"  #To be renamed to race_sessions
     id: Optional[int] = Field(default=None, primary_key=True)
     meeting_id: Optional[int] = Field(default=None, foreign_key="meetings.id")
     session_type: str               # 'Points', 'FastestLap', 'Championship'
-    end_condition: str              # 'Laps', 'Time'
+    end_condition: str              # per-race end: 'Laps' (Finishing Position) or 'Time' (Fastest Lap)
     end_condition_info: Optional[int]   #number of laps or time  in minutes
-    scoring_method: str             # 'LapPoints', 'PositionPoints', 'FastestLap'
-    scoring_points: Optional[str]   # JSON string with points array used for PositionPoints (and FastestLap points?)
+    races_per_driver: Optional[int] = Field(default=None)  # automatic session end: each driver races this many times (None = manual end)
+    max_sit_outs: Optional[int] = Field(default=None)  # skips before a driver is offered up for disqualification (None = no limit)
+    yellow_grace_seconds: int = Field(default=5)  # full-power seconds after a yellow flag before power cuts (BLE only; no-op on GPIO)
+    scoring_method: str             # 'PositionPoints' (Finishing Position) or 'FastestLap' (personal best)
+    scoring_points: Optional[str]   # JSON string with points array used for PositionPoints
     start_time: Optional[time]
     end_time: Optional[time]
+    state: str = Field(default='NotStarted')  # 'NotStarted', 'InProgress', 'Finished'
 
 
 class Race(SQLModel, table=True):
     __tablename__ = "races"
     id: Optional[int] = Field(default=None, primary_key=True)
     session_id: Optional[int] = Field(default=None, foreign_key="sessions.id")
+    race_number: Optional[int] = Field(default=None)
     state: str          # 'NotStarted', 'Running', 'Finished'
+    # Lights-out instant, from lapdata's race_start_time. Written tz-aware (UTC), so it
+    # needs an explicit sa_column: a bare `Optional[datetime]` maps to TIMESTAMP WITHOUT
+    # TIME ZONE, and a DB built by sampledata.py's create_all would then silently drop
+    # the offset that schema.sql's TIMESTAMPTZ preserves.
+    started_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
 
 
 # Links drivers with their cars for a particular race,
@@ -125,8 +140,32 @@ class DriverRace(SQLModel, table=True):
     lane: int = Field(default=0)    #1 to 6
     # For later use
     laps_completed: Optional[int]
-    last_lap_time: Optional[Decimal] = Field(default=0)
-    fastest_lap_time: Optional[Decimal] = Field(default=0)
+    last_lap_time: Optional[Decimal] = Field(default=None)
+    fastest_lap_time: Optional[Decimal] = Field(default=None)
+
+
+# Records an operator withdrawal of a driver from a race (the NextRace "×" button).
+# Written when a driver is removed from a race lineup; cleared if the same driver is
+# re-added to that race, and deleted with the race when a NotStarted queue is discarded.
+# A withdrawal attached to a *Finished* race counts as one "skip" for the driver in that
+# session — that's how skips are effectively counted at race-finish time. Rotation (a
+# driver the scheduler simply didn't include this race) leaves no withdrawal, so it never
+# counts as a skip.
+class RaceWithdrawal(SQLModel, table=True):
+    __tablename__ = "race_withdrawals"
+    race_id: Optional[int] = Field(default=None, foreign_key="races.id", primary_key=True)
+    driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
+
+
+# Per-session, per-driver state. Currently just holds the disqualified flag: a driver who
+# has sat out too many races (skips >= session.max_sit_outs) and whom the operator has
+# chosen to remove from the rest of the session. Disqualified drivers are excluded from
+# all further scheduling for that session (unlike the global, one-race Driver.sit_out_next_race).
+class SessionDriver(SQLModel, table=True):
+    __tablename__ = "session_drivers"
+    session_id: Optional[int] = Field(default=None, foreign_key="sessions.id", primary_key=True)
+    driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
+    disqualified: bool = Field(default=False)
 
 
 class DriverLap(SQLModel, table=True):
@@ -144,6 +183,59 @@ class Lane(SQLModel, table=True):
     lane_number: Optional[int] = Field(default=None, primary_key=True)
     color: str
     enabled: bool = Field(default=True)
+
+
+class LaneUpdate(SQLModel):
+    enabled: bool
+
+
+class LaneCarUpdate(SQLModel):
+    car_id: Optional[int] = None
+
+
+class PendingRaceAddDriver(SQLModel):
+    driver_id: int
+
+
+class RaceSessionUpdate(SQLModel):
+    session_type: Optional[str] = None
+    end_condition: Optional[str] = None
+    end_condition_info: Optional[int] = None
+    races_per_driver: Optional[int] = None
+    max_sit_outs: Optional[int] = None
+    yellow_grace_seconds: Optional[int] = None
+    scoring_method: Optional[str] = None
+    scoring_points: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
+
+
+class MeetingCreate(SQLModel):
+    name: str
+    date: date
+    venue: Optional[str] = None
+    count_first_crossing: bool = False
+
+
+class MeetingUpdate(SQLModel):
+    name: Optional[str] = None
+    date: Optional[date] = None
+    venue: Optional[str] = None
+    count_first_crossing: Optional[bool] = None
+
+
+class RaceSessionCreate(SQLModel):
+    meeting_id: int
+    session_type: str
+    end_condition: str
+    end_condition_info: Optional[int] = None
+    races_per_driver: Optional[int] = None
+    max_sit_outs: Optional[int] = None
+    yellow_grace_seconds: int = 5
+    scoring_method: str
+    scoring_points: Optional[str] = None
+    start_time: Optional[time] = None
+    end_time: Optional[time] = None
 
 
 # not using relationships yet

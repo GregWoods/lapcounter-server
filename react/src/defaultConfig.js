@@ -1,11 +1,7 @@
 
 export const defaultConfig = {
-    // These defaults are based on the production docker setup
-    // They are stored in localstorage
-    circuitname: import.meta.env.VITE_CIRCUIT_NAME,
-    mqtturl: import.meta.env.VITE_MQTT_URL,
-    apiurl: import.meta.env.VITE_API_URL,
-    carmediafolder: import.meta.env.VITE_CAR_MEDIA_FOLDER,
+    // Stored in localstorage. NO addresses here: they are per-machine and would be frozen
+    // into a returning browser's storage. See endpoints.js.
     racepresets: [
         { id: 0, type: 'laps', description: 'Shakedown (6 laps)', details: { laps: 6 }},
         { id: 1, type: 'laps', description: 'Sprint (20 laps)', details: { laps: 20 }},

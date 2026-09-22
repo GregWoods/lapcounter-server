@@ -9,6 +9,10 @@ cd gpio
 ./build-and-push-gpio.ps1
 cd ..
 
+cd ble
+./build-and-push-ble.ps1
+cd ..
+
 cd lapdata
 ./build-and-push-lapdata.ps1
 cd ..
@@ -19,4 +23,8 @@ cd ..
 
 cd api
 ./build-and-push-api.ps1
+cd ..
+
+cd dbwriter
+./build-and-push-dbwriter.ps1
 cd ..

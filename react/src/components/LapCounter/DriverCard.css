@@ -1,115 +1,100 @@
 .drivercard {
-    width: 310px;
+    width: 16.15vw;
     margin: 0;
-    border-radius: 30px;
-    display:block;
-    position:absolute;
-    left:2000px;
-    top:3px;
-    height: 760px;
+    border-radius: 1.56vw;
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    left: 104.17vw;
+    top: 0;
+    height: 100%;
+    overflow: hidden;
     transition: 0.5s;
 }
 
 .drivercard.show {
-    opacity:1;
+    opacity: 1;
 }
 
 .drivercard.suspended {
-    opacity:0.1;
+    opacity: 0.1;
 }
 
-
-.drivercard[data-order="1"].show {
-    left:0px;
-}
-.drivercard[data-order="2"].show {
-    left:322px;
-}
-.drivercard[data-order="3"].show {
-    left:644px;
-}
-.drivercard[data-order="4"].show {
-    left:966px;
-}
-.drivercard[data-order="5"].show {
-    left:1288px;
-}
-.drivercard[data-order="6"].show {
-    left:1610px;
-}
+.drivercard[data-order="1"].show { left: 0; }
+.drivercard[data-order="2"].show { left: 16.77vw; }
+.drivercard[data-order="3"].show { left: 33.54vw; }
+.drivercard[data-order="4"].show { left: 50.31vw; }
+.drivercard[data-order="5"].show { left: 67.08vw; }
+.drivercard[data-order="6"].show { left: 83.85vw; }
 
 .drivername {
+    flex-shrink: 0;
     padding: 0.3rem 0.25rem 0.65rem 0.25rem;
     text-align: center;
-    border-radius: 20px 20px 0 0;
+    border-radius: 1.04vw 1.04vw 0 0;
     white-space: nowrap;
     overflow: hidden;
     cursor: pointer;
 }
 
 .drivername div {
-    font-size: 2rem;
+    font-size: 4.8rem;
     font-family: 'Selawik-SemiBold';
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
 }
 
-.drivercontent {
-    padding: 0.3em;
+.carimg {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    cursor: pointer;
 }
 
+.carimg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
 
-.time {
-    /*font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;*/
+.drivercontent {
+    flex-shrink: 0;
+    padding: 0;
 }
 
 .drivercard .time {
-    font-size: 2.6rem;
+    font-size: 4.8rem;
     text-align: center;
     font-family: 'Selawik-SemiBold';
-    color:#333;
+    color: #333;
     line-height: 90%;
 }
 
 .drivercard .personalFastestLap .time {
-    color:#070;
+    color: #070;
 }
 .drivercard .raceFastestLap .time {
-    color:rgb(170, 0, 180);
+    color: rgb(170, 0, 180);
 }
 
 .drivercard .timelbl {
-    font-size: 1.3rem;
+    font-size: 2.6rem;
 }
 
 .spotlightme {
     z-index: 1;
 }
 
-.carimg {
-    cursor:pointer;
-}
-
-.carimg img {
-
-    object-fit: cover;      /* investigate this */
-    width: 100%;
-    height: 200px;
-}
-
 .fastestlaptime {
-    padding: 0.1em 0 0.3em 0;
-    border-radius:0.3em;
+    padding: 0.1em 0 0.6em 0;
+    border-radius: 0.3em;
 }
-
 
 .drivercard .raceFastestLap .time {
-    /*color: white; */
     color: rgb(180, 0, 180);
 }
 
 .lastlaptime {
-    margin-bottom:0.9rem;
+    margin-bottom: 0.3rem;
 }
-

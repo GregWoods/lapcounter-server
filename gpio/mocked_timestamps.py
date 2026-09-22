@@ -10,6 +10,8 @@ import sys
 import os
 import aiomqtt
 
+from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, counter_ms
+
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 numberOfDrivers = int(os.getenv('MOCK_NUMBER_OF_DRIVERS'))
@@ -57,12 +59,26 @@ async def send_lap_time(driver):
         while True:
             driver.generateLap()
             await asyncio.sleep(max(0, driver.nextLapAt - time.time()))
-            crossing_time = time.time_ns()
+            # Stamped at "detection", as the real GPIO callback does — not after the
+            # publish. See gpio/layer1_clock.py.
+            crossing_counter_ms = counter_ms()
             lane_idx = random.randint(1, 2)
-            lapdata = {"car": driver.driverNumber, "timestamp": crossing_time, "lane": lane_idx}
+            lapdata = {"car": driver.driverNumber, "lane": lane_idx,
+                       "counter_ms": crossing_counter_ms, "clock": CLOCK}
             lapjson = json.dumps(lapdata)
             print(lapjson)
             await client.publish(publish_topic, payload=lapjson)
+
+
+async def send_clock_heartbeat():
+    """A bare counter reading once a second, for lapdata to anchor against. Lap 1 is
+    timed from lights-out, before any car has crossed, so crossings alone would leave it
+    with nothing to anchor against at exactly the moment it needs one."""
+    async with aiomqtt.Client(mqtt_hostname) as client:
+        while True:
+            await asyncio.sleep(HEARTBEAT_INTERVAL_S)
+            await client.publish(MQTT_CLOCK_TOPIC, payload=json.dumps(
+                {"clock": CLOCK, "counter_ms": counter_ms()}))
 
 # Create a list of drivers each with their own abilities
 driverRange = [i for i in range(1,numberOfDrivers+1)]
@@ -74,6 +90,7 @@ async def schedule_tasks():
     async with asyncio.TaskGroup() as tg:
         for driver in drivers:
             tg.create_task(send_lap_time(driver))
+        tg.create_task(send_clock_heartbeat())
 
 
 # Change to the "Selector" event loop if platform is Windows

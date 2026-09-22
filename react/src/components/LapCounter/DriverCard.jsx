@@ -2,11 +2,15 @@ import DriverCardPosition from './DriverCardPosition';
 import './DriverCard.css';
 import './DriverColors.css';
 import DriverCardTime from './DriverCardTime';
+import { CAR_MEDIA_URL } from '../../endpoints.js';
 
 
-const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
+const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
+    if (!driver) return null;
     let className = 'drivercard driver' + driver.number;
-    if (!underStartersOrders && driver.hasStartedRacing) {
+    // An empty lane (no driver assigned) stays as a placeholder in the viewmodel but is
+    // never previewed, or it would sit in a slot a real driver's card is using.
+    if (!underStartersOrders && (driver.hasStartedRacing || (previewDriverCards && driver.inLineup))) {
         //if (driver.suspended) {
         //    className += ' suspended';
         //} else {
@@ -41,6 +45,9 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
     }
 
 
+    // data-order drives the horizontal fly-in slot (CSS .drivercard[data-order=N]).
+    // race_state assigns started drivers contiguous positions 1..N, so position
+    // is the slot directly.
     const driverPosition = driver.position;
 
     return (
@@ -50,7 +57,8 @@ const DriverCard = ({driver, underStartersOrders, onRequestOpenDriverNames, onRe
                 <div>{driver.name}</div>
             </div>
             <div className="carimg" onClick={onRequestOpenCarSelector}>
-                <img alt="Car Image" src={driver.carImgUrl ?? '../../images/cars/car0.png'} />
+                <img alt="Car Image" src={driver.carImgUrl}
+                    onError={(e) => { e.target.onerror = null; e.target.src = `${CAR_MEDIA_URL}/GT_AA_Generic.jpg`; }} />
             </div>
 
             <div className="drivercontent">

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Invoke-RestMethod *)",
+
+      "PowerShell(ssh -o BatchMode=yes root@192.168.8.1 *)",
+      "PowerShell(ssh -o BatchMode=yes greg@192.168.8.3 *)",
+      "PowerShell(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new greg@192.168.8.3 *)",
+      "PowerShell(ssh -o BatchMode=yes -o ConnectTimeout=8 greg@192.168.8.3 *)",
+
+      "PowerShell(scp -O -o BatchMode=yes *)",
+      "PowerShell(scp -O -r -o BatchMode=yes *)",
+
+      "PowerShell(./deploy/deploy.ps1*)",
+      "PowerShell(.\\deploy\\deploy.ps1*)",
+
+      "PowerShell(Invoke-WebRequest http://192.168.8.*)",
+      "PowerShell(Invoke-WebRequest \"http://192.168.8.*)",
+      "PowerShell(Test-NetConnection 192.168.8.*)",
+      "PowerShell(Test-NetConnection -ComputerName 192.168.8.*)"
+    ]
+  }
+}

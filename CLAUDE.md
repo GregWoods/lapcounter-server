@@ -1,0 +1,411 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Scalextric digital lap counter and race management system. A 4-layer Docker-based architecture running on Raspberry Pi that counts laps, manages races, and serves a real-time leaderboard via web browser. Designed to work fully offline (Pi acts as WiFi AP).
+
+## Architecture
+
+```
+GPIO / BLE / future hardware (Layer 1)
+        ↓ car_timestamp
+LapData — hardware abstraction + race manager (Layer 2)
+        ↓ lap          ↓ race_state       ↑ race_control
+DB Writer service    React apps        Any client
+        ↓               (display only)  (browser, button box, app)
+   PostgreSQL ← API (REST, queries + lineup management)
+```
+
+- **mosquitto/** - Eclipse Mosquitto MQTT broker config
+- **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
+- **ble/** - Alternative Layer 1: reads laps from a Scalextric ARC Pro powerbase over Bluetooth LE instead of the two GPIO finish-line sensors, publishing the same `car_timestamp` contract. **Now the default Layer 1 on the live Pi** (`gpio` is the `--profile gpio` fallback), though still not validated against real hardware. See "Layer 1 hardware options" below for the protocol and future capabilities beyond lap timing.
+- **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. `race_manager.py` is pure/DB-free and covered by `lapdata/test_race_manager.py` (see "Run Python tests" below). ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order; this is a regression test in that suite.
+- **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
+- **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
+- **dbwriter/** - Small service: subscribes to `driver_lap` (counted laps) only, and writes `driver_laps` rows + `driver_races` aggregates (`laps_completed`, `last_lap_time`, `fastest_lap_time`) **directly to PostgreSQL** (psycopg2, raw SQL — *not* via the API). It does *not* track race/session state: lapdata owns those transitions and POSTs `/races/{id}/start` and `/finish` to the API itself (`publish_race_state()`), which is what keeps persistence browser-independent.
+
+### Core design principles
+
+- **Queries are HTTP, events are MQTT.** The API answers "what is the pending race?" React POSTs race control signals to the API for DB side-effects, but the live signal goes via MQTT.
+- **`car_timestamp` is internal to LapData.** Nothing else subscribes to it. It is the hardware-specific interface; everything above depends on `lap` only.
+- **`lap` is the stable contract** — the seam between hardware and software. Changing hardware (GPIO → BLE) only requires a new Layer 1 that publishes the same `car_timestamp` format.
+- **Race state is browser-independent.** LapData holds race state in memory; React is a viewer that can reconnect at any time and immediately receive current state.
+- **Any client can publish `race_control`** — browser, physical button box, mobile app. LapData doesn't care who sent it.
+
+### MQTT Topics
+
+| Topic | Publisher | Subscribers | Description |
+|---|---|---|---|
+| `car_timestamp` | GPIO/Layer 1 | LapData only | Raw hardware event — internal, do not subscribe elsewhere |
+| `layer1_clock` | GPIO/Layer 1 | LapData only | Bare `(clock, counter_ms)` heartbeat — internal, same treatment as `car_timestamp`. What lets lapdata anchor Layer 1's counter *before* any car has crossed, which is when lap 1 needs it. |
+| `lap` | LapData | React (optional) | Raw normalised crossing — published for **every** crossing (incl. idle, non-running, and the discarded start-line crossing), with no race context. **Not** used for DB persistence. |
+| `driver_lap` | LapData | DB Writer | Authoritative **counted** lap with full context — emitted only when the race manager actually counts a real lap. This is the DB-persistence contract. |
+| `race_state` | LapData | React apps, BLE | Full computed state after every crossing and lapdata timer tick (positions, lap counts, fastest laps, start lights, yellow countdown). BLE maps it to powerbase power. |
+| `race_control` | Any client | LapData, BLE | Commands: `prepare`, `arm`, `start`, `status`, `reload_lineup`, `yellow`, `pause`, `resume`, `end` |
+| `admin_update` | Admin (React) | RaceControl (React) | Plain "something changed, re-fetch" ping after an Admin session create/finish — `{"reason": "session_created"\|"session_finished", ...}`. Deliberately **not** `race_control`: this is a browser-to-browser UI-refresh signal, not a command LapData or BLE should act on. RaceControl just calls its own `loadInfo()` on receipt, the same as it already does after a `race_state` transition. |
+
+**`race_control`:** `{"command": "start", "race_id": 5}`
+
+⚠️ **NextRace edits the queued lineup through the API only, so lapdata doesn't see them unless told.** After every edit (add/remove driver, lane toggle, car swap) NextRace publishes `reload_lineup`; lapdata re-reads `/races/pending/` and re-stages it, but **only while the staged race is `NotStarted` and is still the queue head** — mid-race the head is the *next* race and must never replace the running one (advancing is `prepare`'s job). `arm` also re-reads the lineup rather than trusting `pending_race_cache` (the cache is only a fallback if the API is down), so an edit whose `reload_lineup` was missed still gets raced. Without both, an added driver's laps go uncounted and /currentrace shows the stale lineup (cards overlapping, since positions come from `race_state`).
+
+**`race_state`:**
+```json
+{
+  "race_id": 5, "state": "Running", "target_laps": 20,
+  "race_fastest_lap": 4.523, "race_start_time": 1749123456.789,
+  "drivers": [
+    { "lane": 1, "driver_id": 9, "driver_name": "Jake",
+      "laps_completed": 3, "laps_remaining": 17,
+      "last_lap": 5.123, "best_lap": 4.987, "total_race_time": 15.234,
+      "position": 1, "finished": false, "suspended": false, "has_started": true }
+  ]
+}
+```
+
+**`lap`:** `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>|null}`  
+`car` is 1-based lane number. `lapTime` is filtered by `MINIMUM_LAP_TIME` env var (seconds, fractional allowed; 3 on the race Pi for ~5s laps) and is **null** for a lane's first crossing since lights-out, where there is genuinely no interval to report. `time` is a converted unix time for display only — nothing times a lap with it. Published for every crossing — does **not** mean a lap was counted.
+
+**`car_timestamp`:** `{"car":<1-6>,"lane":<1|2>,"counter_ms":<int ≥ 0>,"clock":"<opaque string>"}`
+
+**`layer1_clock`:** `{"clock":"<opaque string>","counter_ms":<int ≥ 0>}`
+
+⚠️ **Lap times come from subtracting two counters, never from a clock.** `counter_ms` is Layer 1's own counter at the moment it detected the crossing — GPIO's `CLOCK_MONOTONIC` in its interrupt callback, BLE's powerbase tick counter (×10, see `DEVICE_TICK_S`) as stamped at the sensor. Two crossings on the same `clock` subtract exactly, so MQTT latency, queueing, round-robin reporting delay and the state of anyone's wall clock are all structurally incapable of reaching a lap time. That is the whole design; `docs/lap-timing-clocks.md` has the why and `docs/lap-timing-plan.md` the how.
+
+**The `clock` contract**, which every Layer 1 must honour:
+
+1. **Within one `clock`, `counter_ms` advances at real-time rate.**
+2. **A Layer 1 starts a new `clock` whenever that stops being true, or might have** — the counter halts, restarts, jumps backwards (a timer reset, a power cycle, a uint32 wrap), or might have done any of these unseen (a reconnect). Handling a wrap is Layer 1's job; lapdata never sees one.
+3. **A `clock` value is never reused**, across container restarts included — hence the random per-process part in `ble:<hex>:<n>`. A restarted container republishing an old id would have lapdata comparing counters against a dead process's.
+4. **lapdata only ever compares `clock` values for equality, and never parses them.** Same rule as the `layer1` name in capability advertising.
+
+⚠️ **Changing the clock is now the thing that can go wrong.** A Layer 1 that misses an event reproduces the old post-halt bug in a new place — lapdata subtracts across a discontinuity and believes the answer. Every Layer 1 needs a test per event that breaks its counter (`ble/test_ble_to_timestamps.py` has them).
+
+**`layer1_clock` is what makes lap 1 work.** Lap 1 is timed from lights-out, which is lapdata's own timer, so it is the one lap that must cross from Layer 1's clock onto ours. Crossings anchor the clock too, but a car has to cross first — and at lights-out none has. So every Layer 1 also publishes bare counter readings: BLE from the Throttle characteristic at ~3.3/s (plan A, HW-12), GPIO once a second. lapdata pairs each with its arrival time and keeps a running **minimum** of `arrival - counter`, since every sample is the true offset plus a never-negative delay. ⚠️ **A sample must never be early** — its `counter_ms` must not exceed the counter's true value when published. A late one only overestimates the offset, which a running minimum ignores.
+
+lapdata's side is `lapdata/lap_clock.py`: `ClockAnchors` (the running minimum, per clock, last 8 retained so a lap spanning a clock change can still convert its older end), `interval_s()` (same clock → exact subtraction; different clocks → through the anchors) and `RaceStart` (go, converted onto each clock **once per race and frozen**, so every car's lap 1 carries the *same* correlation error and it can never reorder lap 1 times or positions). Its divergence guard re-anchors and logs at ERROR when every sample for `CLOCK_STEP_CONFIRM_S` (5s) sits more than `CLOCK_STEP_THRESHOLD_S` (3s) above the anchor — since lapdata's clock is monotonic, nothing legitimate does that, so it means a Layer 1 broke its counter without changing clock. The threshold must stay above one BLE round-robin **rotation** (~1.8s measured, 2026-09-18); don't lower it without a rotation measured on the meet's hardware.
+
+**`driver_lap`:** `{"race_id":<id>,"driver_id":<id>,"lane":<1-6>,"lap_number":<n>,"lap_time":<seconds>,"clock":"<id>","counter_ms":<int>,"timing":"counter"|"from_go"|"anchored"|"arrival"}`  
+Emitted by lapdata only when `race_manager.on_lap` counts a real lap (so idle/non-running crossings and the discarded start-line crossing never produce one). The DB writer persists these verbatim — it re-derives no race logic, and currently ignores the last three fields. `timing` is provenance: **`counter`** is an exact subtraction on one clock (every lap from 2 onwards); **`from_go`** went through the clock anchor from lights-out (lap 1, in every race); **`anchored`** spanned a clock change (a yellow-flag halt, a reconnect); **`arrival`** is the last resort with no usable anchor. Persisting these is [open question 1](docs/lap-timing-plan.md) — it is the only way to re-check a disputed lap after the meet.
+
+**Discarded first crossing** is controlled by the **meeting**-level `meetings.count_first_crossing` flag (set in the Admin *meeting* form, not the session). It flows `meeting → /races/pending/ payload → lapdata load_lineup → race_manager.on_lap`: when false, each driver's first crossing is discarded (not counted, no `driver_lap`).
+
+⚠️ **Lap 1 is timed from lights-out in every race, whatever the start grid** (Greg, 2026-09-20). The flag only decides which crossing *ends* lap 1 — with the grid in front of the line that is the first crossing; with the grid behind it, the first crossing is a part-lap that is discarded and lap 1 runs from lights-out to the **second** crossing, part-lap included. A driver's race begins when the lights go out, not when they happen to reach the line. So lap 1 is *always* the one lap that crosses from Layer 1's clock onto ours (`timing: "from_go"`), which is why the `layer1_clock` heartbeat matters in every race rather than only in some. ⚠️ `docs/lap-timing-plan.md` decision 2 says lap 1 is timed *from* the discarded crossing; that wording is wrong and is annotated there. The plan does still move this flag from the meeting to a session-level "start grid" setting (migration 003, not yet implemented).
+
+### Layer 1 hardware options: GPIO vs BLE
+
+Four interchangeable Layer 1s all publish the same `car_timestamp` contract, so nothing above LapData cares which is running: `mocked-ble` (dev default in `compose.dev.yaml`: the real `ble` code against a simulated powerbase), `mocked-gpio` (software, publishes `car_timestamp` directly), `gpio` (two containers, one per physical GPIO sensor — Pi only), and `ble` (one container, talks to a Scalextric ARC Pro powerbase — see `ble/ble_to_timestamps.py`).
+
+**Exactly one Layer 1 may run.** Two publishers on `car_timestamp` means every lap is counted twice, and at a meet that reads as a timing fault rather than a deploy fault. The defaults differ by environment, deliberately:
+
+| | default Layer 1 | the other one |
+|---|---|---|
+| dev (`compose.dev.yaml`) | `mocked-ble` | `mocked-gpio` behind `--profile mocked-gpio`, `ble` behind `--profile ble` |
+| live Pi (`deploy/compose.race.yaml`) | `ble` | `gpio` behind `--profile gpio` |
+
+`./deploy/deploy.ps1` takes `-Layer1 ble|gpio` (default `ble`) and both starts the right one and stops the other, then verifies exactly one is running. Two Compose behaviours make the manual path a trap, so prefer the script: a service that has been *profiled out* keeps **running** rather than being removed, and `ble` is unprofiled so even `--profile gpio up -d` starts it. Hence the stop must come **after** the `up`:
+```
+docker compose up -d && docker stop gpio-1 gpio-2          # -> ble
+docker compose --profile gpio up -d && docker stop ble     # -> gpio
+```
+In dev the same trap exists: `mocked-ble` is unprofiled, so a bare `docker compose --profile ble up` or `--profile mocked-gpio up` starts **both**. Stop `mocked-ble` first, or name services explicitly. lapdata's `depends_on` deliberately names no Layer 1, so it never drags one in.
+
+⚠️ `ble` is the live default but has **not yet been validated against real powerbase hardware** — the first meet on it is the first real test. `-Layer1 gpio` is the fallback. Exactly what still needs proving on hardware, and an interactive script that checks it against a real powerbase (`ble/hardware_check.py`, analysis unit-tested in `ble/test_hardware_check.py`), is in **`ble/HARDWARE_VALIDATION.md`** — run it before that meet. A dev-only mocked BLE Layer 1, `mocked-ble`, runs the real `ble_to_timestamps.py` against a simulated powerbase (`ble/mock_powerbase.py` behind a fake bleak, `ble/mock_bleak.py`), with no Bluetooth needed. It is the dev default Layer 1; watch its simulated power state on the dev-only `mock/powerbase` topic (`docker exec mosquitto mosquitto_sub -t mock/powerbase`). `ble/.dockerignore` keeps the mocks and tests out of the production image, so the dev service's `./ble` volume mount is what supplies them. `ble/test_mock_scenarios.py` runs the real `run()` against the simulator end to end (halt/resume timing, reconnect while Paused, write retries). Nothing above Layer 1 may subscribe to that topic. Unconfirmed simulated behaviours are tagged with their HW-xx check. Progress and remaining steps are in `docs/mocked-ble-plan.md`.
+
+**BLE publishes the powerbase's own counter, unconverted.** The Slot characteristic reports crossings in ticks since the powerbase's timer was last reset — no reporting jitter in it, but not a wall clock either. ⚠️ **A tick is 10 ms, not the millisecond the protocol doc says**: measured on a real ARC Pro on 2026-09-18, and read as ms every lap came out ~10x short and was dropped under `MINIMUM_LAP_TIME`. `DEVICE_TICK_S`/`device_seconds()` in `ble_to_timestamps.py` is the one place the unit lives, and `hardware_check.py` uses it too (the mock powerbase has its own `TICK_S` on purpose). That run also measured a **~1.8 s Slot rotation** (one packet per ~300 ms), so a crossing can reach the leaderboard up to ~1.8 s late — late on the *display*, but not in the lap time, because the counter carries the crossing's real instant. See `ble/HARDWARE_VALIDATION.md`.
+
+`ble` starts a **new clock** (`_new_clock()`) on each of: **connect** (the powerbase may have been power-cycled while we were away, and we can't tell); a **backwards** Slot value (commands 0/1 zero the timers, as does a power cycle or a uint32 wrap); and a Command write that **halts or zeroes** the timestamps (0, 1, 2, 4) or **restarts** them afterwards (3), via `_note_command_applied()`.
+
+⚠️ **The halting write is the easy one to miss.** Commands 0/2/4 freeze the counter *without* moving it backwards, so backwards-detection can never catch them. A D-second halt leaves the counter D behind real time forever after. ⚠️ **This project no longer sends any of them** — a yellow flag stops the cars with `CARS_STOPPED` (command 3 at a zero multiplier), which leaves the counter running; see "Yellow flags" below. The machinery stays as a safety net for a halting command arriving some other way (a future limp mode, an operator's own ARC app, the HW-03 fallback). Both ends of a halt start a clock, for different reasons: at the **restart** for that offset, and at the **halt** so heartbeat samples reported while the counter is frozen land on a throwaway clock instead of corrupting the anchor that pre-halt laps were timed on.
+
+⚠️ **One new clock per reset, not six.** A reset zeroes all six cars, and their zeroed packets arrive one at a time over the next rotation. `_baseline_clock` records which clock each car's baseline came from, and only a car whose baseline is on the *current* clock can trigger backwards-detection — otherwise each of the remaining five starts another clock in turn, and every lap spanning any of them is downgraded from an exact counter subtraction to an anchored one. Crossing *detection* still compares against the baseline whatever clock it came from, because the powerbase's values run on continuously across a halt; only the clock the crossing is published on has to be current.
+
+**The clock heartbeat is `BLE_CLOCK_HEARTBEAT=throttle|none`** (default `throttle`). It subscribes to the Throttle characteristic purely for its `throttleTimestamp`, which HW-12 confirmed on 2026-09-20 is a live reading of the *same* clock the Slot crossings are stamped on (`same_clock`, `live_at_rest`, the two anchors agreeing to 148 ms over 10 crossings), at ~3.3 samples/s with a median lateness of 1 ms — so lapdata's anchor is essentially exact by lights-out. The subscription is best-effort: a powerbase that refuses it (ARC One has no such characteristic) logs and carries on counting laps, exactly as `none` does, at the cost of a less accurate lap 1. ⚠️ **If a later powerbase or firmware keeps throttle on its own clock, those samples must carry their own clock id** — a heartbeat from a different clock with a smaller offset would silently drag lapdata's anchor down, and a running minimum cannot notice that. The same rule applies to the later throttle features (jump starts, fuel). Publishing is rate-limited to one per `HEARTBEAT_MIN_INTERVAL_S` (100 ms) and deliberately *not* buffered into windows: buffering would hold every sample back before lapdata could stamp its arrival, and lateness is the only thing that degrades the anchor.
+
+⚠️ **BLE crossings are edge-detected against a baseline that now SURVIVES a reconnect** (Greg, 2026-09-20). The powerbase reports each car's last start/finish timestamp as absolute state, and keeps counting while nothing is connected (`POWER_ON_RACING` leaves the timers ticking; only commands 0 and 1 zero them). So a crossing made while the link was down **is still there when we reconnect** — and those are real laps that must be counted. `run()` used to clear `_last_start_finish` on every connect, which forced each car's first packet to be swallowed as a fresh seed; a power cycle mid-race lost two laps that way at a real test. Keeping the baselines makes every case decidable per car, with no phantom-lap risk: **unchanged** → nothing crossed, publish nothing; **larger** → a real crossing while away, publish it; **smaller** → the timers were zeroed, so the powerbase was power-cycled and a non-zero value is a real crossing since power-up; **`[None, None]`** → genuinely unknown (first connect of the process, possibly from a race we weren't running), so seed and publish nothing. That last case is the only one that still swallows anything, and it is the one where nothing better is possible. ⚠️ **Don't reintroduce the clear-on-connect**, and don't collapse `[None, None]` into `[0, 0]` — "never seen" and "seen, timers at zero" are different facts. The residual loss is a car crossing **twice** while away: the powerbase keeps only the most recent stamp per car, so one lap is gone and no software can recover it. That is what the fast reconnect (`BLE_RECONNECT_FAST_DELAY`, 1s for the first 30s after a drop, then backing off) is for.
+
+The BLE protocol is Scalextric's official doc, obtained via customerservices.uk@scalextric.com, cross-checked against [RazManager/ScalextricArcBleProtocolExplorer](https://github.com/RazManager/ScalextricArcBleProtocolExplorer). A text copy is checked in at `ble/reference/Scalextric_ARC_BLE_Protocol.md`; the original `Scalextric_ARC_BLE_Protocol_live-1.docx` lives on Greg's machine under `OneDrive\Scalextric ARC Firmware, Protocols etc\`. `ble/` only implements the **Slot characteristic** (`0x3B0B`) for lap timing so far. The protocol exposes several other characteristics that GPIO structurally cannot — noted here so they aren't lost before BLE is adopted:
+
+- **Throttle characteristic (`0x3B09`, notify, all 6 cars per packet, one per 300 ms)** — instantaneous throttle position (0–63, with `0x40` brake and `0x80` lane-change to mask off) and button state per car. ⚠️ **The doc's "changed many times per second" is wrong: it is 3.3/s**, measured on real hardware 2026-09-20, and that is the powerbase's own rate, not the Pi's link (see `ble/HARDWARE_VALIDATION.md`). There is **no accumulator field anywhere in the packet** — all 20 bytes are position, timestamp, mode and firmware versions — so anything cumulative has to be integrated by us. This is the basis for a **simulated fuel consumption** feature: integrate `throttle × dt` continuously into a per-car running total (trivial computationally — 6 floats updated 3.3×/sec). That integration belongs in the **BLE container** (it's the only place with access to raw throttle telemetry), published on its **own new topic** (e.g. `car_throttle`) — deliberately *not* folded into `car_timestamp`/`lap`, since fuel isn't a lap-boundary concept: a "low fuel" event has to be able to fire mid-lap, not only when a car happens to cross the start/finish line. So **LapData** would subscribe to `car_throttle` as a second, independent live input alongside `car_timestamp` (same "internal to LapData" treatment) and keep a continuously-decrementing `fuel_remaining` per driver, checking the low-fuel threshold on every throttle update rather than at lap boundaries. Crossing the threshold publishes its own event immediately, not gated on the next lap. One real consequence: `race_state` (or a fuel gauge within it) would then have two independent things driving updates — crossings *and* throttle ticks, which arrive far more often — so the publish cadence for fuel-driven state may need its own debounce rather than reusing "publish after every crossing" as-is. Since GPIO can never produce this data, it must stay optional, not a hard dependency.
+
+  **Is 3.3 Hz enough to integrate?** Measured on real hardware (2026-09-20): the throttle signal is almost decorrelated across one sample (autocorrelation r = +0.27 at 300 ms, +0.00 at 600 ms; the median change between consecutive samples is 20 of a 0–63 scale). So these are near-independent snapshots, useless for *reconstructing* the trace — but integration is far more forgiving, because the errors cancel rather than accumulate. Splitting a capture into two independent 600 ms samplings of the same stretch put them 2.54% apart, i.e. roughly 1–2% error on the running total over a minute of deliberately aggressive driving, and less over a full race since it falls as 1/√N. ⚠️ **The running total is trustworthy; short windows are not.** One 5 s lap is only ~10 effective samples, so a per-lap "fuel used" figure carries about ±26% and must never be shown as a precise number — keep `fuel_remaining` as the authority and derive per-lap consumption as a difference of it, rather than accounting lap by lap.
+
+  ⚠️ **Gate the integration on `race_state == Running`.** The throttle bytes are *trigger position*, not power delivered. Under a yellow flag, a pause, or between `arm` and lights-out the powerbase cuts power, but a driver still squeezing the trigger reports full throttle — and would empty a tank going nowhere. `ble` already subscribes to `race_state` for its power writes, so it has what it needs.
+
+  **Where the model lives:** `ble` integrates raw `throttle × dt` per *car ID* and publishes the running total; it knows nothing about drivers, tanks or handicaps and cannot, since it only sees IDs 1–6. **lapdata** owns the fuel model — it has the lineup, so it maps lane → driver → car and applies tank size, per-car consumption rate (a natural handicap for faster cars), and any per-driver factor. Keeping the policy in Layer 2 means changing the handicap formula never touches the BLE container. Tank size and rate belong on `cars`; a driver factor is the open one, since pace doesn't change between sessions but the willingness to handicap might — `session_drivers` already holds per-session per-driver state (`disqualified`) if it should be overridable. ⚠️ Operator-facing fuel settings are the third case in "Layer 1 capability advertising" below: under GPIO they would save happily and silently do nothing, so **capability advertising is a prerequisite for shipping them in the Admin UI**, not a follow-up.
+- **Power multiplier + override flag** (Command characteristic `0x3B0A`, write) — software can cap or directly drive a car's power, independent of the physical controller. Could make a low-fuel/fuel-out state actually slow the car, not just display a number, and is the mechanism behind the proposed yellow-flag limp/power-down behaviour (see "Yellow flags" below). Per-car capping — a virtual safety car, and a lower maximum for younger drivers — is planned in **`docs/per-car-power-plan.md`**, which also records why the `0x80` ghost car is parked (no position feedback on this hardware).
+- **Throttle profile** (`0xFF01`–`0xFF06`, write, one per car) — a 64-entry throttle→power response curve per car. Could be reshaped as fuel drops (flatten the top end) for a "fuel-save mode."
+- **Rumble** (per car, in `0x3B0A`) — haptic feedback in the physical hand controller, e.g. a low-fuel warning the driver feels.
+- **KERS trigger** (per car, one bit in `0x3B0A`) — hardware already has a boost-button concept, if a "push to pass" mechanic is ever wanted.
+- **Track characteristic (`0x3B0C`, notify)** — per-track overcurrent/undervoltage fault codes with a timestamp. Could surface as a "track fault" alert in race control instead of a silent power cutout.
+- **CarID characteristic (`0x3B0D`, write)** — lets software assign a car's digital ID over BLE instead of the physical DIP-switch/programmer chip. Could simplify car setup in NextRace.
+
+**BLE is now bidirectional for race lifecycle.** `ble/ble_to_timestamps.py` subscribes to `race_control` (same topic LapData subscribes to) and translates every command (`prepare`/`arm`/`start`/`pause`/`resume`/`end`) into a Command characteristic (`0x3B0A`) write of `POWER_ON_RACING`, both on each transition and once immediately on connect (on connect it writes whatever the last-seen `race_state` calls for, so `CARS_STOPPED` if the race is `Paused` — see "Yellow flags" below). This deliberately keeps Layer 1 dumb and behavior identical to GPIO (which has no ability to cut power at all) — lapdata's race manager remains the sole authority on which crossings count. Differentiating pause/end into other Command *states* (`POWER_ON_RACE_TRIGGER`, or a future per-session "allow jump starts" toggle that holds power off between `arm` and `start`) is intentionally left for later, and stopping the cars deliberately does **not** use one — it drops the power multiplier to zero instead, so the counter never stops (see "Yellow flags") — see `handle_race_control()`'s docstring. The paho (sync, own thread) → bleak (asyncio) handoff uses `asyncio.run_coroutine_threadsafe`, since bleak's client isn't safe to call directly from another thread; `_bleak_client`/`_ble_loop` are set once connected in `run()` and cleared on disconnect.
+
+⚠️ **The Command payload's per-car power bytes are not padding.** Bytes 1–6 are the power *multiplier* (0…0x3f), and under `POWER_ON_RACING` the protocol doc says power output follows "the throttle levels **and** the car power bytes" — so sending zeros there caps every car at zero output and nothing moves, however hard the trigger is pulled. `_write_command_async()` sends `FULL_POWER` (0x3f) in bytes 1–6 for GPIO-parity pass-through, and **zero to stop the cars** — that pairing of state byte and multiplier is what the `PowerState` namedtuple carries (`TRACK_RACING` / `CARS_STOPPED`), since command 3 alone no longer says whether cars move. Only bytes 7–19 (rumble/brake/KERS) are genuinely unused. The `0x80` bit (app drives the car directly, ignoring its controller) stays clear — that's what a future ghost-car or fuel-cut feature would set. `_write_command_async()` also swallows and logs its own exceptions: the Command write is optional garnish on top of this container's real job, and must never be able to tear down a working slot-notification subscription on a powerbase that rejects it (e.g. ARC One, which has no such characteristic). A failed write schedules a retry (1s, doubling to 30s) from `run()`'s connected loop, which writes whatever the **latest** `race_state` calls for rather than repeating the failed command — a retried stale `CARS_STOPPED` landing after a resume would hold the cars on a running race.
+
+BLE also subscribes to `race_state` and re-sends `POWER_ON_RACING` the instant it sees the transition into `Running` (`handle_race_state()`, tracking `_last_seen_race_state` to avoid rewriting on every crossing-triggered `race_state` publish). This matters because the actual lights-out "go" is an *internal* lapdata timer (`_do_lights_out()` in `timestamps_to_lapdata.py`) — it fires seconds after the `arm` race_control message and never publishes its own race_control command, so `race_state`'s `Running` transition is the only signal that lands exactly at go. The `arm`-time write and this one are deliberately redundant (belt-and-braces against e.g. a BLE reconnect mid-countdown).
+
+**Refuel** is still an open question, not just plumbing: does it belong in BLE at all? Per the split above, **LapData** owns `fuel_remaining` (it's the one diffing/thresholding `car_throttle`), so a refuel action is naturally just LapData resetting its own in-memory value — no round-trip to BLE required, unless BLE ends up needing to know the fuel level itself (e.g. to drive rumble directly from hardware state rather than being told discrete commands). Recommended default: keep BLE dumb, handle refuel entirely inside LapData, and only route a message to BLE if a future feature (like rumble-on-low-fuel) needs BLE to *act* on it.
+
+#### Yellow flags: power-based handling
+
+**Implemented: grace period, then power down.** RaceControl's "Yellow Flag" button (`RaceControl.jsx`) now publishes `race_control` `yellow` instead of `pause`. The race manager gains a `Yellow` state (`race_manager.py`'s `yellow()`): ⚠️ **crossings keep counting right through the grace period** (`on_lap()` counts while `state` is in `COUNTING_STATES`, i.e. `Running` *or* `Yellow`), because the cars are still under power and still racing — that is the entire point of the grace. Counting stops when the power actually goes, at the `Paused` edge. (Until 2026-09-20 `Yellow` was treated like `Paused` and those laps were silently thrown away; Greg caught it.) So a race can now **finish during a yellow flag**, which `_check_race_end()` handles by clearing `yellow_seconds_left` as it sets `Finished`. BLE keeps the powerbase at full power for `yellow_grace_seconds` — a per-session setting (`sessions.yellow_grace_seconds`, migration `002-sessions-yellow-grace-seconds.sql`, edited in the Admin session form, default 5s) — enough for the other drivers to finish the corner / get clear. `timestamps_to_lapdata.py` schedules a `threading.Timer` for that duration (the same internal-timer pattern as `_do_lights_out()`); on expiry it calls `race.pause()` directly and publishes the resulting `race_state` — **this transition is never announced as a `race_control` message**, only as the `race_state` edge into `Paused`, since lapdata drives it with its own timer. lapdata also owns the countdown: `race_state.yellow_seconds_left` (whole seconds, `None` outside `Yellow`) is ticked down by lapdata's own timers and republished each second, exactly like `start_lights` — displays render the number they are sent and never compare a deadline against their own clock, so a trackside phone with a wrong clock shows the same countdown as RaceControl. Every lapdata timer sequence (start lights + lights-out, time expiry, yellow countdown + expiry) carries a generation number checked under `_race_lock` — which every mutation of `race` holds, MQTT messages and timer callbacks alike — so a callback that has already started can't act on a race that was since resumed, re-armed or ended (e.g. overwrite a "Resume Now" that beat the expiry, or undo an End during the start lights). `on_connect` only loads the pending race when none is loaded, since it fires on every broker *re*connect and would otherwise replace a running race. The LapCounter leaderboard shows its yellow-flag overlay through both `Yellow` ("Yellow Flag - Ns") and `Paused` — hiding positions is deliberate, flagging the yellow matters more. RaceControl renders the same countdown as "Race pauses in Ns". Both are worded to be true on **either** Layer 1 — under GPIO nothing cuts power, so neither may promise a power cut until capability advertising (below) lets the UI know power control exists; the operator can also cancel early with a "Resume Now" button (publishes `resume`, same as clearing a normal pause) before the timer fires.
+
+⚠️ **Stopping the cars must never stop the powerbase's counter** (Greg, 2026-09-20). The protocol has no state that cuts power and leaves the timestamps ticking — 0 and 1 zero them, 2 and 4 freeze them — so using the state byte to stop cars would break the counter mid-race, forcing a new clock at the cut and another at the restart, and every lap spanning the stoppage would be downgraded from an exact counter subtraction to an anchored one. Instead `CARS_STOPPED` holds the **multiplier at zero under `POWER_ON_RACING`**: the counter runs throughout, no clock changes, and the lap either side of a yellow flag is one long lap measured exactly — the cars really did stand still for 30s of it, and that is expected and correct. ✅ **Confirmed on a real ARC Pro, 2026-09-20 (HW-03):** with a trigger held flat the car ran at `0x3f`, slowed distinctly at `0x2f` and again at `0x20`, and **stopped at `0x00`** — while the counter advanced at rate 1.0 through every step, the `0x00` one included. Both halves hold. `PowerState(POWER_ON_TIMER_HALT, NO_POWER)` stays the fallback if another powerbase or firmware ever disagrees. Note this stops the cars without de-energising the track, which digital Scalextric needs live for its data signal anyway.
+
+BLE maps power per state: `handle_race_control()` sends `CARS_STOPPED` immediately on an explicit `pause` command (the no-grace manual stop) and `TRACK_RACING` for `prepare`/`arm`/`start`/`yellow`/`resume`/`end`. `handle_race_state()` is the belt-and-braces counterpart (and the *only* path for the Yellow→Paused grace-expiry, per the above) via a small state→`PowerState` table: `Running`/`Yellow` → `TRACK_RACING`, `Paused` → `CARS_STOPPED`. That path is edge-triggered, so on every **BLE connect** `run()` writes `_command_for_race_state(_last_seen_race_state)` rather than a blanket `TRACK_RACING` — otherwise a reconnect during `Paused` would set cars moving with marshals on track — and on **MQTT connect** BLE publishes `race_control` `status`, since `race_state` isn't retained and a restarted container would otherwise not know the race is Paused. **Limp mode (capping power to ~30% instead of a hard stop) is deliberately not implemented** — it still needs the real-hardware tuning sweep described below, and combining it with the grace period is future work, not this pass. `docs/per-car-power-plan.md` is that future work: it makes `PowerState.power` a per-car vector fed by a new top-level `car_power` in `race_state`, and proposes a **virtual safety car** as a second RaceControl button rather than a setting on the yellow flag — a yellow flag stops the cars so marshals can reach onto the track, so "cars still circulating" must never be something that button can silently become.
+
+The three design questions from the original proposal are now settled, for this pass:
+
+- **Do laps count under yellow?** ⚠️ **Yes, throughout the grace period** (Greg, 2026-09-20 — this reverses the original answer). The cars are at full power and still racing, so a crossing in the grace window is a real lap; the power cut at the end of the grace is what stops the counting. Under GPIO, where no power is ever cut, the grace window simply ends in a `Paused` race as before.
+- **Does the race clock pause?** No change — `pause()`/`resume()` (and now `yellow()`) still leave `race_start_time`/`race_end_time` untouched, so a yellow period still eats into a timed FastestLap session's clock — and the time-expiry timer ends a race that is `Yellow` or `Paused` when it fires, not just `Running` (it fires once; skipping those states would leave the race with no end).
+- **Who clears it?** Operator-only: "Resume Now" during `Yellow`, or "Resume Race" after the grace expires into `Paused`. No auto-resume-on-reslot.
+
+**Under GPIO this feature cannot work** — there is no power control at all, so `Yellow` still walks the clock down and stops counting laps (harmless bookkeeping), but nothing physically cuts power; it behaves exactly like today's `Paused` always did. `yellow_grace_seconds` is therefore operator-facing config that silently does nothing on one Layer 1 — the case the next section exists to handle. If limp mode is added later, the multiplier will need the same real-hardware sweep called out in the original proposal (output isn't linear in the byte value and differs per car/track voltage) before a number is committed to.
+
+#### Layer 1 capability advertising
+
+**The original principle — layers 2+ don't know which Layer 1 is running — still holds, and the power-state writes did not break it.** Nothing in `lapdata/` or `react/src/` references BLE or a powerbase (the only mentions are comments in `timestamps_to_lapdata.py` explaining why `timestamp` is trusted). The reason is **dependency direction**: BLE subscribes *upward* to `race_control` and `race_state` and acts on them, while lapdata publishes those topics for its own reasons and has no idea anyone is listening. Layer 1 depends on Layer 2's contract; Layer 2 gained no knowledge. That is the same shape as the DB writer — an opt-in subscriber, not a leak. Power control is a capability only Layer 1 exercises, using information it was already entitled to.
+
+Three planned features do cross the line, in increasing severity:
+
+1. **Fuel (`car_throttle` → lapdata)** — Layer 2 gains a live input only one Layer 1 can produce. Survivable as a *soft* dependency: under GPIO the topic simply never arrives, `fuel_remaining` stays unset, nothing renders, and lapdata needn't know why. Hence the existing rule that it must stay optional, not a hard dependency.
+2. **React rendering a fuel gauge** — Layer 3 must decide whether to show the UI. It still doesn't need to know *"BLE"*, only *"does `race_state` carry fuel"*. Presence-of-data remains hardware-agnostic.
+3. **Operator-facing options that only work on one Layer 1** — the real break. Yellow-flag grace/limp settings, an "allow jump starts" toggle, power-cut-on-fuel-out: these are session settings in the DB and the Admin form. Under GPIO they would save happily and silently do nothing — config that lies. They must be resolvable *before any data flows*, so presence-of-topic cannot answer it.
+
+**Conclusion: don't teach layers 2+ about BLE — have Layer 1 advertise capabilities.** A retained MQTT topic, published by whichever Layer 1 is running, on connect:
+
+```
+topic: layer1_status   (retained)
+{"layer1": "ble", "capabilities": ["lap_timing", "power_control", "throttle", "rumble", "car_id"],
+ "timing_resolution_ms": 10}
+```
+
+GPIO publishes `["lap_timing"]`. lapdata passes the capability set through into `race_state`; React greys out what isn't offered; the Admin session form disables yellow-flag power settings with *"requires ARC powerbase"*.
+
+⚠️ **Timing resolution is a capability too, and the UI currently lies about it.** `timing_resolution_ms` is not a capability *name* (nothing branches on the Layer 1's identity) but a number displays must round to. The ARC powerbase counts in **10 ms ticks** (`DEVICE_TICK_S`), so every lap that is a counter difference — lap 2 onwards, and lap 1 too when the grid is behind the line — is an exact multiple of 10 ms, and its third decimal place is *always* zero. React renders lap times to 3 dp, which shows a digit the hardware cannot produce. Two consequences beyond the cosmetic:
+
+- **Lap 1 with the grid in front of the line is the misleading case.** It is timed from lights-out through the clock anchor, so it *does* get a non-zero third decimal — but that digit is anchor noise, not measurement. It is the one lap where 3 dp implies precision that isn't there at all.
+- **FastestLap ties are real at 10 ms granularity**, not a rounding curiosity. Results need a tiebreak (or to show a genuine tie) rather than relying on the third decimal to separate two drivers.
+
+GPIO differs: its counter is `CLOCK_MONOTONIC` in ms, so 1 ms there is real (`timing_resolution_ms: 1`). That is exactly why the displayed precision should come from the advertised number rather than being hardcoded per component — the same rule as every other capability. Until advertising ships, 2 dp is the honest fixed choice for a BLE meet. ⚠️ **The `layer1` name is diagnostic only — nothing may branch on it.** Branch on capabilities and a fourth Layer 1 with a different mix works with zero changes above it; branch on the name and the abstraction is gone. **Retained matters**: a browser connecting mid-meet needs the answer immediately, for the same reason race state is browser-independent.
+
+This keeps the principle intact in its useful form: *layers 2+ don't know which hardware is attached, only what it can do.*
+
+The throttle-driven features above it (fuel, power multiplier, throttle profiles, rumble, KERS, CarID), limp-mode yellow flags, and capability advertising are all still unimplemented — `ble/` does lap timing, the race-lifecycle Command writes, and the grace-period yellow flag described above, to keep parity with GPIO (which just never actually cuts power) while the BLE swap itself gets validated on real hardware first.
+
+## Development Commands
+
+### Start full stack (Docker)
+```
+docker compose -f compose.dev.yaml up --build
+```
+- React: http://localhost:8088 (hot module reloading)
+- API: http://localhost:8000 (auto-reload via uvicorn)
+- API docs (Swagger): http://localhost:8000/docs
+- PgAdmin: http://localhost:5050
+
+> **⚠️ `lapdata` does NOT hot-reload.** React (Vite HMR) and the API (`uvicorn --reload`)
+> pick up source edits live, but `lapdata` runs a plain `python … loop_forever()`. Even
+> though `./lapdata` is volume-mounted, the running process keeps the *old* code until you
+> restart it. After editing anything under `lapdata/` (e.g. `race_manager.py`):
+> ```
+> docker compose -f compose.dev.yaml restart lapdata
+> ```
+> When debugging race logic, **verify against the running system, not just the source** —
+> a stale `lapdata` process will make correct fixes look like they "made no difference".
+> Drive it directly with the MQTT clients inside the `mosquitto` container:
+> ```
+> docker exec mosquitto mosquitto_pub -t race_control -m '{"command":"start","race_id":24,"target_laps":20}'
+> docker exec mosquitto mosquitto_sub -t race_state -C 5 -W 15   # capture 5 messages, 15s timeout
+> ```
+> (`docker logs lapdata --tail 20` shows the lap/race-state activity. Use single quotes for
+> the JSON payload and separate `docker exec` calls — nested-quote escaping breaks otherwise.)
+
+### Run API without Docker
+```powershell
+. ./api/setenv.ps1
+cd api && ./.venv/Scripts/activate
+cd app && fastapi dev main.py
+```
+Requires PostgreSQL running on localhost:5432 (the Docker `database` container works).
+
+### Run Python tests
+A root `pytest.ini` sets `testpaths = api/app, lapdata, ble`, so one command runs every
+DB-free pure-logic suite (lane assignment, points scoring, the lapdata race manager,
+clock anchoring and lap timing, crossing handling, and the BLE slot decoder and clock
+contract).
+
+`ble/test_mock_scenarios.py` deliberately imports `lapdata/lap_clock.py` as well: `ble`
+publishes counters and clock ids, and `lap_clock` is what turns them back into lap times,
+so only the two together prove a lap is *right* rather than merely well-formed. Those
+scenarios compare every computed lap against the simulator's ground truth to one device
+tick, across a halt, a reconnect and a power cycle.
+
+`ble/test_ble_to_timestamps.py` and `lapdata/test_timestamps.py` **stub `paho` and
+`bleak` into `sys.modules` before importing** the module under test — neither is
+installed in `api/.venv`, since those deps live in the containers' images. That works
+because both modules keep their broker/BLE I/O behind `if __name__ == '__main__'`;
+the containers still run them as `__main__`. Don't move that I/O back above the guard.
+
+Only the `api/.venv` has pytest installed, so invoke it explicitly:
+```powershell
+./api/.venv/Scripts/python.exe -m pytest
+```
+Run one file or one test:
+```powershell
+./api/.venv/Scripts/python.exe -m pytest lapdata/test_race_manager.py
+./api/.venv/Scripts/python.exe -m pytest api/app/test_next_race.py::test_lane_preference
+```
+
+### Lint React code
+```
+cd react && npm run lint
+```
+ESLint is configured with `--max-warnings 0` (zero tolerance).
+
+### Production build & push
+```powershell
+./build-and-push.ps1
+```
+Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gregkwoods/lapcounter-server-*`).
+
+## Key Backend Files
+
+- `api/app/main.py` - FastAPI app, all route definitions, DB engine setup
+- `api/app/model.py` - SQLModel table definitions (15 models)
+- `api/app/responsemodel.py` - Pydantic response models (`DriverWithLane`, `NextRaceSetup`)
+- `api/app/next_race.py` - Lane assignment algorithm + helpers for pending race persistence
+- `api/app/settings.py` - Pydantic Settings (env vars from docker-compose)
+- `api/app/sampledata.py` - Script to drop/recreate all tables and seed sample data (run directly inside the container)
+
+## Key Frontend Files
+
+- `react/src/components/LapCounter/LapCounter.jsx` - Main race UI (leaderboard, race controls)
+- `react/src/components/NextRace/NextRace.jsx` - Driver-to-lane assignment UI
+- `react/src/components/MqttSubscriber.jsx` - MQTT WebSocket connection
+- `react/src/components/LapCounter/lapUtils.js` - Race logic helpers — **being phased out** as race logic moves to LapData
+- `react/src/defaultConfig.js` - Shared config, race defaults, and driver factory functions
+- `react/src/router.jsx` - React Router Data Mode (`createBrowserRouter` with `loader` functions — data is fetched before render)
+
+### React is display-only (target state)
+
+React subscribes to `race_state` via MQTT and renders it. It contains no race logic. `lapUtils.js` (`calculateLapTime`, `modifyDriversViewModel`, `checkEndOfRace`) is being deleted as part of the LapData race manager refactor.
+
+React publishes `race_control` directly to MQTT (not via API) for speed and so non-browser clients work the same way. **It no longer persists race state** — that is owned by lapdata server-side (see below), so the display is a pure viewer and persistence works with no browser open.
+
+Planned routes: `/` (leaderboard), `/nextrace` (lineup), `/tv` (full-screen display), `/driver/N` (per-driver view).
+
+### Current React State Architecture (transitional)
+
+`drivers[]` and `lapData[]` are parallel arrays, both indexed **0–5 by lane number** (not by position). `drivers[0]` is always lane 1. Visual position sorting is done via CSS `order` — the array is always re-sorted by `driver.number` at the end of `modifyDriversViewModel`. This will be replaced by rendering `race_state.drivers` directly from MQTT.
+
+## Lane Assignment Algorithm
+
+`next_race.py:assign_drivers_to_lanes()` is the core business logic:
+1. Sorts drivers by sit_out_next_race, then completed_races (fewest first), then random
+2. Takes top N drivers where N = min(enabled lanes, available drivers)
+3. Assigns each driver to the lane they've used least (fairness balancing)
+4. Returns `NextRaceSetup` with `lane_assignments` (6 slots, some empty) and `other_drivers`
+
+This function is deliberately DB-free for testability. The SQL query in `get_drivers_for_next_race_sql()` pre-sorts and aggregates lane counts.
+
+## Database
+
+PostgreSQL with SQLModel ORM (no relationships defined yet, uses raw SQL for complex queries).
+- Dev credentials: user=`lap`, password=`lap`, db=`lapcounter_server`, port=5432
+- Schema lives in `database/schema.sql` — kept in sync with `api/app/model.py`
+- Sample data in `database/sampledata.sql`
+- Key tables: `drivers`, `meetings`, `meeting_drivers`, `sessions`, `races`, `driver_races`, `driver_laps`, `lanes`, `cars`, `race_withdrawals`, `session_drivers`
+
+### Rebuild the database
+```
+docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
+docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
+```
+Alternatively, run `python sampledata.py` inside the `api` container (drops all tables, recreates from `model.py`, then executes `database/sampledata.sql` itself — see #33 below — before generating session 2's race queue).
+
+### Upgrading a database that holds real data
+
+Both rebuild paths above **DROP everything**, so neither is how you add a column to the
+race Pi's live meeting data. Numbered, re-runnable scripts in `database/migrations/` do
+that instead:
+```
+docker exec -i database psql -U lap -d lapcounter_server < database/migrations/001-races-started-at.sql
+```
+Add one whenever `model.py` gains a column, and keep `schema.sql` in step for fresh
+builds. This matters more than it looks: SQLModel names every mapped column explicitly in
+its SELECTs, so one missing column takes out *all* of that table's endpoints with
+`UndefinedColumn` — not just the feature that added it.
+
+### Key schema notes
+- `meeting_cars.lane` — nullable INT, unique per `(meeting_id, lane)`. Source of truth for car-to-lane assignment when building a race lineup.
+- `driver_races` stores both `car_id` and `lane` independently — they can diverge if a car is swapped mid-meeting. `lane` drives the fairness algorithm; `car_id` is the historical record.
+- `lanes` is a static lookup table (lane_number 1–6, color, enabled flag). Not a physical constraint.
+- `RaceSession` model maps to the `sessions` table (should eventually be renamed `race_sessions`).
+- **A session owns an ordered queue of `NotStarted` races.** The whole session is pre-populated when it starts (`POST /sessions/start-next`) so every active driver is scheduled for exactly `races_per_driver` balanced races. The earliest queued race (by `race_number`) is the *next/current* race; the rest are the lookahead the NextRace page previews. (This replaces the old "at most one `NotStarted` race" rule.) Reads never create races; generation happens only on `start-next` and `regenerate-races`. A `NotStarted` race never outlives a `Finished` session — `finish_session` / auto-end delete the queue.
+- `MeetingDriver.driver_name` is the computed display name (usually `first_name`, but includes last initial when two drivers share a first name). Always use `driver_name` in the UI, not `Driver.first_name`.
+- **`DriverRace.laps_completed` / `last_lap_time` / `fastest_lap_time` are populated by dbwriter on each counted lap, but can't be trusted as complete** — they're NULL on sample data and on races with no counted laps, and a `driver_lap` message missed while dbwriter was down is never recovered. For per-driver lap time analysis, always use `DriverLap` records joined through `driver_race_id`. `build_session_results()` already does this for FastestLap sessions.
+- `race_withdrawals` `(race_id, driver_id)` — one row per operator removal (NextRace ×). Deleted when the driver is re-added or when a `NotStarted` race is discarded (`remove_pending_races`), so only withdrawals on `Finished` races count as skips. **Schema drop order:** it (and `session_drivers`) must be dropped **before** `races`/`sessions`/`drivers` in `schema.sql` or the `DROP TABLE`s fail on the FK dependency.
+- `session_drivers` `(session_id, driver_id, disqualified)` — per-session, per-driver state; currently just the `disqualified` flag. See "Sit-out tracking & disqualification".
+- `races.started_at` — the lights-out ("go go go") instant, nullable. Race timing has always been derived from this moment, not the first car crossing (`race_manager.py`'s `start()` sets `race_start_time`; lap 1 is timed from it) — this column just persists what lapdata already computed. Set via `POST /races/{race_id}/start`'s optional `started_at` body field, which lapdata populates from `race.race_start_time` (a precise in-process timestamp) rather than letting the API stamp its own `NOW()`, since that POST is fire-and-forget from a background thread and would be measurably later than the real go instant.
+
+## Environment Variables
+
+Backend env vars are set in `compose.dev.yaml` and read via Pydantic Settings (`api/app/settings.py`).
+React env vars use `VITE_` prefix and are compiled into the app at build time.
+For local (non-Docker) API development, `api/setenv.ps1` sets all required vars.
+
+## Browser Target
+
+The UI is optimized for 1920x1080 resolution with significant hardcoded CSS for that size.
+
+## Branch: `race_meet_manager` (WIP) vs `main`
+
+The `main` branch is a working lap counter with no database. The `race_meet_manager` branch adds race meet management and is being refactored toward the MQTT-centric architecture above.
+
+### Current implementation status
+
+**Completed:**
+- PostgreSQL + SQLModel ORM: 15 table models in `api/app/model.py`
+- Full driver CRUD, meetings, sessions endpoints
+- **Race queue (fetch decoupled from generate):**
+  - `GET /races/pending/` — **read-only**: the next race to run (head of the session's queue), or `404` if none. Never creates.
+  - `GET /races/current/` — **read-only**: the Running race, else the queue head, else `404`.
+  - `GET /races/queue/` — **read-only**: the ordered upcoming (`NotStarted`) races for the active session — the NextRace lookahead.
+  - `POST /sessions/start-next` — **"Next Session"**: promotes the next `NotStarted` session → `InProgress` and pre-populates its **whole** balanced race queue (`build_session_schedule()` iterates `select_balanced_race_drivers()` + `assign_drivers_to_lanes()` over in-memory copies). `409` if a session is already in progress, `404` if none queued. *This is the only thing that creates a session's races — no race exists until its session is started.*
+  - `POST /sessions/{id}/regenerate-races` — rebuild the upcoming queue from each driver's **outstanding** race count (finished/running races untouched). For late arrivals: a roster change leaves an eligible driver out of the queue, which `GET /sessions/active/regen-status` reports so RaceControl shows a *"New driver added, regenerate upcoming races?"* prompt. Operator-triggered.
+- `POST /races/{id}/start` — sets race Running, promotes session to InProgress if still NotStarted; **POSTed server-side by lapdata** in `publish_race_state()` on the `Running` transition (browser-independent). Starting a race is the manual `/racecontrol` action that promotes its session.
+- `POST /races/{id}/finish` — sets race Finished; for sessions with a `races_per_driver` target it **auto-ends** the session when every active driver has reached the target. **Does NOT start the next session** — that is a manual `/racecontrol` action (start the first race of the next session). POSTed server-side by lapdata on the `Finished` transition.
+
+> **Lifecycle pattern: ending is automatic, starting is manual.** A race ends automatically (target laps / time expiry); the operator manually advances through the queue (`/racecontrol`: Next Race → Start Race). A session ends automatically (every driver reached `races_per_driver`); the operator starts the next session with **Next Session** (`POST /sessions/start-next`), which promotes it and pre-populates its queue. Between a session ending and the next being started there is deliberately *no* current/pending race. lapdata owns the *automatic* side (it POSTs start/finish to the API on transitions); `/racecontrol` owns the *manual* side.
+- `POST /sessions/{id}/finish` — ends a session (does **not** promote the next — that's the manual Next Session step) and deletes the session's `NotStarted` queue
+- `PATCH /lanes/{lane_number}` — enable/disable a lane, updates pending race lineup
+- Lane assignment algorithm (`next_race.py`) with 8 pytest unit tests
+- **Session model is two independent axes** (`end_condition` is per-*race*, `races_per_driver` is per-*session*; they coexist — previously they were mutually exclusive):
+  - **Per-race end** — `end_condition` / `end_condition_info`: `'Laps'` + lap count for Finishing Position races, `'Time'` + minutes for Fastest Lap races. Derived from race type in the Admin form, not chosen directly.
+  - **Automatic session end** — `races_per_driver` (nullable INT; `None` = manual end only). When set, the session ends once every active driver has raced that many times.
+  - **Sit-out limit** — `max_sit_outs` (nullable INT; `None` = no limit). How many times a driver may be pulled from a race before RaceControl offers to disqualify them from the rest of the session (see "Sit-out tracking & disqualification" below).
+- **Balanced session-end scheduling** (`select_balanced_race_drivers()` in `next_race.py`): picks one race's drivers so the session finishes with **every driver having raced exactly `races_per_driver` times, with no tiny final race**. It spreads remaining driver-slots over the fewest races (`ceil(slots / lanes)`) and shrinks later races evenly — e.g. 7 drivers / 6 lanes / target 3 ⇒ race sizes 6,5,5,5 (not 6,6,6,3). Drivers are taken fewest-raced-first (SQL pre-sorts). `build_session_schedule()` iterates this over in-memory driver copies (incrementing each chosen driver's `completed_races`/lane counts) to pre-generate the **whole** session queue at once; `compute_session_progress()` projects `session_races_done` / `session_races_total` for the "Race X of Y" title.
+- **Sit-out tracking & disqualification** — resolves the ambiguity of the NextRace **×** (remove-driver) button. A bare × means *out of this race only*: the driver keeps their `races_per_driver` target, so the balancer schedules make-up races and later races legitimately run **short** (this is correct-by-design, not a bug — it's how the session stays balanced while a possibly-returning driver is still owed races). To bound this, each × records a **withdrawal** (`race_withdrawals` table, keyed by `(race_id, driver_id)`); a withdrawal becomes a **skip** only once its race actually **finishes** (`session_skip_counts()` counts withdrawals on the session's `Finished` races — effectively "counted at finish time"). **Rotation never counts** — a driver the scheduler simply didn't include this race leaves no withdrawal; only an explicit operator removal does. Skips are **cumulative** across the session. When a driver's skips reach the per-session **`max_sit_outs`** limit (nullable INT; `None` = no limit), `GET /sessions/active/regen-status` returns them in `sit_out_candidates` and RaceControl shows a **disqualify prompt**. `POST /sessions/{id}/drivers/{driver_id}/disqualify` sets the per-session `session_drivers.disqualified` flag and regenerates the queue so remaining races refill without them; a disqualified driver is excluded from **every** scheduling path (`assign_drivers_to_lanes`, `select_balanced_race_drivers`, `compute_session_progress`, `set_lane_enabled`, the `finish_race` auto-end check) via a `disqualified` field on `DriverWithLane` that `get_drivers_for_next_race_sql` populates from a LEFT JOIN. **`disqualified` is per-session**, distinct from the global one-race `Driver.sit_out_next_race`. `POST /sessions/{id}/drivers/{driver_id}/reinstate` (and re-adding the driver in NextRace) clears the flag **and** their withdrawals (`clear_session_withdrawals()`) so a deliberate return forgives past sit-outs and the prompt doesn't immediately re-fire.
+- `FastestLap` session type: ranking is always personal best (the old "Ranking" dropdown and `AverageFastestLap`/`LapPoints` options were removed; `scoring_method` is now always `'PositionPoints'` for Finishing Position and `'FastestLap'` for Fastest Lap). Results computed from `DriverLap` records in `build_session_results()`, sorted ascending; Results page shows `FastestLapResultsTable`.
+- Admin session form is simplified: **Race Type** (Finishing Position / Fastest Lap), **Race Laps** *or* **Race Time (min)**, **Points scoring** (Finishing Position only), **Session ends after N races per driver**, and **Disqualify after N sit-outs** (blank = no limit → `max_sit_outs`). No End Condition / Scoring method / Ranking / Start+End time fields.
+- Admin meetings list: meetings are collapsed except the in-progress one (or the latest if none is in progress); "In Progress" is a non-clickable badge after the session type; an **End Session** button on the right opens a confirmation modal → `POST /sessions/{id}/finish`.
+- Results page lap times: no `s` suffix, regular weight, figure-space-padded (`fmtLap`) so single- and double-digit seconds align.
+- React Router with `/` (LapCounter) and `/nextrace` (NextRace) routes
+- NextRace UI: lane toggle, × remove driver, + add driver from bench, car image selector all live
+
+**In progress — LapData race manager refactor:**
+- LapData to own all race state (positions, lap counts, fastest laps, race end)
+- LapData to publish `race_state` MQTT topic after every lap crossing
+- React to subscribe to `race_state` and delete all race logic (`lapUtils.js`)
+- ✅ DB Writer service implemented (`dbwriter/`) — subscribes to `driver_lap`, writes `driver_laps`/`driver_races` straight to PostgreSQL
+- ✅ `race_control` MQTT topic for race prepare/arm/start/pause/resume/end/status from any client (used by the `/racecontrol` page)
+
+**Still needed:** bugs, to-dos and ideas are tracked in **GitHub issues** (`gh issue list`), not here. Two worth knowing when working in this area:
+- NextRace edits only the head race; previewing/editing the whole queue is #29.
+- Sample/reset data (#33): `python sampledata.py` (in the api container) now generates session 2's queue itself, via the same balancer the API uses. The **SQL** path (`sampledata.sql`/`reset-races.sql`) still can't — the schedule is computed in Python — so after loading those, run `POST /sessions/2/regenerate-races` (RaceControl's regenerate prompt does the same). Both files say so at the top. Without it `/races/pending/` 404s, and /nextrace then says *"No races queued for this session"* with a link to RaceControl (it used to claim the session had ended).
+
+Note: `GET /drivers/nextrace/` (old stateless endpoint) still exists alongside `GET /races/pending/`. The old one is superseded but not yet removed (#30).

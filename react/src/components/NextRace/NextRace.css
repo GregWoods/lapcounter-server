@@ -1,0 +1,323 @@
+html:has(#nextrace-page) body {
+    background: #111;
+}
+
+/* ── Page shell ── */
+#nextrace-page {
+    background: #111;
+    color: #fff;
+    min-height: 100vh;
+    padding: 1rem 2rem 1rem 3rem;
+    box-sizing: border-box;
+    font-family: "Selawik", sans-serif;
+}
+
+/* ── Empty / error state ── */
+.nr-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 4rem 1rem;
+    text-align: center;
+}
+
+.nr-empty p {
+    font-size: 1.75rem;
+    margin: 0;
+}
+
+.nr-empty .nr-empty-link {
+    margin-top: 1rem;
+    padding: 0.6rem 1.5rem;
+    font-size: 1.2rem;
+    color: #fff;
+    background: #1a6aab;
+    border-radius: 8px;
+    text-decoration: none;
+}
+
+.nr-empty .nr-empty-link:hover {
+    background: #2080cc;
+}
+
+/* ── Columns ── */
+.nr-columns {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.nr-title-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    position: relative;
+}
+
+
+.nr-title-row h1 {
+    font-size: 1.6rem;
+    margin: 0;
+    letter-spacing: 0.04em;
+}
+
+/* ── Landscape: side-by-side ── */
+@media (orientation: landscape) {
+    #nextrace-page {
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nr-columns {
+        flex: 1;
+        flex-direction: row;
+        gap: 3rem;
+        overflow: hidden;
+    }
+
+    .nr-col {
+        flex: 1 1 50%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    .others-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    .nr-col-others .nr-table {
+        font-size: 1.3rem;
+    }
+
+    /* Override table display with flex so rows fill available height evenly.
+       min-height: 0 is required at every level — the default (auto) prevents
+       flex items shrinking below their content's intrinsic size, which causes
+       the image's natural pixel height to cascade up and balloon the rows. */
+    .nr-col-assigned .nr-table {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nr-col-assigned .nr-table thead {
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+    }
+
+    .nr-col-assigned .nr-table tbody {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+    }
+
+    .nr-col-assigned .nr-table thead tr,
+    .nr-col-assigned .nr-table tbody tr {
+        display: flex;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .nr-col-assigned .nr-table tbody tr {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .nr-col-assigned .nr-table th,
+    .nr-col-assigned .nr-table td {
+        display: flex;
+        align-items: center;
+        padding-top: 0.2rem;
+        padding-bottom: 0.2rem;
+    }
+
+    /* Uniform heading size — higher specificity than both .nr-table thead th and .col-name */
+    .nr-col-assigned .nr-table thead th {
+        font-size: 1.2rem;
+    }
+
+    /* Raced value: larger but de-emphasised */
+    .nr-col-assigned .nr-table tbody .col-raced {
+        font-size: 1.5rem;
+        color: #555;
+    }
+
+    /* Explicit column widths to replace table's auto layout */
+    .nr-col-assigned .col-toggle { flex: 0 0 4rem; }
+    .nr-col-assigned .col-car    { flex: 0 0 8rem; padding-right: 0; }
+    .nr-col-assigned .col-name   { flex: 1; font-size: 1.6rem; padding-left: 0.2rem; }
+    .nr-col-assigned .col-raced  { flex: 0 0 4rem; justify-content: flex-end; padding-right: 1rem; }
+    .nr-col-assigned .col-action { flex: 0 0 3.5rem; justify-content: center; }
+
+    .nr-col-assigned .car-thumbnail {
+        height: 100%;
+        min-height: 0;
+        width: auto;
+    }
+}
+
+/* ── Tables ── */
+.nr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1rem;
+}
+
+.nr-table thead th {
+    font-size: 0.8rem;
+    color: #ccc;
+    border-bottom: 2px solid #666;
+    padding: 0.4rem 0.75rem;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.nr-table tbody tr {
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.nr-table tbody td {
+    padding: 0.3rem 0.75rem;
+    vertical-align: middle;
+}
+
+/* ── Column sizing ── */
+.col-toggle { width: 4rem; }
+.col-car    { width: 5rem; }
+.col-raced  { width: 3rem; text-align: right; padding-right: 1.5rem !important; }
+.col-action { width: 3rem; text-align: center; }
+
+/* ── Lane row colours — pale version from DriverColors.css, dark text ── */
+tr.lane-color-red    td { background-color: rgb(255, 206, 206); color: #000; }
+tr.lane-color-green  td { background-color: rgb(198, 253, 200); color: #000; }
+tr.lane-color-blue   td { background-color: rgb(198, 200, 255); color: #000; }
+tr.lane-color-yellow td { background-color: rgb(254, 255, 173); color: #000; }
+tr.lane-color-white  td { background-color: rgb(185, 185, 185); color: #000; }
+tr.lane-color-orange td { background-color: rgb(252, 193, 138); color: #000; }
+
+/* ── Toggle switch ── */
+.lane-toggle {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.lane-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-track {
+    display: inline-block;
+    width: 2.4rem;
+    height: 1.25rem;
+    background: #555;
+    border-radius: 0.625rem;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+}
+
+.toggle-track::after {
+    content: '';
+    position: absolute;
+    left: 0.15rem;
+    top: 0.15rem;
+    width: 0.95rem;
+    height: 0.95rem;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.lane-toggle input:checked + .toggle-track::after {
+    transform: translateX(1.15rem);
+}
+
+/* Toggle unchecked: dark — clearly OFF against the pale row */
+.lane-toggle input:not(:checked) + .toggle-track { background: #555; }
+
+/* Toggle checked: deep emphasized lane colour from DriverColors.css */
+tr.lane-color-red    .lane-toggle input:checked + .toggle-track { background: rgb(155, 0, 0); }
+tr.lane-color-green  .lane-toggle input:checked + .toggle-track { background: rgb(10, 102, 2); }
+tr.lane-color-blue   .lane-toggle input:checked + .toggle-track { background: rgb(8, 0, 155); }
+tr.lane-color-yellow .lane-toggle input:checked + .toggle-track { background: rgb(255, 224, 51); }
+tr.lane-color-white  .lane-toggle input:checked + .toggle-track { background: #444; }
+tr.lane-color-orange .lane-toggle input:checked + .toggle-track { background: rgb(201, 122, 4); }
+
+/* Dark dot for light-coloured toggle tracks */
+tr.lane-color-yellow .lane-toggle input:checked + .toggle-track::after { background: #333; }
+tr.lane-color-white  .lane-toggle input:checked + .toggle-track::after { background: #fff; }
+
+/* ── Buttons ── */
+.nr-btn {
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0.25rem 0.65rem;
+    border-radius: 0.3rem;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.nr-btn:disabled {
+    cursor: default;
+}
+
+.nr-btn-remove {
+    background: #cc2222;
+    border: none;
+    color: #fff;
+    font-weight: bold;
+}
+
+.nr-btn-remove:hover:not(:disabled) {
+    background: #ff3333;
+}
+
+.nr-btn-remove:disabled {
+    background: #555;
+}
+
+.nr-btn-add {
+    background: #228822;
+    border: none;
+    color: #fff;
+    font-weight: bold;
+}
+
+.nr-btn-add:hover:not(:disabled) {
+    background: #33aa33;
+}
+
+.nr-btn-add:disabled {
+    background: #555;
+}
+
+/* ── Car thumbnail ── */
+.car-thumbnail {
+    height: 4.5rem;
+    width: auto;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: opacity 0.15s;
+    display: block;
+}
+
+.car-thumbnail:hover {
+    opacity: 0.75;
+}

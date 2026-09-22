@@ -5,7 +5,8 @@ import './YellowFlag.css';
 
 
 
-const YellowFlagRacePaused = ({showMe, onRacePaused, onEndYellowFlag}) => {
+// secondsLeft: lapdata's countdown to the power cut during the grace period, null after.
+const YellowFlagRacePaused = ({showMe, secondsLeft, onRacePaused, onEndYellowFlag}) => {
 
     const [yfFlashingPeriod, setYfFlashingPeriod] = useState(null);
     const [yfClassName, setYfClassName] = useState('black');
@@ -83,7 +84,11 @@ const YellowFlagRacePaused = ({showMe, onRacePaused, onEndYellowFlag}) => {
                     <RaceFlagStart 
                         onSelect={handleEndYellowFlag} 
                         handleColor='#000' />
-                    <h1>Yellow Flag - Race Paused</h1>
+                    <h1>
+                        {secondsLeft != null
+                            ? `Yellow Flag - ${secondsLeft}s`
+                            : 'Yellow Flag - Race Paused'}
+                    </h1>
                 </div>
                 <div id="yellowflagcontent" className={yfClassName}>
                 </div>

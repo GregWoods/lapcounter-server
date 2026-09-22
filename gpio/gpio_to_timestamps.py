@@ -12,6 +12,7 @@ import os
 import paho.mqtt.client as mqtt     #uses >= 2.0.0
 import sys
 import RPi.GPIO as GPIO             # actually uses the lgpio library for compativility with newer Linux kernels
+from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, counter_ms
 
 # LANE_NUMBER starts from 1. 
 #   It is passed in as an environment variable in the docker compose file. 
@@ -53,8 +54,9 @@ GPIO.output(lane["HSHAKE"], True)
 
 client = None
 
-def send_lap_time(car_number, crossing_time):
-    lapdata = {"car": car_number, "timestamp": crossing_time, "lane": lane_idx + 1}
+def send_lap_time(car_number, crossing_counter_ms):
+    lapdata = {"car": car_number, "lane": lane_idx + 1,
+               "counter_ms": crossing_counter_ms, "clock": CLOCK}
     lapjson = json.dumps(lapdata)
     print(lapjson)
     client.publish(MQTT_TIMESTAMP_TOPIC, payload=lapjson)
@@ -67,13 +69,16 @@ def handshake_end(_):
     GPIO.output(lane["HSHAKE"], True)
 
 def car_detected(_):
-    crossing_time = time.time_ns()
+    # Stamped here, first thing: this is when the car actually crossed. Reading the
+    # car-code pins and the MQTT publish below both take time, and none of it may end
+    # up in a lap.
+    crossing_counter_ms = counter_ms()
     # send car id 1-6
     car_number = 1
     if GPIO.input(lane["CARCODE1"]): car_number += 1
     if GPIO.input(lane["CARCODE2"]): car_number += 2
     if GPIO.input(lane["CARCODE3"]): car_number += 4
-    send_lap_time(car_number, crossing_time)
+    send_lap_time(car_number, crossing_counter_ms)
     handshake_end(lane)
 
 # utilises a new thread to handle the GPIO event detection
@@ -85,6 +90,14 @@ client.connect(mqtt_hostname)
 # create a new thread to handle the network loop. Also handles reconnecting
 client.loop_start()
 
-#Just keep the program running
+# Keep the program running, and while we're here publish the clock heartbeat: a bare
+# reading of the counter for lapdata to pair with its own arrival time. Lap 1 is timed
+# from lights-out, which happens before any car has crossed, so crossings alone would
+# leave lapdata with nothing to anchor against at exactly the moment it needs one.
+#
+# Both lane containers publish this. They carry the same clock id and the same counter,
+# so the samples are interchangeable and lapdata just gets twice as many.
 while True:
-    time.sleep(1)
+    time.sleep(HEARTBEAT_INTERVAL_S)
+    client.publish(MQTT_CLOCK_TOPIC,
+                   payload=json.dumps({"clock": CLOCK, "counter_ms": counter_ms()}))

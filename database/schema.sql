@@ -1,5 +1,8 @@
+DROP TABLE IF EXISTS race_withdrawals;
+DROP TABLE IF EXISTS session_drivers;
 DROP TABLE IF EXISTS driver_laps;
 DROP TABLE IF EXISTS driver_races;
+DROP TABLE IF EXISTS lanes;
 DROP TABLE IF EXISTS races;
 DROP TABLE IF EXISTS sessions;
 DROP TABLE IF EXISTS meeting_cars;
@@ -37,8 +40,9 @@ CREATE TABLE car_models (
 
 CREATE TABLE car_tyres (
     id SERIAL PRIMARY KEY,
-    compound VARCHAR(255) NOT NULL,
-    size VARCHAR(255) NOT NULL
+    brand VARCHAR(255) NOT NULL,
+    compound VARCHAR(255),
+    size VARCHAR(255)
 );
 
 
@@ -56,13 +60,13 @@ CREATE TABLE chip_firmwares (
 CREATE TABLE cars (
     id SERIAL PRIMARY KEY,
     name CHAR(255) NOT NULL, -- defaults to car_model.name, but can be overridden in the UI
-    car_model_id INT REFERENCES car_models(id), 
+    car_model_id INT REFERENCES car_models(id),
     tyre_id INT REFERENCES car_tyres(id),
-    magnet BOOLEAN, 
-    weight_added DECIMAL, 
+    magnet BOOLEAN,
+    weight_added DECIMAL,
     modifications_notes TEXT,
-    chip_hardware_id INT REFERENCES chip_hardwares(id), 
-    chip_firmware_id INT REFERENCES chip_firmwares(id), 
+    chip_hardware_id INT REFERENCES chip_hardwares(id),
+    chip_firmware_id INT REFERENCES chip_firmwares(id),
     picture VARCHAR(255), -- Filename of car pic. No path or url
     rfid VARCHAR(255)
 );
@@ -71,10 +75,11 @@ CREATE TABLE cars (
 CREATE TABLE drivers (
     id SERIAL PRIMARY KEY,
     first_name VARCHAR(255) NOT NULL,
-    last_name VARCHAR(255) NOT NULL,
+    last_name VARCHAR(255),
     mobile_number VARCHAR(20),
     picture VARCHAR(255),   -- Filename of driver pic. No path or url
-    rfid VARCHAR(255)
+    rfid VARCHAR(255),
+    sit_out_next_race BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 
@@ -82,20 +87,23 @@ CREATE TABLE meetings (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     date DATE,
-    venue VARCHAR(255)
+    venue VARCHAR(255),
+    count_first_crossing BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE meeting_drivers (
     meeting_id INT REFERENCES meetings(id),
     driver_id INT REFERENCES drivers(id),
-    driver_name VARCHAR(255),   -- Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
+    driver_name VARCHAR(255) NOT NULL,  -- Generated. Usually just first_name, but may include last_name initial if 2 drivers have the same first name
     PRIMARY KEY (meeting_id, driver_id)
 );
 
 CREATE TABLE meeting_cars (
     meeting_id INT REFERENCES meetings(id),
     car_id INT REFERENCES cars(id),
-    PRIMARY KEY (meeting_id, car_id)
+    lane INT,   -- default lane assignment for this car at this meeting (1-6, nullable for spare cars)
+    PRIMARY KEY (meeting_id, car_id),
+    UNIQUE (meeting_id, lane)
 );
 
 CREATE TABLE sessions (
@@ -104,38 +112,70 @@ CREATE TABLE sessions (
     session_type VARCHAR(255) CHECK (session_type IN ('Points', 'FastestLap', 'Championship')),
     end_condition VARCHAR(255) CHECK (end_condition IN ('Laps', 'Time')),
     end_condition_info INT,
-    scoring_method VARCHAR(255) CHECK (scoring IN ('LapPoints', 'PositionPoints', 'FastestLap')),
+    races_per_driver INT NULL,
+    max_sit_outs INT NULL,   -- skips before a driver is offered for disqualification (NULL = no limit)
+    yellow_grace_seconds INT NOT NULL DEFAULT 5,   -- full-power seconds after a yellow flag before power cuts
+    scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,
-    end_time TIME NULL
+    end_time TIME NULL,
+    state VARCHAR(20) NOT NULL DEFAULT 'NotStarted' CHECK (state IN ('NotStarted', 'InProgress', 'Finished'))
 );
-
 
 
 CREATE TABLE races (
     id SERIAL PRIMARY KEY,
     session_id INT REFERENCES sessions(id),
-    state VARCHAR(255) CHECK (state IN ('NotStarted', 'Running', 'Finished'))
+    race_number INT,
+    state VARCHAR(255) CHECK (state IN ('NotStarted', 'Running', 'Finished')),
+    -- The lights-out ("go go go") instant, as lapdata's race manager recorded it
+    -- (race_start_time) — not when this API call happened to be processed, since
+    -- the POST that sets it is fire-and-forget from a background thread.
+    started_at TIMESTAMPTZ NULL
 );
 
--- links drivers with their cars for a particular race,
+CREATE TABLE lanes (
+    lane_number INT PRIMARY KEY,  -- 1 to 6
+    color VARCHAR(255) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- Links drivers with their cars for a particular race,
 --   and links all drivers who are racing together.
--- Does not store any lap related data, which can all be derived from driver_lap
+-- Does not store any lap related data, which can all be derived from driver_laps
 CREATE TABLE driver_races (
     id SERIAL PRIMARY KEY,
     driver_id INT REFERENCES drivers(id),
     race_id INT REFERENCES races(id),
     car_id INT REFERENCES cars(id),
-    --laps_completed INT,
-    --last_lap_time TIME,
-    --fastest_lap_time TIME,
+    lane INT NOT NULL DEFAULT 0,    -- 1 to 6
+    laps_completed INT,
+    last_lap_time DECIMAL(10,3),
+    fastest_lap_time DECIMAL(10,3),
     UNIQUE (driver_id, race_id)
 );
 
 CREATE TABLE driver_laps (
     id SERIAL PRIMARY KEY,
     driver_race_id INT REFERENCES driver_races(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     --not used for laptimes, just for sorting
-    --lap_number INT,     -- canbe derived
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- not used for lap times, just for sorting
+    -- lap_number can be derived
     lap_time DECIMAL(10,3)
+);
+
+-- An operator withdrawal of a driver from a race (the NextRace "×" button). A withdrawal
+-- attached to a Finished race counts as one "skip" for that driver in the session.
+CREATE TABLE race_withdrawals (
+    race_id INT REFERENCES races(id),
+    driver_id INT REFERENCES drivers(id),
+    PRIMARY KEY (race_id, driver_id)
+);
+
+-- Per-session, per-driver state. Currently just the disqualified flag: a driver who has
+-- sat out too many races and been removed from the rest of the session by the operator.
+CREATE TABLE session_drivers (
+    session_id INT REFERENCES sessions(id),
+    driver_id INT REFERENCES drivers(id),
+    disqualified BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (session_id, driver_id)
 );
