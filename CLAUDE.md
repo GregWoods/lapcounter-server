@@ -362,11 +362,14 @@ For local (non-Docker) API development, `api/setenv.ps1` sets all required vars.
 
 The UI is optimized for 1920x1080 resolution with significant hardcoded CSS for that size.
 
-## Branch: `race_meet_manager` (WIP) vs `main`
+## Implementation status
 
-The `main` branch is a working lap counter with no database. The `race_meet_manager` branch adds race meet management and is being refactored toward the MQTT-centric architecture above.
-
-### Current implementation status
+What started as an experiment on a `race_meet_manager` branch — full race meet
+management (meetings, sessions, drivers, database) on top of the original lap counter —
+is now the project's whole direction: it was merged into `main` via PR #64, and all
+development happens against this architecture going forward. There is no longer a
+database-less "simple" branch to compare against; everything above in this file
+describes `main`.
 
 **Completed:**
 - PostgreSQL + SQLModel ORM: 15 table models in `api/app/model.py`
@@ -396,13 +399,11 @@ The `main` branch is a working lap counter with no database. The `race_meet_mana
 - Results page lap times: no `s` suffix, regular weight, figure-space-padded (`fmtLap`) so single- and double-digit seconds align.
 - React Router with `/` (LapCounter) and `/nextrace` (NextRace) routes
 - NextRace UI: lane toggle, × remove driver, + add driver from bench, car image selector all live
-
-**In progress — LapData race manager refactor:**
-- LapData to own all race state (positions, lap counts, fastest laps, race end)
-- LapData to publish `race_state` MQTT topic after every lap crossing
-- React to subscribe to `race_state` and delete all race logic (`lapUtils.js`)
-- ✅ DB Writer service implemented (`dbwriter/`) — subscribes to `driver_lap`, writes `driver_laps`/`driver_races` straight to PostgreSQL
-- ✅ `race_control` MQTT topic for race prepare/arm/start/pause/resume/end/status from any client (used by the `/racecontrol` page)
+- **LapData race manager refactor** — the whole point of the branch, now done: LapData owns all race state (positions, lap counts, fastest laps, start lights, yellow flags, race end) and publishes it as `race_state` after every crossing and timer tick; React (`LapCounter.jsx`) is a pure subscriber with no race logic of its own. `lapUtils.js`'s race-logic functions (`calculateLapTime`, `modifyDriversViewModel`, `checkEndOfRace`) have been deleted — only `driverSorter`, a plain comparator with no race logic, is still used (by `CarSelectorModal.jsx`)
+- DB Writer service (`dbwriter/`) — subscribes to `driver_lap`, writes `driver_laps`/`driver_races` straight to PostgreSQL
+- `race_control` MQTT topic for race prepare/arm/start/pause/resume/end/status from any client (used by the `/racecontrol` page)
+- `admin_update` MQTT topic — Admin publishes on session create/finish so an already-open `/racecontrol` refreshes live instead of needing a manual reload
+- BLE as the default Layer 1 on the live Pi, with GPIO as the `-Layer1 gpio` fallback — see "Layer 1 hardware options" above. Capability advertising (`layer1_status`) is **not** implemented yet; see that section for what still is
 
 **Still needed:** bugs, to-dos and ideas are tracked in **GitHub issues** (`gh issue list`), not here. Two worth knowing when working in this area:
 - NextRace edits only the head race; previewing/editing the whole queue is #29.
