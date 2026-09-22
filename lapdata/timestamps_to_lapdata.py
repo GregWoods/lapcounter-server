@@ -61,19 +61,51 @@ _last_posted_state: str | None = None
 # lights-out resets them to — so the first crossing of a race is never filtered.
 prev_crossing: list = [None] * 6
 
+# Whether the last API call actually reached it. This is not a React-only "graceful
+# degradation" concern: lapdata itself depends on the API for the pending-race queue and
+# persists race lifecycle through it (publish_race_state()'s /start and /finish POSTs),
+# so a genuinely unreachable API means the whole system's source of truth is down, not
+# just a display losing a nicety. Published in every race_state (see publish_race_state)
+# so every screen can show it — unmissably, per the "TV sized UI" rule, not a quiet log
+# line nobody's watching mid-meet. Starts True (optimistic) so a display doesn't flash a
+# false alarm before the first fetch has even happened.
+_api_reachable = True
+
+
+def _set_api_reachable(reachable: bool):
+    """Update the reachability flag and, on any change, publish immediately rather than
+    waiting for the next race event to carry it — a display should find out the app is
+    dead (or has recovered) as soon as lapdata itself does."""
+    global _api_reachable
+    if reachable == _api_reachable:
+        return
+    _api_reachable = reachable
+    try:
+        publish_race_state()
+    except Exception as e:
+        logger.error(f"Failed to publish api_reachable change: {e}")
+
 
 def fetch_pending_race() -> dict | None:
     """Read the next queued race (head of the session's pre-populated queue) from the
-    API. Returns parsed JSON, or None when there is none (404 between sessions / before
-    one is started) or on failure. Read-only — never creates a race."""
+    API. Returns parsed JSON, or None when there is none (a plain 404 between sessions
+    or before one is started — normal, and still means the API is reachable) or when the
+    API itself could not be reached (abnormal — see _api_reachable above). Read-only —
+    never creates a race."""
     try:
         url = f"{api_url}/races/pending/"
         with urllib.request.urlopen(url, timeout=5) as resp:
+            _set_api_reachable(True)
             return json.loads(resp.read())
-    except urllib.error.URLError as e:
-        logger.error(f"API unavailable when fetching pending race: {e}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            _set_api_reachable(True)  # reachable; there's just nothing queued right now
+        else:
+            _set_api_reachable(False)
+            logger.error(f"API returned {e.code} when fetching pending race: {e}")
     except Exception as e:
-        logger.error(f"Failed to fetch pending race: {e}")
+        _set_api_reachable(False)
+        logger.error(f"API unreachable when fetching pending race: {e}")
     return None
 
 
@@ -561,14 +593,20 @@ def _post_api(path: str, json_body: dict | None = None):
             req = urllib.request.Request(f"{api_url}{path}", data=data, headers=headers, method='POST')
             with urllib.request.urlopen(req, timeout=5) as resp:
                 resp.read()
+            _set_api_reachable(True)
         except Exception as e:
             logger.warning(f"API POST {path} failed: {e}")
+            _set_api_reachable(False)
     threading.Thread(target=_do, daemon=True).start()
 
 
 def publish_race_state():
     global _last_posted_state
-    client.publish('race_state', json.dumps(race.to_dict()))
+    state_dict = race.to_dict()
+    # Not race-manager business (race_manager.py is pure/DB-free), so it's folded in
+    # here rather than in RaceManager.to_dict() — see _api_reachable above.
+    state_dict['api_reachable'] = _api_reachable
+    client.publish('race_state', json.dumps(state_dict))
 
     # Persist race-lifecycle transitions via the API (race Running/Finished, session
     # InProgress, and the automatic session-end). Starting the next race/session stays

@@ -286,3 +286,81 @@ def test_falls_back_when_the_api_sends_no_lap_target():
     """An API image older than the target_laps field leaves lapdata to guess."""
     tsl._load_pending(_pending())
     assert tsl.race.target_laps == tsl.DEFAULT_TARGET_LAPS
+
+
+# --- API reachability: a plain 404 is normal, a genuine failure must be loud ---
+
+class _FakeResponse:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def test_a_clean_404_is_not_treated_as_unreachable(monkeypatch, published):
+    """404 from /races/pending/ is the normal "nothing queued yet" answer (between
+    sessions, or before one is started) — the API answered fine, there's just no race.
+    Must not trip the unreachable flag, or an idle meet would falsely show "app is dead"
+    the moment a session ends."""
+    monkeypatch.setattr(tsl, '_api_reachable', False)  # start pessimistic to prove the flip
+
+    def fake_urlopen(*a, **k):
+        raise tsl.urllib.error.HTTPError('url', 404, 'Not Found', {}, None)
+    monkeypatch.setattr(tsl.urllib.request, 'urlopen', fake_urlopen)
+
+    result = tsl.fetch_pending_race()
+
+    assert result is None
+    assert tsl._api_reachable is True
+    # The flip to reachable is itself worth a publish, same as the flip away from it.
+    assert any(p.get('api_reachable') is True for _, p in published)
+
+
+def test_a_genuine_connection_failure_is_treated_as_unreachable(monkeypatch, published):
+    """A real network failure (connection refused, DNS, timeout — anything that isn't a
+    clean HTTP response) means the API is actually down. lapdata depends on it for the
+    pending-race queue and for persisting race lifecycle (publish_race_state()'s /start
+    and /finish POSTs) — not a React-only nicety — so this must be surfaced loudly
+    (published in race_state) rather than logged and silently worked around."""
+    monkeypatch.setattr(tsl, '_api_reachable', True)  # start optimistic to prove the flip
+
+    def fake_urlopen(*a, **k):
+        raise tsl.urllib.error.URLError('connection refused')
+    monkeypatch.setattr(tsl.urllib.request, 'urlopen', fake_urlopen)
+
+    result = tsl.fetch_pending_race()
+
+    assert result is None
+    assert tsl._api_reachable is False
+    assert any(p.get('api_reachable') is False for _, p in published)
+
+
+def test_reachability_recovers_on_the_next_successful_fetch(monkeypatch, published):
+    """Once the API answers again, the flag — and every race_state after it — must
+    reflect that immediately, not stay stuck on the last failure."""
+    monkeypatch.setattr(tsl, '_api_reachable', False)
+
+    def fake_urlopen(*a, **k):
+        return _FakeResponse(json.dumps(_pending()).encode())
+    monkeypatch.setattr(tsl.urllib.request, 'urlopen', fake_urlopen)
+
+    result = tsl.fetch_pending_race()
+
+    assert result is not None
+    assert tsl._api_reachable is True
+    assert any(p.get('api_reachable') is True for _, p in published)
+
+
+def test_every_race_state_carries_the_current_reachability(monkeypatch, published):
+    """api_reachable must be present on every publish, not only the ones that changed
+    it — a display that (re)connects mid-meet needs the current answer immediately."""
+    monkeypatch.setattr(tsl, '_api_reachable', False)
+    tsl.publish_race_state()
+    assert published[-1][1]['api_reachable'] is False

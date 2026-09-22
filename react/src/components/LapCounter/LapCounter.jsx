@@ -7,6 +7,7 @@ import DriverCard from './DriverCard.jsx';
 import FastestLapCounter from './FastestLapCounter.jsx';
 import Header from './Header.jsx';
 import StartLights from './StartLights.jsx';
+import ApiUnreachableModal from './ApiUnreachableModal.jsx';
 import YellowFlagRacePaused from './YellowFlagRacePaused.jsx';
 import { useState, useRef, useEffect } from 'react';
 import { useLoaderData } from 'react-router-dom';
@@ -142,6 +143,10 @@ const LapCounter = () => {
     const [lightsOut, setLightsOut] = useState(false);
     const [startLights, setStartLights] = useState(0); // lit count, driven by lapdata's race_state
     const [yellowSecondsLeft, setYellowSecondsLeft] = useState(null); // grace countdown, driven by lapdata
+    // Optimistic until the first race_state says otherwise — lapdata itself depends on
+    // the API (pending-race queue, /start+/finish persistence), so this isn't a
+    // React-only nicety; see ApiUnreachableModal.
+    const [apiReachable, setApiReachable] = useState(true);
     const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);
 
     const storeFastestLapToday = (lapTime) => {
@@ -222,6 +227,10 @@ const LapCounter = () => {
 
         // Yellow-flag power-cut countdown, also ticked by lapdata; null outside Yellow.
         setYellowSecondsLeft(raceState.yellow_seconds_left ?? null);
+
+        // System-wide, not race-specific — process it whatever race_id this message is
+        // for. `??` (not `||`): false is a real, meaningful value here.
+        if (raceState.api_reachable != null) setApiReachable(raceState.api_reachable);
 
         // Header phase + (Points) staged-lineup preview, driven by the live state.
         if (state === 'Finished') setRacePhase('results');
@@ -344,6 +353,7 @@ const LapCounter = () => {
                     onRacePaused={() => {}}
                     onEndYellowFlag={() => {}}
                 />
+                <ApiUnreachableModal showMe={!apiReachable} />
                 <StartLights
                     showMe={startLightsShown}
                     onClose={() => { setStartLightsShown(false); setLightsOut(false); setStartLights(0); }}
