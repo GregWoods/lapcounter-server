@@ -44,6 +44,7 @@ DB Writer service    React apps        Any client
 | `driver_lap` | LapData | DB Writer | Authoritative **counted** lap with full context — emitted only when the race manager actually counts a real lap. This is the DB-persistence contract. |
 | `race_state` | LapData | React apps, BLE | Full computed state after every crossing and lapdata timer tick (positions, lap counts, fastest laps, start lights, yellow countdown). BLE maps it to powerbase power. |
 | `race_control` | Any client | LapData, BLE | Commands: `prepare`, `arm`, `start`, `status`, `reload_lineup`, `yellow`, `pause`, `resume`, `end` |
+| `admin_update` | Admin (React) | RaceControl (React) | Plain "something changed, re-fetch" ping after an Admin session create/finish — `{"reason": "session_created"\|"session_finished", ...}`. Deliberately **not** `race_control`: this is a browser-to-browser UI-refresh signal, not a command LapData or BLE should act on. RaceControl just calls its own `loadInfo()` on receipt, the same as it already does after a `race_state` transition. |
 
 **`race_control`:** `{"command": "start", "race_id": 5}`
 

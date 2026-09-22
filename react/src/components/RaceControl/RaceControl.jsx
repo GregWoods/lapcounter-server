@@ -172,6 +172,7 @@ export default function RaceControl() {
             <MqttSubscriber
                 mqttHost={MQTT_URL}
                 onRaceStateMessage={onRaceState}
+                onAdminUpdateMessage={loadInfo}
                 clientRef={clientRef}
             />
 

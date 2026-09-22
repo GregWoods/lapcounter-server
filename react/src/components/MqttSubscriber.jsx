@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 
 
-const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, clientRef, debug }) => {
+const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, onAdminUpdateMessage, clientRef, debug }) => {
 
     const [client, setClient] = useState(null);
 
@@ -29,6 +29,13 @@ const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, cl
             });
         }
 
+        if (onAdminUpdateMessage) {
+            client.subscribe('admin_update', { qos: 0 }, (error) => {
+                if (error) console.log('Subscribe error (admin_update)', error);
+                else if (debug) console.log('Subscribed to admin_update');
+            });
+        }
+
         client.on('connect', () => {
             if (debug) console.log('Mqtt Connected');
         });
@@ -46,6 +53,9 @@ const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, cl
             }
             if (topic === 'race_control' && onRaceControlMessage) {
                 onRaceControlMessage(parsed);
+            }
+            if (topic === 'admin_update' && onAdminUpdateMessage) {
+                onAdminUpdateMessage(parsed);
             }
         });
     }, [client]); // eslint-disable-line react-hooks/exhaustive-deps

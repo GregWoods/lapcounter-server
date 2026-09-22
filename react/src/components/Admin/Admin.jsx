@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
 import { House, LogOut, ChevronDown, ChevronRight, Timer, Trophy } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/adminAuth';
+import MqttSubscriber from '../MqttSubscriber.jsx';
 import './Admin.css';
-import { API_URL } from '../../endpoints.js';
+import { API_URL, MQTT_URL } from '../../endpoints.js';
 
 
 // Race types offered in the session form. 'Points' = Finishing Position (race ends on
@@ -242,6 +243,17 @@ const Admin = () => {
     // a meeting id pins that one open; null collapses everything.
     const [expandedMeetingId, setExpandedMeetingId] = useState(undefined);
 
+    // Queries are HTTP, events are MQTT: a session create/finish here changes what
+    // /racecontrol should show (Next Session availability, "Session complete"), but
+    // Admin only talks to the API, so nothing tells a /racecontrol tab already open
+    // elsewhere. admin_update is a plain "something changed, re-fetch" ping — deliberately
+    // not race_control, which is lapdata/BLE's command channel, not a browser-to-browser
+    // UI-refresh signal. RaceControl.jsx just calls its own loadInfo() on receipt.
+    const mqttClientRef = useRef(null);
+    const publishAdminUpdate = (reason, extra = {}) => {
+        mqttClientRef.current?.publish('admin_update', JSON.stringify({ reason, ...extra }));
+    };
+
     const meetingsSorted = [...meetings].sort((a, b) => b.date.localeCompare(a.date));
     const inProgressMeeting = meetingsSorted.find(m => (m.sessions || []).some(s => s.state === 'InProgress'));
     const defaultExpandedId = inProgressMeeting?.id ?? meetingsSorted[0]?.id ?? null;
@@ -272,6 +284,7 @@ const Admin = () => {
             const res = await fetch(`${API_URL}/sessions/${endingSessionId}/finish`, { method: 'POST' });
             if (!res.ok) throw new Error('Failed to end session');
             await reloadAll();
+            publishAdminUpdate('session_finished', { session_id: endingSessionId });
             setEndingSessionId(null);
         } catch (err) {
             setEndingError(err.message);
@@ -311,6 +324,7 @@ const Admin = () => {
         });
         if (!res.ok) throw new Error('Failed to create session');
         await reloadAll();
+        publishAdminUpdate('session_created', { meeting_id: meetingId });
         setAddingSessionTo(null);
     };
 
@@ -330,6 +344,7 @@ const Admin = () => {
 
     return (
         <div className="admin-page">
+            <MqttSubscriber mqttHost={MQTT_URL} clientRef={mqttClientRef} />
             <div className="admin-header">
                 <div className="admin-header-left">
                     <Link to="/" className="home-icon-link"><House /></Link>
