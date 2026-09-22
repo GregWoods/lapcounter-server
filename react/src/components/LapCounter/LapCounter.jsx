@@ -205,10 +205,19 @@ const LapCounter = () => {
         // Reconcile identity against the DB (authoritative for which race is
         // current). A race_state for a different race than the one we're showing is
         // either a newly-staged race or a stale lapdata broadcast — re-fetch the
-        // current race to arbitrate, and don't apply this (possibly stale) message.
+        // current race to arbitrate identity/lineup fields (race number, car pictures,
+        // session labels).
+        //
+        // ⚠️ Deliberately does NOT `return` here — the resync fetch is async and only
+        // touches identity fields, so this message's own state-driven side effects
+        // below (start lights, yellow overlay, driver cards) still need to run against
+        // *this* raceState. Returning early once caused the ArmedForStart edge to be
+        // dropped silently: the mismatch was detected exactly on that message (the
+        // first one for a newly-armed race), so the light countdown never opened, and
+        // by the time race_id resynced a message later the state had already moved past
+        // ArmedForStart, so it never got a second chance to fire.
         if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
             resyncCurrentRace(raceState.state, raceState.target_laps);
-            return;
         }
 
         if (raceState.race_number) {
