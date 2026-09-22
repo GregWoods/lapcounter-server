@@ -102,17 +102,32 @@ export default function RaceControl() {
         }
     };
 
+    // A live race_state can legitimately lag one prepare/arm cycle behind `info` — e.g.
+    // it still names the just-finished race while /races/pending/ already answers with
+    // the next one — and that's fine, because `race_number` falls back through the live
+    // value first below. But race numbers reset per session, so a race_state naming a
+    // number higher than the current session's own total can only be a leftover from a
+    // DIFFERENT, older session — "Next Session" (POST /sessions/start-next) starts a new
+    // one through the API alone, with no MQTT message telling lapdata, so its last
+    // broadcast can sit there naming a race from the session that just ended. Mixing
+    // that stale race_number with the new session's fresh racesTotal produced the
+    // impossible "Race 5 of 4" — a race number can never exceed its own session's total,
+    // which is exactly the tell. Discard the whole stale message rather than one field,
+    // the same way `info.pendingRaceId` is treated as "no live message yet".
+    const raceStateStale = raceState && info.racesTotal != null && raceState.race_number > info.racesTotal;
+    const liveRaceState = raceStateStale ? null : raceState;
+
     // Live values win; fall back to the API snapshot before the first MQTT message.
-    const state = raceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
-    const sessionType = raceState?.session_type ?? info.sessionType;
+    const state = liveRaceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
+    const sessionType = liveRaceState?.session_type ?? info.sessionType;
     // ⚠️ `||`, not `??`. lapdata now publishes `race_number: null` when no race is loaded, so
     // `??` would be correct against current lapdata — but an older lapdata image publishes 0
     // (it used to default to 0), and `??` passes a 0 straight through. 0 is falsy, so the title
     // rendered "No race" even though the API had already supplied the number. Race numbers are
     // 1-based, so treating 0 as "no race" can never discard a real one, and this keeps the page
     // right against a Pi whose lapdata hasn't been redeployed yet.
-    const raceNumber = raceState?.race_number || info.raceNumber;
-    const raceId = raceState?.race_id ?? info.pendingRaceId;
+    const raceNumber = liveRaceState?.race_number || info.raceNumber;
+    const raceId = liveRaceState?.race_id ?? info.pendingRaceId;
     const isFastestLap = sessionType === 'FastestLap';
 
     const live = state === 'Running' || state === 'ArmedForStart';
