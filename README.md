@@ -25,11 +25,6 @@ Either way: [Optional] A Wireless Access Point so that the whole system is stand
 ## Software
 The project upon which this is based, is well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/). Whilst it was a great accomplishment during a few months of lockdown, I did dislike the UI. So, I developed my own ReactJs based front end. Once that was in a decent state, I reworked the backend so I could add features not possible with all the logic in the front end code: the race manager now runs server-side (in a container called `lapdata`), race meets/sessions/drivers are persisted in a PostgreSQL database, and React is a pure display and control layer that talks to it all over MQTT — so a browser refresh, or even nobody watching at all, no longer loses the current race.
 
-![My reworked React JS UI](docs/shakedown.gif)
-*(this particular GIF predates the database/race-meet-manager work above — an animated
-refresh of it is still on the list, see [#65](https://github.com/GregWoods/lapcounter-server/issues/65),
-but the current screenshots below show where things actually are today)*
-
 The leaderboard (`/currentrace`, meant for a TV or big screen — real driver names, car
 images and colours matching the powerbase, live lap times, fastest lap of the race
 highlighted in purple):
@@ -48,7 +43,7 @@ a yellow flag):
 * F1 style start lights, with additional beep countdown
 * Drivers only appear on the leaderboards when they first cross the line, so the screen looks uncluttered if only 2 drivers are racing
 * Once the winning driver crosses the line, each driver finishes their lap, then the race is over
-    * This can give some odd looking ordering of events, as seen in the GIF, where the race results appear in the following order due to drivers being one or more laps behind - demo results: P1, P6, P3, P4, P2, P5.
+    * This can give some odd looking ordering of finishing events, where results can appear out of position order as drivers one or more laps behind finish their own last lap after the leader already has.
     * The logic is correct, as is based on a greater number of laps completed beats less laps completed, and for drivers on the same lap, lower total race time beats higher total race time
 * Two race types — Finishing Position (fixed lap count) and Fastest Lap (fixed time, ranked by personal best) — because I got tired of drivers debating whether to run a 20 or 25 lap race. Each is kept substantially different from the other, with choices intentionally limited (but can be hacked)
 * Yellow flag, triggered from the operator's race control page (`/racecontrol`), not a keyboard shortcut on the display screen
@@ -64,12 +59,6 @@ a yellow flag):
 * Driver names quickly editable (not shown)
 * Previously uploaded car images can be quickly selected
 * [Coming Soon] A nice UI for uploading the car images
-
-
-## Notes from the GIF
-
-* The UI to modify the car images was not finished when this was made. The old FSR logo from the Zoomroom original code has been left in for now
-* Note that the GIF was generated from fake data, so it takes longer than in most real races for all 6 cars to cross the line and appear on the board
 
 
 ## Future Enhancements
