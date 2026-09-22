@@ -38,12 +38,16 @@ const SoundBlockedModal = ({ armed }) => {
     const dismissedRecently = dismissedAt && (Date.now() - dismissedAt) < DISMISS_HOURS * 60 * 60 * 1000;
     const showMe = blocked && !dismissedRecently && !armed;
 
+    // Listen for as long as sound is actually blocked, not just while the prompt
+    // happens to be on screen — `armed`/dismissal hide the prompt (see comment above)
+    // well before a gesture has unlocked anything, and a stale listener means no tap
+    // anywhere for the rest of the day can ever start the sound.
     useEffect(() => {
-        if (!showMe) return;
+        if (!blocked) return;
         const events = ['pointerdown', 'keydown', 'touchend'];
         events.forEach(e => document.addEventListener(e, unlockSound, true));
         return () => events.forEach(e => document.removeEventListener(e, unlockSound, true));
-    }, [showMe]);
+    }, [blocked]);
 
     return (
         <ReactModal
