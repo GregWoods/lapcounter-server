@@ -26,7 +26,21 @@ Either way: [Optional] A Wireless Access Point so that the whole system is stand
 The project upon which this is based, is well documented on [slotforum](https://www.slotforum.com/threads/wifi-raspberry-pi-based-lap-counter-timer.197059/). Whilst it was a great accomplishment during a few months of lockdown, I did dislike the UI. So, I developed my own ReactJs based front end. Once that was in a decent state, I reworked the backend so I could add features not possible with all the logic in the front end code: the race manager now runs server-side (in a container called `lapdata`), race meets/sessions/drivers are persisted in a PostgreSQL database, and React is a pure display and control layer that talks to it all over MQTT — so a browser refresh, or even nobody watching at all, no longer loses the current race.
 
 ![My reworked React JS UI](docs/shakedown.gif)
-*(this GIF predates the database/race-meet-manager work above — a refresh is due, see [#65](https://github.com/GregWoods/lapcounter-server/issues/65))*
+*(this particular GIF predates the database/race-meet-manager work above — an animated
+refresh of it is still on the list, see [#65](https://github.com/GregWoods/lapcounter-server/issues/65),
+but the current screenshots below show where things actually are today)*
+
+The leaderboard (`/currentrace`, meant for a TV or big screen — real driver names, car
+images and colours matching the powerbase, live lap times, fastest lap of the race
+highlighted in purple):
+
+![The /currentrace leaderboard mid-race](docs/screenshot-currentrace.jpg)
+
+Race control (`/racecontrol`, meant for the operator's phone — start/end a race, trigger
+a yellow flag):
+
+<img src="docs/screenshot-racecontrol.png" alt="The /racecontrol page on a phone" width="300">
+
 
 ## Features
 
