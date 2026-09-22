@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import ReactModal from 'react-modal';
+import { playSound } from '../utils/startLightSounds.js';
 
 
 const LIGHTS_OFF_COLOR = "#222";
@@ -11,15 +12,12 @@ const LIGHTS_ON_COLOR = "#F22";
 // reflects those, so every client renders identical, in-sync lights with no local
 // countdown clock to drift.
 const StartLights = ({ showMe, onClose, lightsOut, startLights = 0 }) => {
-    const shortBeepRef = useRef(null);
-    const longBeepRef = useRef(null);
     const prevLightsRef = useRef(0);
 
-    // Prime the audio when the modal opens (also acts as the per-open reset point).
+    // Per-open reset point. The sounds themselves are preloaded once per page
+    // (startLightSounds.js), so a beep plays in the same frame its light lights.
     useEffect(() => {
         if (!showMe) return;
-        shortBeepRef.current = new Audio('sounds/Beep.wav');
-        longBeepRef.current = new Audio('sounds/LongBeep.wav');
         prevLightsRef.current = 0;
     }, [showMe]);
 
@@ -27,7 +25,7 @@ const StartLights = ({ showMe, onClose, lightsOut, startLights = 0 }) => {
     useEffect(() => {
         if (!showMe) return;
         if (startLights > prevLightsRef.current) {
-            shortBeepRef.current?.play().catch(() => {});
+            playSound('beep');
         }
         prevLightsRef.current = startLights;
     }, [startLights, showMe]);
@@ -35,7 +33,7 @@ const StartLights = ({ showMe, onClose, lightsOut, startLights = 0 }) => {
     // Lights out (lapdata published Running): long beep, then close the modal.
     useEffect(() => {
         if (!lightsOut || !showMe) return;
-        longBeepRef.current?.play().catch(() => {});
+        playSound('longBeep');
         const t = setTimeout(() => onClose(), 1300);
         return () => clearTimeout(t);
     }, [lightsOut]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -7,6 +7,7 @@ import DriverCard from './DriverCard.jsx';
 import FastestLapCounter from './FastestLapCounter.jsx';
 import Header from './Header.jsx';
 import StartLights from './StartLights.jsx';
+import SoundBlockedModal from './SoundBlockedModal.jsx';
 import ApiUnreachableModal from './ApiUnreachableModal.jsx';
 import YellowFlagRacePaused from './YellowFlagRacePaused.jsx';
 import { useState, useRef, useEffect } from 'react';
@@ -363,6 +364,7 @@ const LapCounter = () => {
                     onEndYellowFlag={() => {}}
                 />
                 <ApiUnreachableModal showMe={!apiReachable} />
+                <SoundBlockedModal armed={startLightsShown} />
                 <StartLights
                     showMe={startLightsShown}
                     onClose={() => { setStartLightsShown(false); setLightsOut(false); setStartLights(0); }}
