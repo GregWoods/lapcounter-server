@@ -29,6 +29,13 @@ DEFAULT_TARGET_LAPS = 20
 light_interval = float(os.getenv('START_LIGHT_INTERVAL', '1.0'))
 lights_out_hold_min = float(os.getenv('LIGHTS_OUT_HOLD_MIN', '0.5'))
 lights_out_hold_max = float(os.getenv('LIGHTS_OUT_HOLD_MAX', '3.0'))
+# Gap between `arm` (ArmedForStart is published immediately, all 5 lights off) and the
+# first light coming on. Exists so every client has a couple of seconds with the
+# countdown already on screen before anything moves — long enough for a freshly
+# loaded browser tab to finish decoding its start-light beep sounds, which otherwise
+# plays late/silent/glitchy on light 1 (Greg, 2026-09-27). Does not change the
+# light-to-light spacing (still START_LIGHT_INTERVAL).
+start_lights_pre_delay = float(os.getenv('START_LIGHTS_PRE_DELAY', '2.0'))
 
 # Maps each Layer 1 clock onto our own time.monotonic(). Fed by every car_timestamp and
 # every layer1_clock heartbeat; read by the race manager for lap 1 and for laps spanning
@@ -386,22 +393,27 @@ def _schedule_start_sequence():
 
     lapdata owns the whole sequence and publishes start_lights in race_state, so
     every client renders the same lights at the same moment (no per-client clock).
+    race.arm() (called just before this) already published ArmedForStart with all 5
+    lights off, so START_LIGHTS_PRE_DELAY is pure dead air before light 1 — every
+    client is already showing the countdown, just not moving yet.
     """
     global _light_timers
     _cancel_start_timers()
     generation = _start_generation
     timers = [
-        threading.Timer(light_interval * i, _set_start_lights(generation, i)) for i in range(1, 6)
+        threading.Timer(start_lights_pre_delay + light_interval * (i - 1), _set_start_lights(generation, i))
+        for i in range(1, 6)
     ]
     hold = random.uniform(lights_out_hold_min, lights_out_hold_max)
-    lights_out_at = light_interval * 5 + hold
+    lights_out_at = start_lights_pre_delay + light_interval * 4 + hold
     timers.append(threading.Timer(lights_out_at, _lights_out(generation)))
     for t in timers:
         t.daemon = True
         t.start()
     _light_timers = timers
     logger.info(
-        f"Race {race.race_id} armed — 5 lights at {light_interval:.1f}s spacing, "
+        f"Race {race.race_id} armed — first light at t+{start_lights_pre_delay:.1f}s, "
+        f"5 lights at {light_interval:.1f}s spacing, "
         f"lights out at t+{lights_out_at:.1f}s"
     )
 
