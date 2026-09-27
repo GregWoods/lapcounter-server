@@ -2,10 +2,14 @@
 
 **Status:** planned 2026-09-14. **Steps 2 and 3 implemented 2026-09-20** — the contract is
 switched, `lapdata/lap_clock.py` exists, and `ble`, `gpio` and `mocked-gpio` all publish
-counters plus a clock id with `BLE_CLOCK_HEARTBEAT=throttle` on by default. **Step 1
-(settings: migration 003, start grid, allow jump starts) is NOT done** and is still
-independent; the `count_first_crossing` flag stays on the meeting until it ships. Step 4
-(hardware day) and step 5 (provenance persistence, open question 1) are outstanding.
+counters plus a clock id with `BLE_CLOCK_HEARTBEAT=throttle` on by default. **Step 1's start
+grid half shipped 2026-09-27** (migration `003-sessions-start-grid.sql`, `sessions.start_grid`,
+Admin session form) — `count_first_crossing` is gone from `meetings` and is now derived from
+`start_grid` in `next_race.py`, unchanged downstream of that. **`allow_jump_starts` is
+deliberately NOT part of this** — it was originally bundled into the same migration number,
+but shipped separately (it's an independent, unenforced setting; see "Jump starts (later)")
+and will get its own migration number when it's built. Step 4 (hardware day) and step 5
+(provenance persistence, open question 1) are outstanding.
 `docs/lap-timing-clocks.md` explains *why*; this file is *how*.
 
 **Where the implementation deviates from this plan, deliberately:**
@@ -269,30 +273,37 @@ refactored.
 
 ## Settings: start grid and jump starts
 
-- **Migration `003-sessions-start-grid-jump-starts.sql`, re-runnable:**
+✅ **Start grid shipped 2026-09-27**, as below. `allow_jump_starts` did not — it remains
+unimplemented and gets its own migration number when the "Jump starts (later)" work happens;
+nothing below describes it as done.
+
+- **Migration `003-sessions-start-grid.sql`, re-runnable:**
   - Add `sessions.start_grid VARCHAR(20) NOT NULL DEFAULT 'BehindLine'`, with a CHECK that it is
     `'InFrontOfLine'` or `'BehindLine'`. The default matches today's
     `count_first_crossing = false`.
-  - Add `sessions.allow_jump_starts BOOLEAN NOT NULL DEFAULT true`, which is today's behaviour:
-    nothing prevents or flags a jump start.
   - In a `DO` block guarded on the column still existing: copy `meetings.count_first_crossing` into
     each session's `start_grid`, then drop the meetings column.
   - ⚠️ The old API image selects that column, so it breaks the moment the migration runs. Apply
     the migration and deploy the new API together.
-- **API:** `RaceSession.start_grid` and `allow_jump_starts`, plus the Create/Update models. Remove
-  the flag from `Meeting`, `MeetingCreate` and `MeetingUpdate`, and from `schema.sql`,
-  `sampledata.sql` and `sampledata.py`. In `next_race.py`, set
-  `count_first_crossing = race_session.start_grid == 'InFrontOfLine'`, and add
-  `allow_jump_starts` to `NextRaceSetup`.
-- **lapdata:** `_load_pending` passes `allow_jump_starts` through into `race_state`, so whatever
-  later enforces it (lapdata's detection, or `ble` if power is held) already has it.
+- **API:** `RaceSession.start_grid`, plus the Create/Update models and
+  `RaceSessionWithState`/`RaceSessionSummary` (the latter two are hand-listed field sets, not a
+  `model_dump()` passthrough — a field missing there round-trips as the Admin form's hardcoded
+  default instead of what was saved, the same footgun the yellow-flag fields hit earlier).
+  Removed the flag from `Meeting`, `MeetingCreate` and `MeetingUpdate`, and from `schema.sql`,
+  `sampledata.sql` and `sampledata.py`. In `next_race.py`,
+  `count_first_crossing = race_session.start_grid == 'InFrontOfLine'`.
+- **lapdata:** unchanged — `_load_pending` still reads `pending.get('count_first_crossing', False)`
+  from the `/races/pending/` payload, which now originates from `start_grid` rather than the
+  meeting flag but has "the same meaning" (decision 2), so nothing downstream of the API needed
+  to change.
 - **Admin:**
-  - Remove the meeting "Start grid" checkbox and its "· First crossing counts as lap 1" badge.
-  - Add a session **Start grid** select: *Behind the finish line (the first crossing starts
-    lap 1)* / *In front of the finish line (the first crossing is lap 1)*.
-  - Add an **Allow jump starts** checkbox, ticked by default, with a hint saying truthfully that
-    it isn't enforced yet. Once capability advertising exists, grey it out unless `throttle` is
-    advertised.
+  - Removed the meeting "Start grid" checkbox and its "· First crossing counts as lap 1" badge.
+  - Added a session **Start grid** select (label only, no hint text yet — a later pass may add
+    clickable help): *Behind the finish line* / *In front of the finish line*, placed directly
+    above the Yellow Flag section. Shown as a session-list detail ("First crossing counts as lap
+    1") only when set to `InFrontOfLine`, matching the old meeting-badge convention of only
+    flagging the non-default case.
+  - `allow_jump_starts` checkbox: **not built** — see above.
 
 ## Jump starts (later)
 
@@ -301,8 +312,9 @@ Deliberately out of this plan: how a jump start is detected (thresholds, what co
 for a later discussion. What this plan fixes in place for that work:
 
 - **It's measured from throttle, not crossings** (decision 3), so it needs the `throttle`
-  capability, and GPIO can never offer it. The `allow_jump_starts` setting already exists by then
-  (migration 003) and reaches `race_state`; this work only has to act on it.
+  capability, and GPIO can never offer it. The `allow_jump_starts` setting does **not** exist yet
+  (migration 003 shipped `start_grid` only, 2026-09-27) — this work has to add it, its own
+  migration, and its passthrough to `race_state` before it can act on it.
 - **Placing a throttle jump before or after lights-out is a clock question**, answered the same
   way as lap 1: convert go onto the throttle's clock once per race (`RaceStart`), and compare the
   throttle's own timestamp rather than its arrival. A squeeze tens of milliseconds before go can
@@ -312,8 +324,9 @@ for a later discussion. What this plan fixes in place for that work:
 
 ## Order of work
 
-1. **Settings.** Migration 003, API, lapdata passthrough, and the Admin start grid and jump-start
-   settings. These are independent and can ship alone.
+1. **Settings.** ✅ Start grid shipped 2026-09-27 (migration 003, API, Admin select). Jump-start
+   settings are still unbuilt and will get their own migration number. These are independent and
+   can ship alone.
 2. **lapdata's pure core.** `lap_clock.py`, `race_manager` on `Crossing`s, and tests. Behaviour
    doesn't change until step 3 wires it in.
 3. **The switch, as one commit.** lapdata wiring, `ble`, `gpio`, `mocked-gpio`, the mock's

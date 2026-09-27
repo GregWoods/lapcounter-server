@@ -88,8 +88,7 @@ CREATE TABLE meetings (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     date DATE,
-    venue VARCHAR(255),
-    count_first_crossing BOOLEAN NOT NULL DEFAULT false
+    venue VARCHAR(255)
 );
 
 CREATE TABLE meeting_drivers (
@@ -119,6 +118,7 @@ CREATE TABLE sessions (
     yellow_grace_power_pct INT NOT NULL DEFAULT 100,      -- % power during the grace period (BLE only)
     yellow_post_grace_power_pct INT NOT NULL DEFAULT 0,   -- % power once the grace period expires (BLE only)
     yellow_lap_penalty_laps INT NOT NULL DEFAULT 0,       -- laps deducted for crossing after grace expiry (GPIO-only substitute; Points sessions only)
+    start_grid VARCHAR(20) NOT NULL DEFAULT 'BehindLine' CHECK (start_grid IN ('InFrontOfLine', 'BehindLine')),  -- which crossing ends lap 1; see CLAUDE.md "Discarded first crossing"
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,

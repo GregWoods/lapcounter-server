@@ -43,7 +43,7 @@ function serializePoints(str) {
 
 function MeetingForm({ initial, onSave, onCancel }) {
     const today = new Date().toISOString().slice(0, 10);
-    const [form, setForm] = useState(initial || { name: '', date: today, venue: '', count_first_crossing: false });
+    const [form, setForm] = useState(initial || { name: '', date: today, venue: '' });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
@@ -75,21 +75,6 @@ function MeetingForm({ initial, onSave, onCancel }) {
                 <label>Venue</label>
                 <input value={form.venue || ''} onChange={e => set('venue', e.target.value)} placeholder="Optional" />
             </div>
-            <div className="admin-form-row">
-                <label>Start grid</label>
-                <div className="admin-form-choice">
-                    <label className="admin-checkbox">
-                        <input type="checkbox" checked={!!form.count_first_crossing} onChange={e => set('count_first_crossing', e.target.checked)} />
-                        <span>First crossing counts as lap 1</span>
-                    </label>
-                    <p className="admin-form-hint">
-                        Tick when the finish line is <strong>behind</strong> the grid, so cars run almost a
-                        full lap to reach it. Leave unticked when the line sits <strong>just ahead of</strong> the
-                        grid: that first crossing isn&apos;t a lap, so it is discarded. Lap 1 is timed from
-                        lights-out either way.
-                    </p>
-                </div>
-            </div>
             {error && <p className="admin-error">{error}</p>}
             <div className="admin-form-actions">
                 <button type="button" className="admin-btn-ghost" onClick={onCancel}>Cancel</button>
@@ -109,6 +94,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl }) 
         yellow_grace_power_pct: initial?.yellow_grace_power_pct ?? 100,
         yellow_post_grace_power_pct: initial?.yellow_post_grace_power_pct ?? 0,
         yellow_lap_penalty_laps: initial?.yellow_lap_penalty_laps ?? DEFAULT_YELLOW_LAP_PENALTY_LAPS,
+        start_grid: initial?.start_grid ?? 'BehindLine',
         scoring_points: initial ? parsePoints(initial.scoring_points) : DEFAULT_POINTS,
     }));
     const [saving, setSaving] = useState(false);
@@ -155,6 +141,7 @@ function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl }) 
             yellow_post_grace_power_pct: hasPowerControl ? (form.yellow_post_grace_power_pct ?? 0) : 100,
             yellow_lap_penalty_laps: (!hasPowerControl && !isFastestLap)
                 ? (form.yellow_lap_penalty_laps || DEFAULT_YELLOW_LAP_PENALTY_LAPS) : 0,
+            start_grid: form.start_grid,
             scoring_method: isFastestLap ? 'FastestLap' : 'PositionPoints',
             scoring_points: isFastestLap ? null : serializePoints(form.scoring_points),
         };
@@ -233,6 +220,13 @@ function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl }) 
                     <p className="admin-form-hint">Driver is disqualified from the session after this many sit-outs.</p>
                 </div>
             )}
+            <div className="admin-form-row">
+                <label>Start grid</label>
+                <select value={form.start_grid} onChange={e => set('start_grid', e.target.value)}>
+                    <option value="BehindLine">Behind the finish line</option>
+                    <option value="InFrontOfLine">In front of the finish line</option>
+                </select>
+            </div>
             <div className="admin-form-section">
                 <h4 className="admin-form-section-title">Yellow Flag</h4>
                 <div className="admin-form-row">
@@ -497,7 +491,6 @@ const Admin = () => {
                                 <span className="admin-meeting-meta">
                                     {meeting.date}
                                     {meeting.venue && ` · ${meeting.venue}`}
-                                    {meeting.count_first_crossing && ' · First crossing counts as lap 1'}
                                 </span>
                             </div>
                             <button
@@ -542,6 +535,9 @@ const Admin = () => {
                                         <span className="admin-session-detail">
                                             {session.end_condition_info}&nbsp;{session.end_condition === 'Time' ? 'minute' : 'lap'} races
                                         </span>
+                                        {session.start_grid === 'InFrontOfLine' && (
+                                            <span className="admin-session-detail">First crossing counts as lap 1</span>
+                                        )}
                                         <span
                                             className="admin-session-icon"
                                             title={SESSION_TYPE_LABELS[session.session_type] || session.session_type}

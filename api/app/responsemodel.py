@@ -91,6 +91,7 @@ class RaceSessionWithState(SQLModel):
     yellow_grace_power_pct: int = 100
     yellow_post_grace_power_pct: int = 0
     yellow_lap_penalty_laps: int = 0
+    start_grid: str = 'BehindLine'  # 'InFrontOfLine' or 'BehindLine' — which crossing ends lap 1
     scoring_method: str
     scoring_points: Optional[str]
     start_time: Optional[time]

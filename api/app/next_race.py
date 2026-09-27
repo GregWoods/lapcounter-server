@@ -485,8 +485,7 @@ def _build_race_setup(dbsession, race):
     other_drivers = [d for d in all_drivers if d.id not in assigned_driver_ids]
     other_drivers.sort(key=lambda d: d.completed_races)
 
-    meeting = dbsession.get(Meeting, race_session.meeting_id)
-    count_first_crossing = meeting.count_first_crossing if meeting else False
+    count_first_crossing = race_session.start_grid == 'InFrontOfLine'
 
     # 1-based ordinal of this session within its meeting (matches the Results tabs).
     meeting_session_ids = list(dbsession.exec(
