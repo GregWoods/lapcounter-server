@@ -499,12 +499,23 @@ def test_race_control_status_sends_nothing(monkeypatch):
 def test_race_state_paused_stops_the_cars(monkeypatch):
     """The Yellow -> Paused grace-expiry transition is only ever announced via
     race_state (lapdata drives it with an internal timer, not a race_control
-    message), so this is the only place that can react to it."""
-    monkeypatch.setattr(ble, '_last_seen_race_state', 'Yellow')
+    message), so this is the only place that can react to it. lapdata resolves the
+    actual percent (0 here matches yellow_post_grace_power_pct's default)."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 100)
     sent = sent_commands(monkeypatch)
-    ble.handle_race_state({'state': 'Paused'})
+    ble.handle_race_state({'state': 'Paused', 'power_pct': 0})
     assert sent == [ble.CARS_STOPPED]
-    assert ble._last_seen_race_state == 'Paused'
+    assert ble._last_seen_power_pct == 0
+
+
+def test_race_state_paused_with_configured_power_sends_that_percent(monkeypatch):
+    """A yellow_post_grace_power_pct other than 0 (limp mode) is just another percent —
+    handle_race_state() no longer branches on the state name at all."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 100)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Paused', 'power_pct': 50})
+    assert sent == [ble.PowerState(ble.POWER_ON_RACING, ble.power_pct_to_multiplier(50))]
+    assert ble._last_seen_power_pct == 50
 
 
 def test_stopping_the_cars_leaves_the_counter_running(monkeypatch):
@@ -523,33 +534,57 @@ def test_stopping_the_cars_leaves_the_counter_running(monkeypatch):
 
 
 def test_race_state_yellow_keeps_full_power(monkeypatch):
-    monkeypatch.setattr(ble, '_last_seen_race_state', 'Running')
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 100)
     sent = sent_commands(monkeypatch)
-    ble.handle_race_state({'state': 'Yellow'})
-    assert sent == [ble.TRACK_RACING]
+    ble.handle_race_state({'state': 'Yellow', 'power_pct': 100})
+    assert sent == []  # already at 100%, no edge
 
 
-def test_race_state_repeated_same_state_does_not_resend(monkeypatch):
+def test_race_state_yellow_grace_power_below_full_sends_it(monkeypatch):
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 100)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Yellow', 'power_pct': 60})
+    assert sent == [ble.PowerState(ble.POWER_ON_RACING, ble.power_pct_to_multiplier(60))]
+
+
+def test_race_state_repeated_same_percent_does_not_resend(monkeypatch):
     """race_state republishes on every lap crossing — a write per message would
     spam the powerbase with redundant GATT writes."""
-    monkeypatch.setattr(ble, '_last_seen_race_state', 'Running')
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 100)
     sent = sent_commands(monkeypatch)
-    ble.handle_race_state({'state': 'Running'})
+    ble.handle_race_state({'state': 'Running', 'power_pct': 100})
     assert sent == []
 
 
-@pytest.mark.parametrize('state, expected', [
-    ('Paused', ble.CARS_STOPPED),
-    ('Yellow', ble.TRACK_RACING),
-    ('Running', ble.TRACK_RACING),
-    ('Finished', ble.TRACK_RACING),
-    ('NotStarted', ble.TRACK_RACING),
+def test_race_state_missing_power_pct_defaults_to_full(monkeypatch):
+    """An old lapdata image that hasn't shipped power_pct yet must not read as 0%."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Running'})
+    assert sent == [ble.TRACK_RACING]
+
+
+@pytest.mark.parametrize('pct, expected', [(0, 0x00), (100, 0x3F), (50, round(0x3F / 2))])
+def test_power_pct_to_multiplier_boundaries(pct, expected):
+    assert ble.power_pct_to_multiplier(pct) == expected
+
+
+def test_power_pct_to_multiplier_clamps_out_of_range():
+    assert ble.power_pct_to_multiplier(-10) == 0
+    assert ble.power_pct_to_multiplier(200) == ble.FULL_POWER
+
+
+@pytest.mark.parametrize('pct, expected', [
+    (0, ble.CARS_STOPPED),
+    (100, ble.TRACK_RACING),
     (None, ble.TRACK_RACING),
+    (50, ble.PowerState(ble.POWER_ON_RACING, ble.power_pct_to_multiplier(50))),
 ])
-def test_connect_time_power_follows_the_race(state, expected):
+def test_connect_time_power_follows_the_race(pct, expected):
     """run() writes this on every BLE connect. Always TRACK_RACING would set cars moving
-    on a Paused race after a reconnect, since the Paused edge was already seen."""
-    assert ble._command_for_race_state(state) == expected
+    on a Paused race after a reconnect, since the Paused edge was already seen. None
+    (no race_state seen yet) still means full power, matching GPIO."""
+    assert ble._command_for_power_pct(pct) == expected
 
 
 def test_mqtt_connect_asks_lapdata_for_race_state():
@@ -559,10 +594,26 @@ def test_mqtt_connect_asks_lapdata_for_race_state():
     published = []
     client = types.SimpleNamespace(
         subscribe=lambda topic: None,
-        publish=lambda topic, payload: published.append((topic, json.loads(payload))),
+        publish=lambda topic, payload, retain=False: published.append((topic, json.loads(payload), retain)),
     )
     ble.on_mqtt_connect(client, None, None, None, None)
-    assert ('race_control', {'command': 'status'}) in published
+    assert ('race_control', {'command': 'status'}, False) in published
+
+
+def test_mqtt_connect_advertises_capabilities():
+    """Retained, so a subscriber joining mid-meet gets the answer immediately."""
+    import json
+    published = []
+    client = types.SimpleNamespace(
+        subscribe=lambda topic: None,
+        publish=lambda topic, payload, retain=False: published.append((topic, json.loads(payload), retain)),
+    )
+    ble.on_mqtt_connect(client, None, None, None, None)
+    topic, payload, retain = next(p for p in published if p[0] == 'layer1_status')
+    assert retain is True
+    assert payload['layer1'] == 'ble'
+    assert 'power_control' in payload['capabilities']
+    assert payload['timing_resolution_ms'] == 10
 
 
 class FakeBleakClient:
@@ -585,11 +636,11 @@ def test_failed_power_write_is_retried_with_the_current_race_state(monkeypatch):
     a retried HALT landing after a resume would cut power on a running race."""
     client = FakeBleakClient(fail=True)
     monkeypatch.setattr(ble, '_bleak_client', client)
-    monkeypatch.setattr(ble, '_last_seen_race_state', 'Paused')
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 0)
     asyncio.run(ble._write_command_async(ble.CARS_STOPPED))
     assert ble._power_retry_at is not None
 
-    ble._last_seen_race_state = 'Running'     # operator resumed in the meantime
+    ble._last_seen_power_pct = 100     # operator resumed in the meantime
     client.fail = False
     ble._power_retry_at = 0.0                 # due now
     asyncio.run(ble._retry_power_if_due())

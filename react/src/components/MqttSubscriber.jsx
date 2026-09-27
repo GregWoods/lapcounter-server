@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 
 
-const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, onAdminUpdateMessage, clientRef, debug }) => {
+const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, onAdminUpdateMessage, onLayer1StatusMessage, clientRef, debug }) => {
 
     const [client, setClient] = useState(null);
 
@@ -47,6 +47,16 @@ const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, on
             });
         }
 
+        if (onLayer1StatusMessage) {
+            // Retained: whatever Layer 1 is running publishes its capabilities once on
+            // connect, so a subscriber joining mid-meet gets the answer immediately
+            // rather than waiting for the next race_state.
+            client.subscribe('layer1_status', { qos: 0 }, (error) => {
+                if (error) console.log('Subscribe error (layer1_status)', error);
+                else if (debug) console.log('Subscribed to layer1_status');
+            });
+        }
+
         const handleConnect = () => {
             if (debug) console.log('Mqtt Connected');
         };
@@ -67,6 +77,9 @@ const MqttSubscriber = ({ mqttHost, onRaceStateMessage, onRaceControlMessage, on
             }
             if (topic === 'admin_update' && onAdminUpdateMessage) {
                 onAdminUpdateMessage(parsed);
+            }
+            if (topic === 'layer1_status' && onLayer1StatusMessage) {
+                onLayer1StatusMessage(parsed);
             }
         };
 

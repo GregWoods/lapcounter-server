@@ -83,6 +83,14 @@ class RaceSessionWithState(SQLModel):
     end_condition_info: Optional[int]
     races_per_driver: Optional[int] = None
     max_sit_outs: Optional[int] = None
+    # These four were previously missing here, so re-opening a session to edit it always
+    # showed the Admin form's hardcoded defaults instead of what was actually saved — and
+    # saving again silently reset the DB back to those defaults. Added alongside the new
+    # power/penalty fields so all four round-trip correctly.
+    yellow_grace_seconds: int = 5
+    yellow_grace_power_pct: int = 100
+    yellow_post_grace_power_pct: int = 0
+    yellow_lap_penalty_laps: int = 0
     scoring_method: str
     scoring_points: Optional[str]
     start_time: Optional[time]
@@ -117,6 +125,9 @@ class NextRaceSetup(SQLModel):
     # race_duration_seconds: without it lapdata has to guess a lap target for a staged race,
     # and a session set to 5 laps still showed 20 until the race was armed.
     yellow_grace_seconds: int = 5  # full-power seconds after a yellow flag before power cuts
+    yellow_grace_power_pct: int = 100  # % power during the grace period (BLE only)
+    yellow_post_grace_power_pct: int = 0  # % power once the grace period expires (BLE only)
+    yellow_lap_penalty_laps: int = 0  # laps deducted for crossing after grace expiry (GPIO-only, Points sessions only)
     session_drivers: list[SessionDriverFastestLap] = []  # FastestLap sessions only
 
 

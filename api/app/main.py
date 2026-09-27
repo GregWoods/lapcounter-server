@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState, RaceSessionSummary
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup
+from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup, effective_laps_completed
 from points import calculate_race_points
 
 settings = Settings()
@@ -445,6 +445,18 @@ def finish_race(race_id: int, dbsession: SessionDep):
     return {"ok": True}
 
 
+@app.post("/races/{race_id}/drivers/{driver_id}/penalty")
+def add_race_penalty(race_id: int, driver_id: int, penalty: RacePenaltyCreate, dbsession: SessionDep):
+    """Records a penalty lapdata's race manager already applied live (currently only a
+    yellow-flag lap penalty) so it survives past the race and build_session_results()
+    can fold it into final standings. Fire-and-forget from lapdata, same pattern as
+    /races/{id}/start and /finish."""
+    row = RacePenalty(race_id=race_id, driver_id=driver_id, **penalty.model_dump())
+    dbsession.add(row)
+    dbsession.commit()
+    return {"ok": True}
+
+
 @app.get("/drivers/nextrace/")
 def get_drivers_for_next_race(dbsession: SessionDep):
     active_session = get_active_session(dbsession)
@@ -725,16 +737,31 @@ def build_session_results(race_session, dbsession):
 
     # Points / position scoring path
     scoring_points_json = race_session.scoring_points
+
+    # Yellow-flag lap penalties (GPIO-only substitute for a real power cut) are recorded
+    # separately in race_penalties rather than in driver_races.laps_completed, since
+    # that column is dbwriter's own aggregate from driver_lap messages and a penalty
+    # never emits one. Fold them in here so a penalized driver's final position/points
+    # reflect it, not just the live race_state lapdata published mid-race.
+    lap_penalties = dbsession.exec(
+        select(RacePenalty).where(RacePenalty.race_id.in_(race_ids), RacePenalty.penalty_type == 'lap')
+    ).all()
+    lap_penalty_by_race_driver: dict = defaultdict(int)
+    for p in lap_penalties:
+        lap_penalty_by_race_driver[(p.race_id, p.driver_id)] += int(p.amount)
+
     positions = {}
     laps_by_race = defaultdict(dict)
     for race_id in race_ids:
+        def effective_laps(dr):
+            return effective_laps_completed(dr.laps_completed, lap_penalty_by_race_driver.get((race_id, dr.driver_id), 0))
         sorted_drs = sorted(
             race_groups.get(race_id, []),
-            key=lambda dr: (-(dr.laps_completed or 0), dr.fastest_lap_time or 999999)
+            key=lambda dr: (-effective_laps(dr), dr.fastest_lap_time or 999999)
         )
         positions[race_id] = {dr.driver_id: i + 1 for i, dr in enumerate(sorted_drs)}
         for dr in race_groups.get(race_id, []):
-            laps_by_race[race_id][dr.driver_id] = dr.laps_completed
+            laps_by_race[race_id][dr.driver_id] = effective_laps(dr)
 
     driver_rows = []
     for did, name in meeting_driver_names.items():

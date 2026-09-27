@@ -5,6 +5,7 @@ from next_race import (
     select_balanced_race_drivers,
     build_session_schedule,
     count_running_race,
+    effective_laps_completed,
 )
 from model import Lane, RaceSession
 from responsemodel import DriverWithLane
@@ -285,3 +286,23 @@ def test_count_running_race_counts_race_and_lane_without_mutating(test_drivers):
     assert counted[0].completed_races == 19 and counted[0].lane4_count == 4
     assert counted[1].completed_races == 18, "Drivers not in the running race are unchanged"
     assert drivers[0].completed_races == 18, "Input must not be mutated"
+
+
+# --- effective_laps_completed (yellow-flag lap penalty applied to Points results) ---
+
+def test_effective_laps_completed_subtracts_penalty():
+    assert effective_laps_completed(10, 1) == 9
+
+
+def test_effective_laps_completed_floors_at_zero():
+    assert effective_laps_completed(1, 5) == 0
+
+
+def test_effective_laps_completed_handles_none_laps():
+    """laps_completed is NULL on sample data and races with no counted laps."""
+    assert effective_laps_completed(None, 1) == 0
+
+
+def test_effective_laps_completed_no_penalty_is_a_no_op():
+    assert effective_laps_completed(10, 0) == 10
+    assert effective_laps_completed(10, None) == 10

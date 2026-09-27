@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS race_penalties;
 DROP TABLE IF EXISTS race_withdrawals;
 DROP TABLE IF EXISTS session_drivers;
 DROP TABLE IF EXISTS driver_laps;
@@ -115,6 +116,9 @@ CREATE TABLE sessions (
     races_per_driver INT NULL,
     max_sit_outs INT NULL,   -- skips before a driver is offered for disqualification (NULL = no limit)
     yellow_grace_seconds INT NOT NULL DEFAULT 5,   -- full-power seconds after a yellow flag before power cuts
+    yellow_grace_power_pct INT NOT NULL DEFAULT 100,      -- % power during the grace period (BLE only)
+    yellow_post_grace_power_pct INT NOT NULL DEFAULT 0,   -- % power once the grace period expires (BLE only)
+    yellow_lap_penalty_laps INT NOT NULL DEFAULT 0,       -- laps deducted for crossing after grace expiry (GPIO-only substitute; Points sessions only)
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,
@@ -178,4 +182,17 @@ CREATE TABLE session_drivers (
     driver_id INT REFERENCES drivers(id),
     disqualified BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (session_id, driver_id)
+);
+
+-- A penalty applied by lapdata's race manager (currently only a yellow-flag lap
+-- penalty, penalty_type='lap') so it survives past the race and factors into
+-- build_session_results() instead of only affecting live race_state.
+CREATE TABLE race_penalties (
+    id SERIAL PRIMARY KEY,
+    race_id INT REFERENCES races(id),
+    driver_id INT REFERENCES drivers(id),
+    penalty_type VARCHAR(20) NOT NULL,
+    amount NUMERIC NOT NULL,
+    reason VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

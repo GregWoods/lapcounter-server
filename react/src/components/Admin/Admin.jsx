@@ -22,6 +22,7 @@ const DEFAULT_MINUTES = 5;
 const DEFAULT_RACES_PER_DRIVER = 3;
 const DEFAULT_MAX_SIT_OUTS = 2;
 const DEFAULT_YELLOW_GRACE_SECONDS = 5;
+const DEFAULT_YELLOW_LAP_PENALTY_LAPS = 1;
 const DEFAULT_POINTS = '10, 8, 6, 4, 3, 2';
 
 function parsePoints(str) {
@@ -91,20 +92,23 @@ function MeetingForm({ initial, onSave, onCancel }) {
             </div>
             {error && <p className="admin-error">{error}</p>}
             <div className="admin-form-actions">
-                <button type="submit" className="admin-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
                 <button type="button" className="admin-btn-ghost" onClick={onCancel}>Cancel</button>
+                <button type="submit" className="admin-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
         </form>
     );
 }
 
-function SessionForm({ initial, meetingId, onSave, onCancel }) {
+function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl }) {
     const [form, setForm] = useState(() => ({
         session_type: initial?.session_type ?? 'Points',
         end_condition_info: initial?.end_condition_info ?? DEFAULT_LAPS,
         races_per_driver: initial?.races_per_driver ?? DEFAULT_RACES_PER_DRIVER,
         max_sit_outs: initial?.max_sit_outs ?? DEFAULT_MAX_SIT_OUTS,
         yellow_grace_seconds: initial?.yellow_grace_seconds ?? DEFAULT_YELLOW_GRACE_SECONDS,
+        yellow_grace_power_pct: initial?.yellow_grace_power_pct ?? 100,
+        yellow_post_grace_power_pct: initial?.yellow_post_grace_power_pct ?? 0,
+        yellow_lap_penalty_laps: initial?.yellow_lap_penalty_laps ?? DEFAULT_YELLOW_LAP_PENALTY_LAPS,
         scoring_points: initial ? parsePoints(initial.scoring_points) : DEFAULT_POINTS,
     }));
     const [saving, setSaving] = useState(false);
@@ -113,6 +117,12 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
     const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
     const isFastestLap = form.session_type === 'FastestLap';
+    // Null means no sit-out limit — the "Sit-out penalty" toggle is just a friendlier
+    // face on that same nullability, rather than a separate field.
+    const sitOutPenaltyEnabled = form.max_sit_outs != null;
+    const handleSitOutPenaltyToggle = (checked) => {
+        set('max_sit_outs', checked ? (initial?.max_sit_outs ?? DEFAULT_MAX_SIT_OUTS) : null);
+    };
 
     const handleSessionTypeChange = (newType) => {
         setForm(f => ({
@@ -135,6 +145,16 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
             races_per_driver: form.races_per_driver || null,
             max_sit_outs: form.max_sit_outs || null,
             yellow_grace_seconds: form.yellow_grace_seconds || DEFAULT_YELLOW_GRACE_SECONDS,
+            // Locked server-side-safe regardless of what's in React state — the power
+            // fields are hidden rather than cleared when there's no power control, so
+            // stale form state could still carry a value, and the running Layer 1 could
+            // in principle change between opening this form and saving it. Without power
+            // control, the percentages can only ever be 100 (nothing can enforce less),
+            // and the lap penalty is Finishing Position sessions only.
+            yellow_grace_power_pct: hasPowerControl ? (form.yellow_grace_power_pct ?? 100) : 100,
+            yellow_post_grace_power_pct: hasPowerControl ? (form.yellow_post_grace_power_pct ?? 0) : 100,
+            yellow_lap_penalty_laps: (!hasPowerControl && !isFastestLap)
+                ? (form.yellow_lap_penalty_laps || DEFAULT_YELLOW_LAP_PENALTY_LAPS) : 0,
             scoring_method: isFastestLap ? 'FastestLap' : 'PositionPoints',
             scoring_points: isFastestLap ? null : serializePoints(form.scoring_points),
         };
@@ -149,19 +169,23 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
     return (
         <form className="admin-form admin-session-form" onSubmit={handleSubmit}>
             <div className="admin-form-row">
-                <label>Race Type</label>
+                <label>Race type</label>
                 <select value={form.session_type} onChange={e => handleSessionTypeChange(e.target.value)}>
                     {RACE_TYPES.map(t => <option key={t} value={t}>{SESSION_TYPE_LABELS[t]}</option>)}
                 </select>
             </div>
             <div className="admin-form-row">
-                <label>{isFastestLap ? 'Race Time (minutes)' : 'Race Laps'}</label>
-                <input
-                    type="number"
-                    value={form.end_condition_info || ''}
-                    onChange={e => set('end_condition_info', parseInt(e.target.value) || null)}
-                    min="1"
-                />
+                <label>{isFastestLap ? 'Duration' : 'Race laps'}</label>
+                <div className="admin-form-inline-value">
+                    <input
+                        className="admin-input-narrow"
+                        type="number"
+                        value={form.end_condition_info || ''}
+                        onChange={e => set('end_condition_info', parseInt(e.target.value) || null)}
+                        min="1"
+                    />
+                    <span className="admin-form-unit">{isFastestLap ? 'min' : 'laps'}</span>
+                </div>
             </div>
             {!isFastestLap && (
                 <div className="admin-form-row">
@@ -173,10 +197,47 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
                     />
                 </div>
             )}
-            {!isFastestLap && (
+            <div className="admin-form-row">
+                <label>Races per driver</label>
+                <input
+                    className="admin-input-narrow"
+                    type="number"
+                    value={form.races_per_driver || ''}
+                    onChange={e => set('races_per_driver', parseInt(e.target.value) || null)}
+                    min="1"
+                />
+            </div>
+            <div className="admin-form-row">
+                <label>Sit-out penalty</label>
+                <label className="admin-toggle">
+                    <input
+                        type="checkbox"
+                        checked={sitOutPenaltyEnabled}
+                        onChange={e => handleSitOutPenaltyToggle(e.target.checked)}
+                    />
+                    <span className="admin-toggle-track"><span className="admin-toggle-thumb" /></span>
+                </label>
+            </div>
+            {sitOutPenaltyEnabled && (
+                <div className="admin-form-field-group">
+                    <div className="admin-form-row">
+                        <label>Max sit-outs</label>
+                        <input
+                            className="admin-input-narrow"
+                            type="number"
+                            value={form.max_sit_outs || ''}
+                            onChange={e => set('max_sit_outs', parseInt(e.target.value) || null)}
+                            min="1"
+                        />
+                    </div>
+                    <p className="admin-form-hint">Driver is disqualified from the session after this many sit-outs.</p>
+                </div>
+            )}
+            <div className="admin-form-section">
+                <h4 className="admin-form-section-title">Yellow Flag</h4>
                 <div className="admin-form-row">
-                    <label>Yellow flag grace</label>
-                    <div className="admin-form-inline">
+                    <label>Grace period</label>
+                    <div className="admin-form-inline-value">
                         <input
                             className="admin-input-narrow"
                             type="number"
@@ -184,43 +245,64 @@ function SessionForm({ initial, meetingId, onSave, onCancel }) {
                             onChange={e => set('yellow_grace_seconds', parseInt(e.target.value) || null)}
                             min="1"
                         />
-                        <span className="admin-form-suffix">
-                            seconds at full power before power cuts (BLE only)
-                        </span>
+                        <span className="admin-form-unit">s</span>
                     </div>
                 </div>
-            )}
-            <div className="admin-form-row">
-                <label>Session ends after</label>
-                <div className="admin-form-inline">
-                    <input
-                        className="admin-input-narrow"
-                        type="number"
-                        value={form.races_per_driver || ''}
-                        onChange={e => set('races_per_driver', parseInt(e.target.value) || null)}
-                        min="1"
-                    />
-                    <span className="admin-form-suffix">races per driver</span>
-                </div>
-            </div>
-            <div className="admin-form-row">
-                <label>Disqualify after</label>
-                <div className="admin-form-inline">
-                    <input
-                        className="admin-input-narrow"
-                        type="number"
-                        value={form.max_sit_outs || ''}
-                        onChange={e => set('max_sit_outs', parseInt(e.target.value) || null)}
-                        min="1"
-                        placeholder="—"
-                    />
-                    <span className="admin-form-suffix">sit-outs (blank = no limit)</span>
-                </div>
+                {hasPowerControl && (
+                    <>
+                        <div className="admin-form-row">
+                            <label>Max power during grace</label>
+                            <div className="admin-form-inline-value">
+                                <input
+                                    className="admin-input-narrow"
+                                    type="number"
+                                    value={form.yellow_grace_power_pct ?? ''}
+                                    onChange={e => set('yellow_grace_power_pct', parseInt(e.target.value) || 0)}
+                                    min="0"
+                                    max="100"
+                                />
+                                <span className="admin-form-unit">%</span>
+                            </div>
+                        </div>
+                        <div className="admin-form-row">
+                            <label>Max power after grace</label>
+                            <div className="admin-form-inline-value">
+                                <input
+                                    className="admin-input-narrow"
+                                    type="number"
+                                    value={form.yellow_post_grace_power_pct ?? ''}
+                                    onChange={e => set('yellow_post_grace_power_pct', parseInt(e.target.value) || 0)}
+                                    min="0"
+                                    max="100"
+                                />
+                                <span className="admin-form-unit">%</span>
+                            </div>
+                        </div>
+                    </>
+                )}
+                {!hasPowerControl && !isFastestLap && (
+                    <div className="admin-form-field-group">
+                        <div className="admin-form-row">
+                            <label>Penalty</label>
+                            <div className="admin-form-inline-value">
+                                <input
+                                    className="admin-input-narrow"
+                                    type="number"
+                                    value={form.yellow_lap_penalty_laps || ''}
+                                    onChange={e => set('yellow_lap_penalty_laps', parseInt(e.target.value) || null)}
+                                    min="1"
+                                />
+                                <span className="admin-form-unit">laps</span>
+                            </div>
+                        </div>
+                        <p className="admin-form-hint">Added to a driver&apos;s lap count for crossing the line after the grace period expires.</p>
+                    </div>
+                )}
             </div>
             {error && <p className="admin-error">{error}</p>}
             <div className="admin-form-actions">
-                <button type="submit" className="admin-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
                 <button type="button" className="admin-btn-ghost" onClick={onCancel}>Cancel</button>
+                <button type="submit" className="admin-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
         </form>
     );
@@ -253,6 +335,13 @@ const Admin = () => {
     const publishAdminUpdate = (reason, extra = {}) => {
         mqttClientRef.current?.publish('admin_update', JSON.stringify({ reason, ...extra }));
     };
+
+    // null = no layer1_status seen yet. Treated the same as "no power control" for
+    // gating the session form's power-percentage fields — the form must never let an
+    // operator set a percentage that silently does nothing, so "unknown" defaults to
+    // the safe, locked state rather than briefly showing the fields as editable.
+    const [layer1Capabilities, setLayer1Capabilities] = useState(null);
+    const hasPowerControl = !!layer1Capabilities?.includes('power_control');
 
     const meetingsSorted = [...meetings].sort((a, b) => b.date.localeCompare(a.date));
     const inProgressMeeting = meetingsSorted.find(m => (m.sessions || []).some(s => s.state === 'InProgress'));
@@ -344,7 +433,11 @@ const Admin = () => {
 
     return (
         <div className="admin-page">
-            <MqttSubscriber mqttHost={MQTT_URL} clientRef={mqttClientRef} />
+            <MqttSubscriber
+                mqttHost={MQTT_URL}
+                clientRef={mqttClientRef}
+                onLayer1StatusMessage={msg => setLayer1Capabilities(msg.capabilities || [])}
+            />
             <div className="admin-header">
                 <div className="admin-header-left">
                     <Link to="/" className="home-icon-link"><House /></Link>
@@ -432,6 +525,7 @@ const Admin = () => {
                                         meetingId={meeting.id}
                                         onSave={(form) => handleUpdateSession(session.id, meeting.id, form)}
                                         onCancel={() => setEditingSessionId(null)}
+                                        hasPowerControl={hasPowerControl}
                                     />
                                 ) : (
                                     <div className="admin-session-display">
@@ -488,6 +582,7 @@ const Admin = () => {
                                     meetingId={meeting.id}
                                     onSave={(form) => handleCreateSession(meeting.id, form)}
                                     onCancel={() => setAddingSessionTo(null)}
+                                    hasPowerControl={hasPowerControl}
                                 />
                             </div>
                         ) : (

@@ -43,6 +43,7 @@ export default function RaceControl() {
 
             let targetLaps = 20;
             let sessionInProgress = false, nextSessionAvailable = false, activeSessionId = null;
+            let sessionNumber = pending?.session_number ?? null;
             if (meeting?.id) {
                 const sRes = await fetch(`${API_URL}/sessions?meeting_id=${meeting.id}`);
                 if (sRes.ok) {
@@ -56,12 +57,21 @@ export default function RaceControl() {
                     if (active?.end_condition === 'Laps' && active.end_condition_info) {
                         targetLaps = active.end_condition_info;
                     }
+                    // /races/pending/ 404s once a session's last race finishes, so `pending`
+                    // (and its session_number) is null right when a completed session's name
+                    // still needs to show — fall back to the last session that actually ran
+                    // (ordinal = its index, sessions come back ordered by id, same as
+                    // next_race.py's session_number calculation) rather than showing "—".
+                    if (sessionNumber == null) {
+                        const lastRun = [...sessions].reverse().find(s => s.state !== 'NotStarted');
+                        if (lastRun) sessionNumber = sessions.indexOf(lastRun) + 1;
+                    }
                 }
             }
             setInfo({
                 meetingName: meeting?.name ?? '',
                 sessionType: pending?.session_type ?? null,
-                sessionNumber: pending?.session_number ?? null,
+                sessionNumber,
                 raceNumber: pending?.race_number ?? null,
                 racesTotal: pending?.session_races_total ?? null,
                 targetLaps,
@@ -119,7 +129,6 @@ export default function RaceControl() {
 
     // Live values win; fall back to the API snapshot before the first MQTT message.
     const state = liveRaceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
-    const sessionType = liveRaceState?.session_type ?? info.sessionType;
     // ⚠️ `||`, not `??`. lapdata now publishes `race_number: null` when no race is loaded, so
     // `??` would be correct against current lapdata — but an older lapdata image publishes 0
     // (it used to default to 0), and `??` passes a 0 straight through. 0 is falsy, so the title
@@ -128,7 +137,6 @@ export default function RaceControl() {
     // right against a Pi whose lapdata hasn't been redeployed yet.
     const raceNumber = liveRaceState?.race_number || info.raceNumber;
     const raceId = liveRaceState?.race_id ?? info.pendingRaceId;
-    const isFastestLap = sessionType === 'FastestLap';
 
     const live = state === 'Running' || state === 'ArmedForStart';
 
@@ -223,11 +231,9 @@ export default function RaceControl() {
             <section className="rc-actions">
                 {live && (
                     <>
-                        {!isFastestLap && (
-                            <button className="rc-btn rc-btn--yellow" onClick={yellowFlag}>
-                                <Pause size={32} /> Yellow Flag
-                            </button>
-                        )}
+                        <button className="rc-btn rc-btn--yellow" onClick={yellowFlag}>
+                            <Pause size={32} /> Yellow Flag
+                        </button>
                         <button className="rc-btn rc-btn--end" onClick={endRace}>
                             <ChequeredFlagIcon /> End Race
                         </button>

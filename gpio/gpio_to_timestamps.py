@@ -85,7 +85,20 @@ def car_detected(_):
 print(f"lane selected GPIO: {lane['SELECTED']}")
 GPIO.add_event_detect(lane["SELECTED"], GPIO.FALLING, callback=car_detected)
 
+def on_connect(_client, _userdata, _flags, _reason_code, _properties):
+    # Retained: a browser or lapdata connecting mid-meet needs the answer immediately.
+    # Republished on every reconnect too, in case a broker restart cleared it. See
+    # CLAUDE.md "Layer 1 capability advertising" — nothing downstream may branch on
+    # 'layer1', only on 'capabilities'. GPIO has no power control at all, so this is the
+    # minimal capability set; both lane containers publish the same payload.
+    _client.publish('layer1_status', json.dumps({
+        'layer1': 'gpio',
+        'capabilities': ['lap_timing'],
+        'timing_resolution_ms': 1,
+    }), retain=True)
+
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+client.on_connect = on_connect
 client.connect(mqtt_hostname)
 # create a new thread to handle the network loop. Also handles reconnecting
 client.loop_start()

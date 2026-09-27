@@ -56,6 +56,15 @@ _race_lock = threading.RLock()
 # so persistence is browser-independent — no client needs to be open.
 _last_posted_state: str | None = None
 
+# Capabilities of whichever Layer 1 is currently running, from its retained
+# layer1_status message (empty until one arrives — treated the same as "no
+# capabilities" so a browser never sees a capability that hasn't actually been
+# confirmed). lapdata doesn't act on this itself; it's folded into race_state purely so
+# React can grey out settings that need a capability the running Layer 1 lacks, and the
+# Admin form can lock the yellow-flag power percentages without duplicating this
+# subscription. See CLAUDE.md "Layer 1 capability advertising".
+_layer1_capabilities: list = []
+
 # Hardware-level: the last crossing seen per lane, for phantom-trigger filtering. None
 # means "no crossing to compare against", which is where every lane starts and what
 # lights-out resets them to — so the first crossing of a race is never filtered.
@@ -285,13 +294,15 @@ def _yellow_tick(generation: int, seconds_left: int):
 def _yellow_expiry(generation: int):
     """Return the timer callback that ends the grace period by moving to Paused.
     Calls race.pause() directly rather than routing through a race_control message —
-    BLE's handle_race_state() reacts to the resulting Paused race_state to send
-    POWER_ON_TIMER_HALT, since this transition is never announced any other way."""
+    BLE's handle_race_state() reacts to the resulting Paused race_state to send the
+    session's configured post-grace power, since this transition is never announced any
+    other way. Passing from_yellow_expiry=True is what makes on_lap() eligible to apply
+    the lap penalty (a manual race.pause() elsewhere never sets it)."""
     def _cb():
         with _race_lock:
             if generation != _yellow_generation or race.state != 'Yellow':
                 return
-            race.pause()
+            race.pause(power_pct=race.yellow_post_grace_power_pct, from_yellow_expiry=True)
             publish_race_state()
             logger.info(f"Race {race.race_id} yellow grace expired — power cut")
     return _cb
@@ -418,6 +429,9 @@ def _load_pending(pending: dict, target_laps: int | None = None):
         race_duration_seconds=pending.get('race_duration_seconds'),
         session_drivers=pending.get('session_drivers', []),
         yellow_grace_seconds=pending.get('yellow_grace_seconds', 5),
+        yellow_grace_power_pct=pending.get('yellow_grace_power_pct', 100),
+        yellow_post_grace_power_pct=pending.get('yellow_post_grace_power_pct', 0),
+        yellow_lap_penalty_laps=pending.get('yellow_lap_penalty_laps', 0),
     )
 
 
@@ -606,7 +620,15 @@ def publish_race_state():
     # Not race-manager business (race_manager.py is pure/DB-free), so it's folded in
     # here rather than in RaceManager.to_dict() — see _api_reachable above.
     state_dict['api_reachable'] = _api_reachable
+    state_dict['capabilities'] = _layer1_capabilities
     client.publish('race_state', json.dumps(state_dict))
+
+    # Persist any penalty race_manager applied since the last publish (currently only a
+    # yellow-flag lap penalty) — kept out of race_manager.py, which is pure/DB-free, the
+    # same way /start and /finish are POSTed from here rather than from RaceManager.
+    for record in race.pending_penalty_records:
+        _post_api(f"/races/{race.race_id}/drivers/{record['driver_id']}/penalty", record)
+    race.pending_penalty_records = []
 
     # Persist race-lifecycle transitions via the API (race Running/Finished, session
     # InProgress, and the automatic session-end). Starting the next race/session stays
@@ -618,6 +640,14 @@ def publish_race_state():
         elif state == 'Finished':
             _post_api(f"/races/{race.race_id}/finish")
         _last_posted_state = state
+
+
+def handle_layer1_status(data: dict):
+    """Store the capabilities of whichever Layer 1 is currently running (a retained
+    message, so this fires immediately on every connect/reconnect). Never branch on
+    data.get('layer1') here or anywhere downstream — only on the capabilities list."""
+    global _layer1_capabilities
+    _layer1_capabilities = data.get('capabilities', [])
 
 
 def on_message(_client, _userdata, msg):
@@ -634,6 +664,9 @@ def on_message(_client, _userdata, msg):
         if msg.topic == 'layer1_clock':
             handle_layer1_clock(data, arrival)
             return
+        if msg.topic == 'layer1_status':
+            handle_layer1_status(data)
+            return
         with _race_lock:
             if msg.topic == 'car_timestamp':
                 handle_car_timestamp(data, arrival)
@@ -646,6 +679,7 @@ def on_message(_client, _userdata, msg):
 def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     _client.subscribe('car_timestamp')
     _client.subscribe('layer1_clock')
+    _client.subscribe('layer1_status')
     _client.subscribe('race_control')
     logger.info("Connected to MQTT broker")
 

@@ -62,8 +62,14 @@ const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestO
             </div>
 
             <div className="drivercontent">
-                <DriverCardTime fastestLapClass={lastLapClass} label="Last Lap" lapTime={driver.lastLap} />
-                <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
+                {driver.penaltyNotice ? (
+                    <div className="penaltynotice">Penalty -{driver.penaltyNotice.amount} lap{driver.penaltyNotice.amount === 1 ? '' : 's'}</div>
+                ) : (
+                    <>
+                        <DriverCardTime fastestLapClass={lastLapClass} label="Last Lap" lapTime={driver.lastLap} />
+                        <DriverCardTime fastestLapClass={fastestLapClass} label="Fastest Lap" lapTime={driver.fastestLap} />
+                    </>
+                )}
             </div>
 
             <DriverCardPosition 

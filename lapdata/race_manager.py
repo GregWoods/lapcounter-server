@@ -29,6 +29,13 @@ class DriverState:
     last_lap_timing: str = ''
     finished: bool = False
     lap_times: list = field(default_factory=list)  # all real lap times in order
+    # Whether this driver has already been charged the yellow-flag lap penalty for the
+    # CURRENT incident — reset by yellow(), so a driver can only be penalized once per
+    # incident even if they keep crossing during the same Paused window.
+    yellow_penalty_applied: bool = False
+    # Set the instant a penalty is applied, cleared on resume() — what the leaderboard's
+    # instant "Penalty -N lap(s)" notice renders from.
+    penalty_notice: Optional[dict] = None
 
     @property
     def has_started(self) -> bool:
@@ -63,6 +70,28 @@ class RaceManager:
         # renders the number it's given instead of comparing a deadline against its
         # own clock — which on an old phone around the track can't be trusted.
         self.yellow_seconds_left: Optional[int] = None
+        # % of full power the powerbase should be at right now (BLE only; GPIO can never
+        # cut power so this is inert there). Resolved here, not inferred from `state` by
+        # BLE, because only this class knows *why* a Paused race is Paused — a manual
+        # immediate stop always means 0, but a yellow-grace expiry means whatever
+        # yellow_post_grace_power_pct says. See CLAUDE.md "Yellow flags: power-based
+        # handling".
+        self.power_pct: int = 100
+        self.yellow_grace_power_pct: int = 100
+        self.yellow_post_grace_power_pct: int = 0
+        # GPIO-only substitute deterrent for a yellow flag it can't actually enforce:
+        # laps deducted from a driver who crosses the line after the grace period
+        # expires. 0 = no penalty (the BLE default — power really was cut). Points
+        # sessions only; see on_lap().
+        self.yellow_lap_penalty_laps: int = 0
+        # True only while Paused because a yellow-flag grace period expired — as
+        # opposed to an immediate manual pause — since only that case is eligible for
+        # the lap penalty above.
+        self._paused_from_yellow_expiry: bool = False
+        # Plain dicts describing a penalty just applied, drained and POSTed to the API
+        # by timestamps_to_lapdata's publish_race_state() — kept out of this pure/DB-free
+        # class the same way race.start()/finish() POSTs are handled one layer up.
+        self.pending_penalty_records: list = []
         self.drivers: Dict[int, DriverState] = {}  # keyed by lane number
         self.session_type: str = 'Points'
         self.race_duration_seconds: Optional[float] = None
@@ -72,7 +101,9 @@ class RaceManager:
     def load_lineup(self, race_id: int, race_number: int, target_laps: int,
                     lane_assignments: list, count_first_crossing: bool = False,
                     session_type: str = 'Points', race_duration_seconds=None,
-                    session_drivers=None, yellow_grace_seconds: float = 5.0):
+                    session_drivers=None, yellow_grace_seconds: float = 5.0,
+                    yellow_grace_power_pct: int = 100, yellow_post_grace_power_pct: int = 0,
+                    yellow_lap_penalty_laps: int = 0):
         """Load a pending race lineup. Call before start()."""
         self.race_id = race_id
         self.race_number = race_number
@@ -87,6 +118,12 @@ class RaceManager:
         self.race_duration_seconds = race_duration_seconds
         self.yellow_grace_seconds = yellow_grace_seconds
         self.yellow_seconds_left = None
+        self.power_pct = 100
+        self.yellow_grace_power_pct = yellow_grace_power_pct
+        self.yellow_post_grace_power_pct = yellow_post_grace_power_pct
+        self.yellow_lap_penalty_laps = yellow_lap_penalty_laps
+        self._paused_from_yellow_expiry = False
+        self.pending_penalty_records = []
 
         # FastestLap: time-limited, so target_laps is irrelevant
         self.target_laps = target_laps if session_type != 'FastestLap' else 9999
@@ -163,6 +200,7 @@ class RaceManager:
         """
         self.state = 'Running'
         self.start_lights = 0  # lights out
+        self.power_pct = 100
         self.race_start = RaceStart(local=go_local if go_local is not None else time.monotonic())
         self.race_start_time = time.time()
         if self.race_duration_seconds:
@@ -183,21 +221,39 @@ class RaceManager:
         See CLAUDE.md "Yellow flags: power-based handling"."""
         self.state = 'Yellow'
         self.yellow_seconds_left = math.ceil(self.yellow_grace_seconds)
+        self.power_pct = self.yellow_grace_power_pct
+        # A fresh incident: every driver is eligible for the lap penalty again if they
+        # cross after this grace period expires.
+        for driver in self.drivers.values():
+            driver.yellow_penalty_applied = False
         logger.info(f"Race {self.race_id} yellow flag — power cuts in {self.yellow_grace_seconds:.1f}s")
 
-    def pause(self):
+    def pause(self, power_pct: int = 0, from_yellow_expiry: bool = False):
+        """Stop the cars. `power_pct`/`from_yellow_expiry` distinguish *why*: an
+        immediate manual pause (the defaults) is always a hard stop, never eligible for
+        the lap penalty; a yellow-grace expiry passes the session's configured
+        yellow_post_grace_power_pct and from_yellow_expiry=True, which is what on_lap()
+        checks before applying a penalty."""
         self.state = 'Paused'
         self.yellow_seconds_left = None
-        logger.info(f"Race {self.race_id} paused")
+        self.power_pct = power_pct
+        self._paused_from_yellow_expiry = from_yellow_expiry
+        logger.info(f"Race {self.race_id} paused (power {power_pct}%)")
 
     def resume(self):
         self.state = 'Running'
         self.yellow_seconds_left = None
+        self.power_pct = 100
+        self._paused_from_yellow_expiry = False
+        for driver in self.drivers.values():
+            driver.penalty_notice = None
         logger.info(f"Race {self.race_id} resumed")
 
     def end(self):
         self.state = 'Finished'
         self.yellow_seconds_left = None
+        self.power_pct = 100
+        self._paused_from_yellow_expiry = False
         logger.info(f"Race {self.race_id} ended by control signal")
 
     def race_time(self, driver: DriverState) -> float:
@@ -220,6 +276,30 @@ class RaceManager:
         Process a lap crossing. Returns True if race state was updated (triggers publish).
         Ignores crossings while the cars aren't racing, or from lanes not in this race.
         """
+        # GPIO-only substitute deterrent: it can't cut power, so a crossing after the
+        # yellow-flag grace period expired costs the driver laps instead. Points
+        # sessions only — a FastestLap lap made through a yellow flag is already
+        # effectively self-penalizing, since it will essentially never be a personal
+        # best. Gated on _paused_from_yellow_expiry (not just state=='Paused') so an
+        # immediate manual pause, unrelated to a yellow flag, is never penalized.
+        if (self.state == 'Paused' and self._paused_from_yellow_expiry
+                and self.session_type != 'FastestLap' and self.yellow_lap_penalty_laps > 0):
+            driver = self.drivers.get(lane)
+            if driver is None or driver.finished or driver.yellow_penalty_applied:
+                return False
+            driver.yellow_penalty_applied = True
+            driver.crossings += 1
+            driver.last_crossing = crossing
+            driver.laps_completed = max(0, driver.laps_completed - self.yellow_lap_penalty_laps)
+            driver.penalty_notice = {'type': 'lap', 'amount': self.yellow_lap_penalty_laps}
+            self.pending_penalty_records.append({
+                'driver_id': driver.driver_id, 'penalty_type': 'lap',
+                'amount': self.yellow_lap_penalty_laps, 'reason': 'yellow_flag_grace_expired',
+            })
+            logger.info(f"Lane {lane} ({driver.driver_name}) crossed after the yellow-flag "
+                        f"grace period — lap penalty applied, now {driver.laps_completed} laps")
+            return True
+
         if self.state not in self.COUNTING_STATES:
             return False
 
@@ -309,6 +389,8 @@ class RaceManager:
             # last driver can take the chequered flag before the power cut. Leaving the
             # countdown set would publish a Finished race with a stale "Ns" on it.
             self.yellow_seconds_left = None
+            self.power_pct = 100
+            self._paused_from_yellow_expiry = False
             logger.info(f"Race {self.race_id} complete")
 
     def to_dict(self) -> dict:
@@ -352,6 +434,7 @@ class RaceManager:
                     driver.best_lap_time < 999
                     and driver.best_lap_time == self.race_fastest_lap
                 ),
+                'penalty_notice': driver.penalty_notice,
             })
 
         # Sort by lane — React indexes drivers by lane number
@@ -368,6 +451,7 @@ class RaceManager:
             'race_fastest_lap': round(self.race_fastest_lap, 3) if self.race_fastest_lap < 999 else None,
             'race_start_time': self.race_start_time,
             'yellow_seconds_left': self.yellow_seconds_left,
+            'power_pct': self.power_pct,
             'drivers': driver_list,
         }
 
@@ -415,5 +499,6 @@ class RaceManager:
             'race_end_time': self.race_end_time,
             'race_fastest_lap': round(self.race_fastest_lap, 3) if self.race_fastest_lap < 999 else None,
             'yellow_seconds_left': self.yellow_seconds_left,
+            'power_pct': self.power_pct,
             'session_drivers': all_driver_data,
         }

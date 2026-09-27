@@ -111,6 +111,19 @@ FULL_POWER = 0x3F
 NO_POWER = 0x00
 
 
+def power_pct_to_multiplier(pct: int) -> int:
+    """Percent of full power (0-100), as lapdata's race manager publishes in
+    race_state.power_pct, to a Command characteristic multiplier byte (0x00-0x3f).
+
+    ⚠️ Linear, and UNVALIDATED beyond the four points HW-03 actually measured on real
+    hardware (0x3f full speed, 0x2f and 0x20 visibly slower, 0x00 stopped) — see
+    docs/per-car-power-plan.md. Treat any percent other than 0 or 100 as nominal, not a
+    promise of proportional speed, until a real calibration sweep exists.
+    """
+    pct = max(0, min(100, pct))
+    return round(pct * FULL_POWER / 100)
+
+
 class PowerState(NamedTuple):
     """One Command characteristic write: the powerbase state byte and the per-car power
     multiplier that goes with it. The pair travels together because either one alone is
@@ -447,7 +460,7 @@ async def _retry_power_if_due():
     on a running race."""
     if _power_retry_at is None or time.monotonic() < _power_retry_at:
         return
-    await _write_command_async(_command_for_race_state(_last_seen_race_state))
+    await _write_command_async(_command_for_power_pct(_last_seen_power_pct))
 
 
 async def _write_command_async(state: PowerState):
@@ -498,8 +511,12 @@ def handle_race_control(data: dict):
     speed — and their laps keep counting — while lapdata's own timer transitions
     Yellow -> Paused when the grace expires. That transition is never announced over
     race_control, only race_state, so the actual power cut happens in
-    handle_race_state() below. 'pause' is the immediate, no-grace stop and stops the
-    cars directly here. A limp-mode multiplier between the two is future work.
+    handle_race_state() below — using whatever percent the session's grace/post-grace
+    settings actually call for, not always TRACK_RACING/CARS_STOPPED as the immediate
+    writes here do; this is the belt-and-braces default, corrected moments later.
+    'pause' is the immediate, no-grace stop and stops the cars directly here, always a
+    hard 0% regardless of session settings — unaffected by the yellow-flag power
+    percentages, which only apply to a grace-expiry Paused.
 
     Note 'arm' fires several seconds before the actual lights-out "go" (lapdata
     runs the start-light countdown internally, with no race_control message at the
@@ -515,27 +532,18 @@ def handle_race_control(data: dict):
         logger.warning(f"Unknown race_control command: {command}")
 
 
-# Last state seen in a race_state message, so handle_race_state() can detect edges
-# instead of rewriting on every message (race_state is republished on every single
-# lap crossing).
-_last_seen_race_state: str | None = None
-
-# race_state.state -> the Command write it should produce, for states that need one.
-# Paused is the one state that stops the cars (a yellow-flag grace expiry, or an
-# immediate manual pause, both land here) — Running and Yellow race at full power, and
-# laps count in both.
-_POWER_STATE_FOR_RACE_STATE = {
-    'Running': TRACK_RACING,
-    'Yellow': TRACK_RACING,
-    'Paused': CARS_STOPPED,
-}
+# Last power_pct seen in a race_state message, so handle_race_state() can detect edges
+# instead of rewriting on every message (race_state is republished on every single lap
+# crossing). None means "haven't heard from lapdata yet", which always writes on the
+# first message regardless of what it says.
+_last_seen_power_pct: int | None = None
 
 
-def _command_for_race_state(state: str | None) -> PowerState:
-    """The power state the powerbase should be in for a race_state. Anything not in the
-    table — no race, staged, armed, finished, or not yet heard from lapdata — is full
-    power, matching GPIO, which can never cut it."""
-    return _POWER_STATE_FOR_RACE_STATE.get(state, TRACK_RACING)
+def _command_for_power_pct(pct: int | None) -> PowerState:
+    """The power state the powerbase should be in for a given race_state.power_pct.
+    None — no race, staged, armed, or not yet heard from lapdata — is full power,
+    matching GPIO, which can never cut it."""
+    return PowerState(POWER_ON_RACING, power_pct_to_multiplier(100 if pct is None else pct))
 
 
 def handle_race_state(data: dict):
@@ -545,14 +553,18 @@ def handle_race_state(data: dict):
     grace-expiry, since lapdata drives that transition with its own internal timer
     rather than a race_control message.
 
+    lapdata resolves power_pct itself — it's the one place that knows *why* a Paused
+    race is Paused (a yellow-grace expiry vs. an immediate manual pause), so this never
+    branches on the bare state name any more, just the resolved percent.
+
     Edge-triggered, so a transition that lands while BLE is disconnected is dropped
-    here — run() makes up for it by writing _command_for_race_state() on every connect."""
-    global _last_seen_race_state
-    state = data.get('state')
-    power = _POWER_STATE_FOR_RACE_STATE.get(state)
-    if power is not None and state != _last_seen_race_state:
-        send_command(power)
-    _last_seen_race_state = state
+    here — run() makes up for it by writing _command_for_power_pct() on every connect."""
+    global _last_seen_power_pct
+    pct = data.get('power_pct')
+    resolved = 100 if pct is None else pct
+    if resolved != _last_seen_power_pct:
+        send_command(_command_for_power_pct(pct))
+    _last_seen_power_pct = resolved
 
 
 def on_mqtt_message(_client, _userdata, msg):
@@ -573,6 +585,17 @@ def on_mqtt_connect(client, _userdata, _flags, _reason_code, _properties):
     # restart mid-pause would have no idea the race is Paused, and the connect-time
     # power write in run() would put cars back on full power.
     client.publish('race_control', json.dumps({'command': 'status'}))
+    # Retained: a browser or lapdata connecting mid-meet needs the answer immediately,
+    # the same reason race_state itself is meant to be browser-independent. Static for
+    # this Layer 1 — it always targets an ARC Pro powerbase, which is what the Command
+    # characteristic writes throughout this file assume. See CLAUDE.md "Layer 1
+    # capability advertising"; nothing downstream may branch on 'layer1', only on
+    # 'capabilities'.
+    client.publish('layer1_status', json.dumps({
+        'layer1': 'ble',
+        'capabilities': ['lap_timing', 'power_control', 'throttle', 'rumble', 'car_id'],
+        'timing_resolution_ms': 10,
+    }), retain=True)
 
 
 def _name_matches(device, adv) -> bool:
@@ -683,9 +706,9 @@ async def run():
                 _ble_loop = asyncio.get_running_loop()
                 # Match the race, not a blanket TRACK_RACING: reconnecting while the
                 # race is Paused must not set cars moving with marshals on the track.
-                # Read the state only after _ble_loop is set, so a race_state edge
+                # Read the percent only after _ble_loop is set, so a race_state edge
                 # arriving from here on is written by handle_race_state() instead.
-                await _write_command_async(_command_for_race_state(_last_seen_race_state))
+                await _write_command_async(_command_for_power_pct(_last_seen_power_pct))
 
                 _disconnected_at = None
                 attempts_since_drop = 0

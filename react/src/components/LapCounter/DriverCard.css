@@ -98,3 +98,16 @@
 .lastlaptime {
     margin-bottom: 0.3rem;
 }
+
+/* Same yellow used by the full-screen yellow-flag overlay (YellowFlag.css), so a
+   penalized driver's card reads as part of the same event, not an unrelated warning. */
+.penaltynotice {
+    background-color: rgb(236, 232, 0);
+    color: black;
+    font-size: 2.8rem;
+    font-family: 'Selawik-SemiBold';
+    text-align: center;
+    padding: 0.6em 0.2em;
+    margin: 0 0.25rem 0.3rem 0.25rem;
+    border-radius: 0.3em;
+}

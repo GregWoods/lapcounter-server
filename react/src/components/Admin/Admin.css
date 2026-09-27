@@ -215,12 +215,6 @@
     color: #f0a8a8;
 }
 
-.admin-form-suffix {
-    color: #999;
-    font-size: 0.85rem;
-    white-space: nowrap;
-}
-
 /* Add session button */
 
 .admin-btn-add-session {
@@ -252,7 +246,7 @@
 
 .admin-form-row {
     display: grid;
-    grid-template-columns: 160px 1fr;
+    grid-template-columns: 270px 1fr;
     align-items: center;
     gap: 12px;
 }
@@ -278,13 +272,13 @@
 
 .admin-form-row input:focus,
 .admin-form-row select:focus {
-    border-color: #e84040;
+    border-color: #1a7fd4;
 }
 
 .admin-form-row input[type="checkbox"] {
     width: 18px;
     height: 18px;
-    accent-color: #e84040;
+    accent-color: #1a7fd4;
     cursor: pointer;
     justify-self: start;
 }
@@ -296,6 +290,15 @@
     flex-direction: column;
     gap: 4px;
     min-width: 0;
+}
+
+/* A label/value row paired with a help line that explains it — the row keeps the label
+   aligned with its input, and the hint runs full-width underneath (not indented to the
+   value column), since it reads as a note on the whole field, not part of the value. */
+.admin-form-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 /* Out-specifies `.admin-form-row label`, which would otherwise grey this one out too. */
@@ -320,16 +323,6 @@
     font-weight: 600;
 }
 
-.admin-form-inline {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.admin-form-inline select {
-    flex: 1;
-}
-
 .admin-input-narrow {
     background: #242424;
     border: 1px solid #3a3a3a;
@@ -344,7 +337,89 @@
 }
 
 .admin-input-narrow:focus {
-    border-color: #e84040;
+    border-color: #1a7fd4;
+}
+
+/* A narrow input plus its unit, inline in the row's second grid column
+   (e.g. "[ 5 ] min", "[100] %"). */
+.admin-form-inline-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.admin-form-unit {
+    color: #999;
+    font-size: 0.85rem;
+}
+
+/* A checkbox rendered as an on/off switch, for a row whose value reads as a
+   yes/no rather than free text. */
+.admin-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    width: 40px;
+    height: 22px;
+    cursor: pointer;
+    justify-self: start;
+}
+
+.admin-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #3a3a3a;
+    border-radius: 999px;
+    transition: background 0.15s;
+    pointer-events: none;
+}
+
+.admin-toggle-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.15s;
+}
+
+.admin-toggle input[type="checkbox"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.admin-toggle input[type="checkbox"]:checked + .admin-toggle-track {
+    background: #1a7fd4;
+}
+
+.admin-toggle input[type="checkbox"]:checked + .admin-toggle-track .admin-toggle-thumb {
+    transform: translateX(18px);
+}
+
+.admin-toggle input[type="checkbox"]:focus-visible + .admin-toggle-track {
+    outline: 2px solid #1a7fd4;
+    outline-offset: 2px;
+}
+
+.admin-form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.admin-form-section-title {
+    margin: 0;
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 600;
 }
 
 .admin-session-form {
@@ -355,6 +430,7 @@
 
 .admin-form-actions {
     display: flex;
+    justify-content: flex-end;
     gap: 10px;
     margin-top: 4px;
 }
@@ -362,7 +438,7 @@
 /* Buttons */
 
 .admin-btn-primary {
-    background: #e84040;
+    background: #1a7fd4;
     border: none;
     border-radius: 8px;
     color: #fff;
@@ -374,7 +450,7 @@
     white-space: nowrap;
 }
 
-.admin-btn-primary:hover:not(:disabled) { background: #c83030; }
+.admin-btn-primary:hover:not(:disabled) { background: #1a6aab; }
 .admin-btn-primary:disabled { background: #555; cursor: not-allowed; }
 
 .admin-btn-ghost {

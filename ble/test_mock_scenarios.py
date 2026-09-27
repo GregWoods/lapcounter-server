@@ -81,7 +81,7 @@ def harness(monkeypatch):
     monkeypatch.setattr(ble, '_timestamps_halted', True)
     monkeypatch.setattr(ble, '_power_retry_at', None)
     monkeypatch.setattr(ble, '_power_retry_delay', ble.POWER_RETRY_INITIAL_DELAY)
-    monkeypatch.setattr(ble, '_last_seen_race_state', None)
+    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
     monkeypatch.setattr(ble, '_bleak_client', None)
     monkeypatch.setattr(ble, '_ble_loop', None)
     monkeypatch.setattr(ble, 'device_address', None)     # exercise the scan
@@ -295,9 +295,9 @@ def test_reconnect_while_paused_keeps_the_cars_stopped(harness):
     async def scenario():
         async with ble_running():
             await eventually(lambda: h.applied == [ble.TRACK_RACING], 'the connect-time power write')
-            await from_paho(ble.handle_race_state, {'state': 'Running'})
+            await from_paho(ble.handle_race_state, {'state': 'Running', 'power_pct': 100})
             await eventually(lambda: len(crossings_seen(h)) >= 9, 'laps while Running')
-            await from_paho(ble.handle_race_state, {'state': 'Paused'})
+            await from_paho(ble.handle_race_state, {'state': 'Paused', 'power_pct': 0})
             await eventually(lambda: cars_stopped(h), 'the cars to stop')
             writes_before_drop = len(h.applied)
 
@@ -399,7 +399,7 @@ def test_failed_stop_is_retried_until_the_cars_stop(harness, monkeypatch):
         async with ble_running():
             await eventually(lambda: h.faults.write_failures >= 1, 'the failed connect-time write')
             failures = h.faults.write_failures
-            await from_paho(ble.handle_race_state, {'state': 'Paused'})
+            await from_paho(ble.handle_race_state, {'state': 'Paused', 'power_pct': 0})
             await eventually(lambda: h.faults.write_failures > failures, 'the failed stop write')
             assert h.applied == []
 
@@ -422,11 +422,11 @@ def test_retry_writes_the_current_race_state_not_the_failed_command(harness, mon
     async def scenario():
         async with ble_running():
             await eventually(lambda: h.faults.write_failures >= 1, 'the failed connect-time write')
-            await from_paho(ble.handle_race_state, {'state': 'Running'})
+            await from_paho(ble.handle_race_state, {'state': 'Running', 'power_pct': 100})
             failures = h.faults.write_failures
-            await from_paho(ble.handle_race_state, {'state': 'Paused'})
+            await from_paho(ble.handle_race_state, {'state': 'Paused', 'power_pct': 0})
             await eventually(lambda: h.faults.write_failures > failures, 'the failed stop write')
-            await from_paho(ble.handle_race_state, {'state': 'Finished'})
+            await from_paho(ble.handle_race_state, {'state': 'Finished', 'power_pct': 100})
 
             h.faults.write_fail_rate = 0.0
             await eventually(lambda: h.applied, 'the retry')

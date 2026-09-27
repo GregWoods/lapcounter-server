@@ -309,6 +309,7 @@ const LapCounter = () => {
                     finished: rd.finished,
                     suspended: rd.suspended,
                     hasStartedRacing: rd.has_started,
+                    penaltyNotice: rd.penalty_notice,
                     p1LapsRemaining,
                 };
             })

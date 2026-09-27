@@ -80,6 +80,18 @@ async def send_clock_heartbeat():
             await client.publish(MQTT_CLOCK_TOPIC, payload=json.dumps(
                 {"clock": CLOCK, "counter_ms": counter_ms()}))
 
+
+async def publish_layer1_status():
+    """Retained, one-off: same capability set as the real gpio_to_timestamps.py, so a
+    dev meet running mocked-gpio exercises the Admin form's capability gating exactly
+    like real GPIO would. See CLAUDE.md "Layer 1 capability advertising"."""
+    async with aiomqtt.Client(mqtt_hostname) as client:
+        await client.publish('layer1_status', payload=json.dumps({
+            'layer1': 'gpio',
+            'capabilities': ['lap_timing'],
+            'timing_resolution_ms': 1,
+        }), retain=True)
+
 # Create a list of drivers each with their own abilities
 driverRange = [i for i in range(1,numberOfDrivers+1)]
 drivers = list(map(lambda n: Driver(n, time.time()), driverRange))
@@ -87,6 +99,7 @@ drivers = list(map(lambda n: Driver(n, time.time()), driverRange))
 
 # Create a task for each driver
 async def schedule_tasks():
+    await publish_layer1_status()
     async with asyncio.TaskGroup() as tg:
         for driver in drivers:
             tg.create_task(send_lap_time(driver))

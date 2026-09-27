@@ -106,6 +106,19 @@ def test_countdown_is_published_by_lapdata_then_power_cuts(lapdata):
 
     assert [m['yellow_seconds_left'] for m in lapdata.published] == [5, 4, 3, 2, 1, None]
     assert lapdata.published[-1]['state'] == 'Paused'
+    assert lapdata.published[-1]['power_pct'] == lapdata.race.yellow_post_grace_power_pct
+
+
+def test_grace_expiry_publishes_the_configured_post_grace_power(lapdata):
+    """The grace-expiry Paused edge must carry whatever yellow_post_grace_power_pct the
+    session is configured with, not always a hard 0%."""
+    lapdata.race.yellow_post_grace_power_pct = 30
+    control('yellow')
+    for timer in lapdata.timers:
+        timer.fire()
+
+    assert lapdata.published[-1]['state'] == 'Paused'
+    assert lapdata.published[-1]['power_pct'] == 30
 
 
 def test_fractional_grace_still_reaches_one_a_second_before_the_cut(lapdata):

@@ -26,7 +26,9 @@ def make_lineup(n=3):
 
 
 def new_race(target_laps=3, count_first_crossing=False, n_drivers=3, session_type='Points',
-             race_duration_seconds=None, session_drivers=None, anchors=None):
+             race_duration_seconds=None, session_drivers=None, anchors=None,
+             yellow_grace_power_pct=100, yellow_post_grace_power_pct=0,
+             yellow_lap_penalty_laps=0):
     # A perfect anchor by default: counter 0 exactly at GO, so at(t) reads as t seconds
     # of lap time. Tests that care about anchor error build their own and pass it in.
     if anchors is None:
@@ -40,6 +42,9 @@ def new_race(target_laps=3, count_first_crossing=False, n_drivers=3, session_typ
         session_type=session_type,
         race_duration_seconds=race_duration_seconds,
         session_drivers=session_drivers,
+        yellow_grace_power_pct=yellow_grace_power_pct,
+        yellow_post_grace_power_pct=yellow_post_grace_power_pct,
+        yellow_lap_penalty_laps=yellow_lap_penalty_laps,
     )
     race.start(GO)
     return race
@@ -370,6 +375,131 @@ def test_resume_from_yellow_clears_countdown():
     race.resume()
     assert race.state == 'Running'
     assert race.yellow_seconds_left is None
+
+
+# --- Yellow flag power percentages ---
+
+def test_power_pct_through_start_yellow_pause_resume():
+    race = new_race(count_first_crossing=True, yellow_grace_power_pct=60,
+                     yellow_post_grace_power_pct=25)
+    assert race.power_pct == 100   # start()
+
+    race.yellow()
+    assert race.power_pct == 60
+
+    race.pause(power_pct=race.yellow_post_grace_power_pct, from_yellow_expiry=True)
+    assert race.power_pct == 25
+    assert race.to_dict()['power_pct'] == 25
+
+    race.resume()
+    assert race.power_pct == 100
+
+
+def test_manual_pause_is_always_a_hard_stop():
+    """An immediate operator pause is unrelated to the yellow-flag settings — always 0%,
+    never the configured post-grace percentage."""
+    race = new_race(count_first_crossing=True, yellow_post_grace_power_pct=50)
+    race.pause()
+    assert race.power_pct == 0
+
+
+# --- Yellow-flag lap penalty (GPIO-only substitute for a real power cut) ---
+
+def test_lap_penalty_fires_once_after_grace_expiry():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.on_lap(1, at(5.0))
+    assert race.drivers[1].laps_completed == 1
+
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    updated = race.on_lap(1, at(10.0))
+
+    assert updated is True
+    assert race.drivers[1].laps_completed == 0    # 1 - penalty(1)
+    assert race.drivers[1].penalty_notice == {'type': 'lap', 'amount': 1}
+
+
+def test_lap_penalty_does_not_fire_twice_in_the_same_incident():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.on_lap(1, at(5.0))
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(10.0))
+
+    updated = race.on_lap(1, at(15.0))
+    assert updated is False
+    assert race.drivers[1].laps_completed == 0    # unchanged by the second crossing
+
+
+def test_lap_penalty_floors_at_zero_laps():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=5)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(5.0))
+    assert race.drivers[1].laps_completed == 0
+
+
+def test_lap_penalty_resets_on_a_new_yellow_flag_incident():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(5.0))
+    assert race.drivers[1].laps_completed == 0
+
+    race.resume()
+    race.on_lap(1, at(10.0))   # a real lap
+    assert race.drivers[1].laps_completed == 1
+
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    updated = race.on_lap(1, at(15.0))
+    assert updated is True
+    assert race.drivers[1].laps_completed == 0    # penalized again, a fresh incident
+
+
+def test_lap_penalty_never_fires_for_a_manual_pause():
+    """A manual, no-grace pause is unrelated to the yellow flag — never eligible for
+    the penalty, however the session is configured."""
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.on_lap(1, at(5.0))
+    race.pause()   # immediate manual pause, not from a yellow-grace expiry
+    updated = race.on_lap(1, at(10.0))
+    assert updated is False
+    assert race.drivers[1].laps_completed == 1
+
+
+def test_lap_penalty_never_fires_for_fastest_lap_sessions():
+    """FastestLap ranks by personal best, so a lap made through a yellow flag is already
+    effectively self-penalizing — no extra mechanism needed."""
+    race = new_race(count_first_crossing=True, n_drivers=1, session_type='FastestLap',
+                     yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    updated = race.on_lap(1, at(5.0))
+    assert updated is False
+
+
+def test_penalty_is_queued_for_the_api_and_drained_once():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(5.0))
+
+    assert race.pending_penalty_records == [{
+        'driver_id': 1, 'penalty_type': 'lap', 'amount': 1,
+        'reason': 'yellow_flag_grace_expired',
+    }]
+
+
+def test_penalty_notice_clears_on_resume():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(5.0))
+    assert race.drivers[1].penalty_notice is not None
+
+    race.resume()
+    assert race.drivers[1].penalty_notice is None
 
 
 # --- Chequered flag / race end ---

@@ -1,6 +1,6 @@
 from typing import Optional
 from decimal import Decimal
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
 from sqlalchemy import Column, DateTime
 
@@ -103,6 +103,9 @@ class RaceSession(SQLModel, table=True):
     races_per_driver: Optional[int] = Field(default=None)  # automatic session end: each driver races this many times (None = manual end)
     max_sit_outs: Optional[int] = Field(default=None)  # skips before a driver is offered up for disqualification (None = no limit)
     yellow_grace_seconds: int = Field(default=5)  # full-power seconds after a yellow flag before power cuts (BLE only; no-op on GPIO)
+    yellow_grace_power_pct: int = Field(default=100)  # % power during the grace period (BLE only; locked to 100 without power_control)
+    yellow_post_grace_power_pct: int = Field(default=0)  # % power once the grace period expires (BLE only; locked to 100 without power_control)
+    yellow_lap_penalty_laps: int = Field(default=0)  # laps deducted for crossing after grace expiry (GPIO-only substitute; Points sessions only, 0 = no penalty)
     scoring_method: str             # 'PositionPoints' (Finishing Position) or 'FastestLap' (personal best)
     scoring_points: Optional[str]   # JSON string with points array used for PositionPoints
     start_time: Optional[time]
@@ -204,6 +207,9 @@ class RaceSessionUpdate(SQLModel):
     races_per_driver: Optional[int] = None
     max_sit_outs: Optional[int] = None
     yellow_grace_seconds: Optional[int] = None
+    yellow_grace_power_pct: Optional[int] = None
+    yellow_post_grace_power_pct: Optional[int] = None
+    yellow_lap_penalty_laps: Optional[int] = None
     scoring_method: Optional[str] = None
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None
@@ -232,10 +238,36 @@ class RaceSessionCreate(SQLModel):
     races_per_driver: Optional[int] = None
     max_sit_outs: Optional[int] = None
     yellow_grace_seconds: int = 5
+    yellow_grace_power_pct: int = 100
+    yellow_post_grace_power_pct: int = 0
+    yellow_lap_penalty_laps: int = 0
     scoring_method: str
     scoring_points: Optional[str] = None
     start_time: Optional[time] = None
     end_time: Optional[time] = None
+
+
+# A penalty applied by lapdata's race manager (currently only a yellow-flag lap penalty
+# for Points sessions) so it survives past the race and factors into
+# build_session_results() instead of only affecting live race_state.
+class RacePenalty(SQLModel, table=True):
+    __tablename__ = "race_penalties"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    race_id: Optional[int] = Field(default=None, foreign_key="races.id")
+    driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id")
+    penalty_type: str    # 'lap' only for now
+    amount: Decimal
+    reason: str
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class RacePenaltyCreate(SQLModel):
+    penalty_type: str
+    amount: Decimal
+    reason: str
 
 
 # not using relationships yet

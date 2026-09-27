@@ -1,7 +1,8 @@
 # Plan: per-car power capping
 
-**Status:** proposal, 2026-09-20. Nothing implemented. Depends on Layer 1 capability
-advertising (see "Prerequisite" below), which is also unimplemented.
+**Status:** proposal, 2026-09-20. Nothing in this doc is implemented yet. Its prerequisite,
+Layer 1 capability advertising (see "Prerequisite" below), has since shipped — as the
+enabling piece for the yellow-flag power percentages, a smaller feature than this one.
 
 The Command characteristic's per-car power bytes (`0x3B0A` bytes 1–6, `0…0x3f`) are
 already load-bearing in this project: `FULL_POWER`/`NO_POWER` is how `CARS_STOPPED` stops
@@ -88,7 +89,7 @@ floor of 0 guarantees it; do not implement this as "apply the cap unless paused"
 inverts under any future state that also stops the cars.
 
 ⚠️ **Connect-time writes must carry the vector too.** `run()` already writes
-`_command_for_race_state(_last_seen_race_state)` on every BLE connect, precisely so a
+`_command_for_power_pct(_last_seen_power_pct)` on every BLE connect, precisely so a
 reconnect during `Paused` doesn't set cars moving with marshals on track. That rule
 extends unchanged: a reconnect during a safety car must restore the safety-car vector,
 not blanket full power.
@@ -200,10 +201,15 @@ Safety Car button would produce a race that never slows down. That is config tha
 and presence-of-topic cannot answer it because the settings must resolve before any data
 flows.
 
-So `layer1_status` (retained, `capabilities: [...]`, published by whichever Layer 1 is
-running) ships first. The Admin forms disable both settings with *"requires ARC
-powerbase"* when `power_control` is absent, and RaceControl hides the Safety Car button.
-⚠️ Branch on the **capability**, never on the `layer1` name.
+✅ **Shipped**: `layer1_status` (retained, `capabilities: [...]`, published by whichever
+Layer 1 is running) now exists — see CLAUDE.md "Layer 1 capability advertising". It was
+built as the enabling piece for the yellow-flag power percentages
+(`yellow_grace_power_pct`/`yellow_post_grace_power_pct`), which the Admin session form
+already locks to 100 with *"requires ARC powerbase"* when `power_control` is absent,
+following exactly the pattern this section describes. The `car_power` vector, the Safety
+Car button and `max_power` below are still unbuilt — when they land, they follow the
+same rule: disable the setting/hide the button on the capability, never on the `layer1`
+name.
 
 ## Hardware validation still needed
 
