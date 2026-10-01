@@ -93,7 +93,7 @@ services:
 
 
   database:
-    image: postgres:latest
+    image: postgres:17
     container_name: database
     environment:
       POSTGRES_DB: lapcounter_server
