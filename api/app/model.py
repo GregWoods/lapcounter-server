@@ -1,5 +1,6 @@
 from typing import Optional
 from decimal import Decimal
+import datetime as _datetime
 from datetime import date, datetime, time, timezone
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
 from sqlalchemy import Column, DateTime
@@ -225,7 +226,9 @@ class MeetingCreate(SQLModel):
 
 class MeetingUpdate(SQLModel):
     name: Optional[str] = None
-    date: Optional[date] = None
+    # `Optional[date]` here resolves `date` to the field's own `None` default, so every
+    # real date was rejected ("Input should be None"). Name the type via the module.
+    date: Optional[_datetime.date] = None
     venue: Optional[str] = None
 
 
