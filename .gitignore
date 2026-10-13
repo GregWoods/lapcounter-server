@@ -21,3 +21,6 @@ react/.env.production
 # react/Dockerfile.dev COPYs ./public, so keep the directory tracked (empty via .gitkeep)
 !react/public/
 !react/public/.gitkeep
+
+# Greg's personal scratchpad, not part of the project
+lapcounter-server-tasks.md
