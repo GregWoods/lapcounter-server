@@ -31,6 +31,21 @@
     white-space: nowrap;
 }
 
+/* Desktop hangs the home icon in the page margin left of the title; the phone's 16px
+   padding can't hold it and it was clipped. Put it back in the row on narrow screens,
+   and let the heading wrap so the icon plus title can't overflow the card. */
+@media (max-width: 640px) {
+    .register-title-row .home-icon-link {
+        position: static;
+        transform: none;
+        margin-right: 12px;
+    }
+
+    .register-heading {
+        white-space: normal;
+    }
+}
+
 .register-subtext {
     color: #aaa;
     font-size: 1rem;
@@ -69,11 +84,11 @@
 }
 
 .register-input:focus {
-    border-color: #e84040;
+    border-color: #1a7fd4;
 }
 
 .register-btn-primary {
-    background: #e84040;
+    background: #1a7fd4;
     border: none;
     border-radius: 10px;
     color: #fff;
@@ -88,7 +103,7 @@
 }
 
 .register-btn-primary:hover:not(:disabled) {
-    background: #c83030;
+    background: #1a6aab;
 }
 
 .register-btn-primary:disabled {
@@ -112,6 +127,33 @@
 .register-btn-secondary:hover {
     border-color: #aaa;
     color: #fff;
+}
+
+/* Done-step buttons: stacked on a phone, side by side from 641px up. */
+.register-done-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+@media (min-width: 641px) {
+    .register-done-actions {
+        flex-direction: row;
+    }
+
+    .register-done-actions > * {
+        flex: 1;
+    }
+}
+
+/* A <Link> wearing .register-btn-primary: it is an <a>, so drop the underline and make
+   the padding box behave like the <button>. Cancels the primary's top margin, which
+   the flex gap already covers. */
+.register-btn-link {
+    box-sizing: border-box;
+    display: block;
+    margin-top: 0;
+    text-decoration: none;
 }
 
 .register-back {
@@ -151,7 +193,7 @@
 
 .register-driver-btn:hover {
     background: #2a2a2a;
-    border-color: #e84040;
+    border-color: #1a7fd4;
 }
 
 .register-meetings {
@@ -173,11 +215,11 @@
 }
 
 .register-meeting-row:has(.register-checkbox:checked) {
-    border-color: #e84040;
+    border-color: #1a7fd4;
 }
 
 .register-checkbox {
-    accent-color: #e84040;
+    accent-color: #1a7fd4;
     cursor: pointer;
     flex-shrink: 0;
     height: 22px;

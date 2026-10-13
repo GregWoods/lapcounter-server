@@ -160,7 +160,7 @@
 }
 
 .clock-modal-btn {
-    background: #e84040;
+    background: #1a7fd4;
     border: none;
     border-radius: 10px;
     color: #fff;
@@ -172,7 +172,7 @@
     align-self: stretch;
 }
 
-.clock-modal-btn:hover:not(:disabled) { background: #c83030; }
+.clock-modal-btn:hover:not(:disabled) { background: #1a6aab; }
 .clock-modal-btn:disabled { background: #555; cursor: not-allowed; }
 
 .clock-modal-error {

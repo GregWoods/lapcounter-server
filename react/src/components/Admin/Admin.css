@@ -549,6 +549,15 @@
         flex-wrap: wrap;
     }
 
+    /* On desktop the home icon hangs in the page margin, to the left of the title.
+       The phone's 16px padding can't hold it, so it was clipped to a few pixels.
+       Put it back in the flex row, beside the title. */
+    .admin-header-left .home-icon-link {
+        position: static;
+        transform: none;
+        margin-right: 12px;
+    }
+
     .admin-form-row {
         grid-template-columns: 1fr;
         align-items: stretch;

@@ -234,9 +234,14 @@ const Register = () => {
                         <p className="register-subtext">
                             {firstName} is set for {selectedMeetingIds.size === 1 ? '1 meeting' : `${selectedMeetingIds.size} meetings`}.
                         </p>
-                        <button className="register-btn-secondary" onClick={reset}>
-                            Register another driver
-                        </button>
+                        <div className="register-done-actions">
+                            <button className="register-btn-secondary" onClick={reset}>
+                                Register another driver
+                            </button>
+                            <Link to="/" className="register-btn-primary register-btn-link">
+                                Done
+                            </Link>
+                        </div>
                     </>
                 )}
 

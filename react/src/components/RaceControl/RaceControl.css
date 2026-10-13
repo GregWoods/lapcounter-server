@@ -156,7 +156,7 @@
 .rc-btn:active { filter: brightness(0.85); }
 
 .rc-btn--start { background: #128a2b; }
-.rc-btn--next { background: #1f6feb; }
+.rc-btn--next { background: #1a7fd4; }
 .rc-btn--yellow { background: #d9a400; color: #1a1a1a; }
 .rc-btn--end { background: #b3261e; }
 
