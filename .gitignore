@@ -17,3 +17,7 @@ react/.env.development
 #This file is a copy of ./.env.production. Not to be edited
 react/.env.production
 .claude/settings.local.json
+
+# react/Dockerfile.dev COPYs ./public, so keep the directory tracked (empty via .gitkeep)
+!react/public/
+!react/public/.gitkeep
