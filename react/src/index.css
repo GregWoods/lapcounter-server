@@ -24,7 +24,10 @@
 
 
 html {
-  font-size: 1.666vw; /* 32px at 1920px — TV display default */
+  /* 32px at 1920px for the TV display, but floors at 16px: a bare 1.666vw
+     collapses to ~6px on a narrow portrait phone, which shrank every rem-based
+     font (e.g. the Home buttons to ~12px) while fixed-px padding stayed large. */
+  font-size: clamp(16px, 1.666vw, 32px);
 }
 
 body {

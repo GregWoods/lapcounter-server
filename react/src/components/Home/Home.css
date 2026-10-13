@@ -62,6 +62,36 @@
     text-decoration: none;
 }
 
+/* Phones / small tablets: index.css now floors the rem base at 16px so text is
+   readable again, but the fixed px padding above was tuned for the 32px TV root
+   and would crowd the longer labels ("Meetings & Sessions"). Trim it here. */
+@media (max-width: 900px) {
+    .home-page {
+        gap: 18px;
+    }
+
+    .home-title {
+        font-size: clamp(1.6rem, 7vw, 2.4rem);
+        text-align: center;
+    }
+
+    .home-nav {
+        gap: 12px;
+    }
+
+    .home-button {
+        font-size: clamp(1.2rem, 5vw, 1.6rem);
+        gap: 12px;
+        padding: 14px 16px;
+        border-width: 2px;
+    }
+
+    .home-button svg {
+        width: 1.3rem;
+        height: 1.3rem;
+    }
+}
+
 /* Clock sync modal — fixed px so it isn't affected by font scaling */
 .clock-modal-overlay {
     position: fixed;

@@ -529,3 +529,29 @@
     gap: 10px;
     justify-content: flex-end;
 }
+
+/* ── Mobile ──────────────────────────────────────────────────────── */
+
+/* The form rows put the label in a fixed-width column beside its input, which
+   leaves the field only a sliver on a phone. Below this width the label goes
+   above its input instead, so the field gets the full row. Applies to every
+   form that reuses .admin-form-row (meetings and drivers). */
+@media (max-width: 640px) {
+    .admin-page {
+        padding: 16px;
+    }
+
+    .admin-card {
+        padding: 16px;
+    }
+
+    .admin-header {
+        flex-wrap: wrap;
+    }
+
+    .admin-form-row {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+        gap: 6px;
+    }
+}
