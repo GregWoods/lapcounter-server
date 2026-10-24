@@ -1,78 +1,34 @@
-.yellowflagModalOverlay {
-    display: flex;
-    flex-direction: column;
+/* The yellow flag: one full-width bar, vertically centred, non-blocking and with no
+   backdrop, so the grace period and the pause after it look the same. */
+#yellowbarwrap {
     position: fixed;
     inset: 0;
-    /* Above the FastestLapCounter driver bars (z-index up to 30) */
-    z-index: 1000;
-}
-
-.yellowflag {
-    position: fixed;
-    inset: 0;
-}
-
-#yellowflagcontainer {
     display: flex;
-    flex-direction: column;
-    position: fixed;
-    inset: 0;
-}
-
-#yellowflagheader {
-    display: flex;
-    flex-direction: row;
-    padding: 1rem 1rem 1rem 0.3rem;
-    background-color: rgb(236, 232, 0);
-    color: black;
     align-items: center;
-}
-
-#yellowflagheader h1 {
-    font-size: 2.5rem;
-    padding: 0;
-    margin: auto;
-    flex-grow: 0;
-}
-
-#yellowflagcontent {
-    display: flex;
-    align-content: center;
-    vertical-align: middle;
-    margin: auto;
-}
-
-#yellowflagcountdown {
-    width: 31.25vw;       /* 600/1920 */
-    height: 37.04vh;      /* 400/1080 */
-    background-color: rgb(236, 232, 0);
-    border-radius: 1.04vw;
-    padding: 0.05em 0.2em 0.2em 0.2em;
-    font-size: 5em;
-    font-family: 'Selawik-Bold';
-    text-align: center;
-    position: relative;
-    top: -9.26vh;         /* -100/1080 */
-}
-
-.racePausedModalOverlay {
-    display: flex;
-    flex-direction: column;
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0);
+    pointer-events: none;
     /* Above the FastestLapCounter driver bars (z-index up to 30) */
     z-index: 1000;
 }
 
-#yellowflagcontent.yellow {
-    background-color: rgba(236, 232, 0, 0.6);
-    flex: 1;
+#yellowbar {
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 1vh 0;
+    background-color: rgba(236, 232, 0, 0.95);
+    color: black;
+    font-size: 14vh;
+    font-weight: bold;
+    line-height: 1.1;
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
 }
 
-#yellowflagcontent.black {
-    background-color: rgba(0, 0, 0, 0.6);
-    flex: 1;
-    width: 100%;
+/* Semi-transparent yellow wash over the whole screen once the power is cut. */
+#yellowflash {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(236, 232, 0, 0.6);
 }

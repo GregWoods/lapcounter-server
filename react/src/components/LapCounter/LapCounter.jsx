@@ -361,8 +361,6 @@ const LapCounter = () => {
                 <YellowFlagRacePaused
                     showMe={race.paused}
                     secondsLeft={yellowSecondsLeft}
-                    onRacePaused={() => {}}
-                    onEndYellowFlag={() => {}}
                 />
                 <ApiUnreachableModal showMe={!apiReachable} />
                 <SoundBlockedModal armed={startLightsShown} />

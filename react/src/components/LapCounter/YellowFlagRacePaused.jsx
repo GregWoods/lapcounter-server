@@ -1,99 +1,46 @@
-import {useState, useEffect, useRef, createRef} from 'react';
-import ReactModal from 'react-modal';
-import RaceFlagStart from './RaceFlagStart';
+import {useState, useEffect} from 'react';
 import './YellowFlag.css';
 
 
 
-// secondsLeft: lapdata's countdown to the power cut during the grace period, null after.
-const YellowFlagRacePaused = ({showMe, secondsLeft, onRacePaused, onEndYellowFlag}) => {
-
-    const [yfFlashingPeriod, setYfFlashingPeriod] = useState(null);
-    const [yfClassName, setYfClassName] = useState('black');
-
-    
-    //todo: move to separate file
-    const useInterval = (callback, delay) => {
-        const savedCallback = useRef();
-      
-        useEffect(() => {
-          savedCallback.current = callback;
-        }, [callback]);
-      
-        useEffect(() => {
-            const tick = () => {
-                savedCallback.current();
-            }
-            if (delay !== null) {
-                let id = setInterval(tick, delay);
-                return () => clearInterval(id);
-            }
-        }, [delay]);
-    };
-
-
-    useInterval(() => {
-        setYfClassName(prevValue => prevValue == 'yellow' ? 'black' : 'yellow');
-        console.log("interval");
-    }, yfFlashingPeriod);
-
-
-    const pauseRace = () => {
-        console.log('_-_-_- startYellowFlashing _-_-_-_-');
-        setYfFlashingPeriod(400);
-        onRacePaused();
-    }
-
-
-    const handleEndYellowFlag = () => {
-        console.log("Yellow flag end");
-        setYfFlashingPeriod(null);
-        onEndYellowFlag();
-    }
-
-
-    //needed for onKeyUp
-    const yellowFlagRef = createRef();
+// Smooth tenths for the grace countdown. lapdata sends whole seconds; between messages we
+// count down using only time elapsed since the last one arrived (performance.now()), never
+// a deadline against this screen's wall clock, so every display still agrees. Clamped to
+// stay above the next whole second so a late message can't make it dip early.
+const useTenthsLeft = (secondsLeft) => {
+    const [tenths, setTenths] = useState(secondsLeft);
     useEffect(() => {
-        if (yellowFlagRef.current) {
-            yellowFlagRef.current.focus();
-        }
-    }, [yellowFlagRef]);
+        if (secondsLeft == null) return;
+        const arrived = performance.now();
+        const update = () => {
+            const elapsed = (performance.now() - arrived) / 1000;
+            setTenths(Math.max(secondsLeft - 1, secondsLeft - elapsed, 0));
+        };
+        update();
+        const id = setInterval(update, 50);
+        return () => clearInterval(id);
+    }, [secondsLeft]);
+    // The first render after secondsLeft appears runs before the effect has set `tenths`.
+    return secondsLeft == null ? null : (tenths ?? secondsLeft);
+};
 
 
-    const handleKeyup = (evt) => {
-        console.log(evt.key);
-        if (showMe && evt.key == ' ') {
-            handleEndYellowFlag();  
-        }
-    }
+// One full-width, vertically centred yellow bar for the whole yellow flag. During the grace
+// period (secondsLeft set) it carries the countdown in tenths; once the power is cut
+// (secondsLeft null) it says the race is paused and the whole screen flashes yellow behind
+// it. Clearing the flag is done from RaceControl.
+const YellowFlagRacePaused = ({showMe, secondsLeft}) => {
+    const tenthsLeft = useTenthsLeft(secondsLeft);
+    if (!showMe) return null;
 
-
+    const paused = tenthsLeft == null;
     return (
-        <ReactModal
-            isOpen={showMe}
-            contentLabel="YelloW Flag"
-            onAfterOpen={pauseRace}
-            className="yellowflag"
-            overlayClassName="racePausedModalOverlay"
-            ariaHideApp={false}
-        >   
-            
-            <div id="yellowflagcontainer" ref={yellowFlagRef} tabIndex={0} onKeyUp={handleKeyup}>
-                <div id="yellowflagheader">
-                    <RaceFlagStart 
-                        onSelect={handleEndYellowFlag} 
-                        handleColor='#000' />
-                    <h1>
-                        {secondsLeft != null
-                            ? `Yellow Flag - ${secondsLeft}s`
-                            : 'Yellow Flag - Race Paused'}
-                    </h1>
-                </div>
-                <div id="yellowflagcontent" className={yfClassName}>
-                </div>
+        <div id="yellowbarwrap">
+            {paused && <div id="yellowflash" />}
+            <div id="yellowbar">
+                {paused ? 'RACE PAUSED' : tenthsLeft.toFixed(1)}
             </div>
-        </ReactModal>
+        </div>
     );
 }
 
