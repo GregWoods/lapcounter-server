@@ -30,13 +30,14 @@ function serializePoints(str) {
     return JSON.stringify(nums);
 }
 
-export default function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl }) {
+export default function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl, previousYellowGraceSeconds }) {
     const [form, setForm] = useState(() => ({
         session_type: initial?.session_type ?? 'Points',
         end_condition_info: initial?.end_condition_info ?? DEFAULT_LAPS,
         races_per_driver: initial?.races_per_driver ?? DEFAULT_RACES_PER_DRIVER,
         max_sit_outs: initial?.max_sit_outs ?? DEFAULT_MAX_SIT_OUTS,
-        yellow_grace_seconds: initial?.yellow_grace_seconds ?? DEFAULT_YELLOW_GRACE_SECONDS,
+        // A new session starts from the meeting's previous session's value, else the default.
+        yellow_grace_seconds: initial?.yellow_grace_seconds ?? previousYellowGraceSeconds ?? DEFAULT_YELLOW_GRACE_SECONDS,
         yellow_grace_power_pct: initial?.yellow_grace_power_pct ?? 100,
         yellow_post_grace_power_pct: initial?.yellow_post_grace_power_pct ?? 0,
         yellow_lap_penalty_laps: initial?.yellow_lap_penalty_laps ?? DEFAULT_YELLOW_LAP_PENALTY_LAPS,

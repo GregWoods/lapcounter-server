@@ -171,6 +171,7 @@ const Sessions = () => {
                         <div className="admin-session-row">
                             <SessionForm
                                 meetingId={meeting.id}
+                                previousYellowGraceSeconds={sessions.at(-1)?.yellow_grace_seconds}
                                 onSave={handleCreateSession}
                                 onCancel={() => setAddingSession(false)}
                                 hasPowerControl={hasPowerControl}
