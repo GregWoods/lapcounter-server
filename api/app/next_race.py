@@ -256,10 +256,12 @@ def select_balanced_race_drivers(race_session, drivers, lanes):
 
 
 def get_active_meeting(dbsession):
-    """Return the earliest meeting with date >= today. Raises 404 if none found."""
-    today = date_type.today()
+    """Return the earliest meeting that has not been ended. Raises 404 if none found.
+
+    Ending is manual (POST /meetings/{id}/end), not a function of the date, so a meeting
+    that runs past its date — or was set up a day early — stays usable."""
     meeting = dbsession.exec(
-        select(Meeting).where(Meeting.date >= today).order_by(Meeting.date.asc())
+        select(Meeting).where(Meeting.ended_at.is_(None)).order_by(Meeting.date.asc(), Meeting.id.asc())
     ).first()
     if not meeting:
         raise HTTPException(status_code=404, detail="No active or upcoming meetings found")

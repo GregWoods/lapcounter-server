@@ -77,6 +77,9 @@ class Meeting(SQLModel, table=True):
     name: str
     date: date
     venue: Optional[str]
+    # Set when the operator ends the meeting. An unended meeting stays active whatever its
+    # date says; see get_active_meeting().
+    ended_at: Optional[datetime] = Field(default=None)
 
 
 class MeetingDriver(SQLModel, table=True):

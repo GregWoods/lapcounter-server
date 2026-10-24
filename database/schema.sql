@@ -88,7 +88,8 @@ CREATE TABLE meetings (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     date DATE,
-    venue VARCHAR(255)
+    venue VARCHAR(255),
+    ended_at TIMESTAMPTZ
 );
 
 CREATE TABLE meeting_drivers (

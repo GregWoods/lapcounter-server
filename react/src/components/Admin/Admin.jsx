@@ -312,6 +312,9 @@ const Admin = () => {
     const [editingMeetingId, setEditingMeetingId] = useState(null);
     const [addingSessionTo, setAddingSessionTo] = useState(null);
     const [editingSessionId, setEditingSessionId] = useState(null);
+    const [endingMeetingId, setEndingMeetingId] = useState(null);
+    const [endingMeetingLoading, setEndingMeetingLoading] = useState(false);
+    const [endingMeetingError, setEndingMeetingError] = useState(null);
     const [endingSessionId, setEndingSessionId] = useState(null);
     const [endingLoading, setEndingLoading] = useState(false);
     const [endingError, setEndingError] = useState(null);
@@ -374,6 +377,32 @@ const Admin = () => {
         } finally {
             setEndingLoading(false);
         }
+    };
+
+    const handleEndMeeting = async () => {
+        setEndingMeetingLoading(true);
+        setEndingMeetingError(null);
+        try {
+            const res = await fetch(`${API_URL}/meetings/${endingMeetingId}/end`, { method: 'POST' });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.detail || 'Failed to end meeting');
+            }
+            await reloadAll();
+            publishAdminUpdate('meeting_ended', { meeting_id: endingMeetingId });
+            setEndingMeetingId(null);
+        } catch (err) {
+            setEndingMeetingError(err.message);
+        } finally {
+            setEndingMeetingLoading(false);
+        }
+    };
+
+    const handleReopenMeeting = async (id) => {
+        const res = await fetch(`${API_URL}/meetings/${id}/reopen`, { method: 'POST' });
+        if (!res.ok) return;
+        await reloadAll();
+        publishAdminUpdate('meeting_reopened', { meeting_id: id });
     };
 
     const handleCreateMeeting = async (form) => {
@@ -487,12 +516,30 @@ const Admin = () => {
                                 <span className="admin-meeting-name">
                                     {meeting.name}
                                     {meeting.id === activeMeetingId && <span className="admin-active-badge">Active</span>}
+                                    {meeting.ended_at && <span className="admin-session-state--finished admin-active-badge">Ended</span>}
                                 </span>
                                 <span className="admin-meeting-meta">
                                     {meeting.date}
                                     {meeting.venue && ` · ${meeting.venue}`}
                                 </span>
                             </div>
+                            {meeting.ended_at ? (
+                                <button
+                                    className="admin-btn-ghost admin-btn-sm"
+                                    onClick={(e) => { e.stopPropagation(); handleReopenMeeting(meeting.id); }}
+                                    title="Make this meeting available again"
+                                >
+                                    Reopen
+                                </button>
+                            ) : (
+                                <button
+                                    className="admin-btn-ghost admin-btn-sm admin-end-session-btn"
+                                    onClick={(e) => { e.stopPropagation(); setEndingMeetingId(meeting.id); setEndingMeetingError(null); }}
+                                    title="End this meeting"
+                                >
+                                    End Meeting
+                                </button>
+                            )}
                             <button
                                 className="admin-btn-ghost admin-btn-sm"
                                 onClick={(e) => { e.stopPropagation(); setEditingMeetingId(meeting.id); setNewMeetingOpen(false); }}
@@ -594,6 +641,25 @@ const Admin = () => {
                 </div>
                 );
             })}
+
+            {endingMeetingId && (
+                <div className="admin-modal-overlay" onClick={() => setEndingMeetingId(null)}>
+                    <div className="admin-modal" onClick={e => e.stopPropagation()}>
+                        <p className="admin-modal-title">End this meeting?</p>
+                        <p className="admin-modal-body">
+                            The meeting stops being the active one, so RaceControl moves on to the next
+                            unended meeting. Its sessions and results stay as they are, and you can reopen it later.
+                        </p>
+                        {endingMeetingError && <p className="admin-error">{endingMeetingError}</p>}
+                        <div className="admin-modal-actions">
+                            <button className="admin-btn-ghost" onClick={() => setEndingMeetingId(null)}>Cancel</button>
+                            <button className="admin-btn-primary" onClick={handleEndMeeting} disabled={endingMeetingLoading}>
+                                {endingMeetingLoading ? 'Ending…' : 'End Meeting'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {endingSessionId && (
                 <div className="admin-modal-overlay" onClick={() => setEndingSessionId(null)}>

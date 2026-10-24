@@ -142,6 +142,36 @@ def update_meeting(meeting_id: int, update: MeetingUpdate, dbsession: SessionDep
     return meeting
 
 
+@app.post("/meetings/{meeting_id}/end", response_model=Meeting)
+def end_meeting(meeting_id: int, dbsession: SessionDep) -> Meeting:
+    meeting = dbsession.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    in_progress = dbsession.exec(
+        select(RaceSession).where(RaceSession.meeting_id == meeting_id, RaceSession.state == 'InProgress')
+    ).first()
+    if in_progress:
+        raise HTTPException(status_code=409, detail="A session is still in progress — end it first")
+    if meeting.ended_at is None:
+        meeting.ended_at = datetime.now(timezone.utc)
+        dbsession.add(meeting)
+        dbsession.commit()
+        dbsession.refresh(meeting)
+    return meeting
+
+
+@app.post("/meetings/{meeting_id}/reopen", response_model=Meeting)
+def reopen_meeting(meeting_id: int, dbsession: SessionDep) -> Meeting:
+    meeting = dbsession.get(Meeting, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    meeting.ended_at = None
+    dbsession.add(meeting)
+    dbsession.commit()
+    dbsession.refresh(meeting)
+    return meeting
+
+
 @app.get("/sessions",
          summary="Get race sessions",
          description="Retrieve all race sessions, or filter by meeting ID",
