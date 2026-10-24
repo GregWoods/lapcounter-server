@@ -656,11 +656,12 @@ def recovered_race(laps, started_at=5000.0, now=5010.0, **kwargs):
     """A race rebuilt by restore() from `laps` (driver_id -> lap times), as lapdata does
     when it restarts and the DB still says Running."""
     race = RaceManager()
+    lap_penalties = kwargs.pop('lap_penalties', None)
     race.load_lineup(
         race_id=9, race_number=3, target_laps=kwargs.pop('target_laps', 5),
         lane_assignments=make_lineup(kwargs.pop('n_drivers', 3)), **kwargs,
     )
-    race.restore(started_at, laps, now)
+    race.restore(started_at, laps, now, lap_penalties)
     return race
 
 
@@ -676,7 +677,42 @@ def test_recovery_restores_laps_and_fastest_laps_from_the_db():
     assert (d1.laps_completed, d2.laps_completed, d3.laps_completed) == (2, 1, 0)
     assert d1.best_lap_time == 4.8 and d1.last_lap_time == 4.8
     assert race.race_fastest_lap == 4.8
-    assert d1.has_started and not d3.has_started
+
+
+def test_recovery_assumes_a_lapless_driver_made_the_discarded_start_crossing():
+    """Grid behind the line: driver_laps can't say whether a driver still on lap 1 had
+    crossed. Treating them as never started could end the race under them."""
+    race = recovered_race({1: [5.0, 4.8], 2: [5.2]})
+    assert race.drivers[3].has_started
+
+
+def test_recovery_with_the_grid_in_front_leaves_a_lapless_driver_unstarted():
+    race = recovered_race({1: [5.0, 4.8], 2: [5.2]}, count_first_crossing=True)
+    assert race.drivers[1].has_started and not race.drivers[3].has_started
+
+
+def test_recovery_keeps_lap_penalties_already_applied():
+    race = recovered_race({1: [5.0, 4.8, 4.9], 2: [5.2]}, lap_penalties={1: 1})
+    assert race.drivers[1].laps_completed == 2
+    assert race.drivers[1].lap_times == [5.0, 4.8, 4.9]
+
+
+def test_recovery_marks_drivers_who_took_the_chequered_flag_below_target():
+    """The leader reached 5 laps at t=25. Driver 2's 4th lap ended at t=24, before the
+    flag; driver 3's ended at t=28, after it, so on_lap would have finished them there."""
+    race = recovered_race(
+        {1: [5.0] * 5, 2: [6.0] * 4, 3: [7.0] * 4},
+        target_laps=5,
+    )
+    assert race.drivers[1].finished
+    assert not race.drivers[2].finished      # last crossing t=24, before the flag at 25
+    assert race.drivers[3].finished          # last crossing t=28, after it
+    assert race.state == 'Paused'            # driver 2 still owes a lap
+
+
+def test_a_race_everyone_had_finished_comes_back_finished():
+    race = recovered_race({1: [5.0] * 5, 2: [6.0] * 5, 3: [7.0] * 4}, target_laps=5)
+    assert race.state == 'Finished'
 
 
 def test_recovery_keeps_the_original_start_time():

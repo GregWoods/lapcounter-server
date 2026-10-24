@@ -24,9 +24,11 @@ const Meetings = () => {
 
     // admin_update is the "something changed, re-fetch" ping an already-open /racecontrol
     // listens for; ending or reopening a meeting changes which one is active.
+    // Tagged with this tab's id so it can ignore its own echo: it has already reloaded.
     const mqttClientRef = useRef(null);
+    const senderId = useRef(Math.random().toString(36).slice(2));
     const publishAdminUpdate = (reason, extra = {}) => {
-        mqttClientRef.current?.publish('admin_update', JSON.stringify({ reason, ...extra }));
+        mqttClientRef.current?.publish('admin_update', JSON.stringify({ reason, ...extra, sender: senderId.current }));
     };
 
     const meetingsSorted = [...meetings].sort((a, b) => b.date.localeCompare(a.date));
@@ -91,7 +93,7 @@ const Meetings = () => {
 
     return (
         <div className="admin-page">
-            <MqttSubscriber mqttHost={MQTT_URL} clientRef={mqttClientRef} onAdminUpdateMessage={reloadAll} />
+            <MqttSubscriber mqttHost={MQTT_URL} clientRef={mqttClientRef} onAdminUpdateMessage={msg => { if (msg?.sender !== senderId.current) reloadAll(); }} />
             <div className="admin-header">
                 <div className="admin-header-left">
                     <h1 className="admin-title">Race Meetings</h1>

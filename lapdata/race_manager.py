@@ -154,12 +154,15 @@ class RaceManager:
             f"{len(self.drivers)} drivers, session_type={session_type})"
         )
 
-    def restore(self, started_at: Optional[float], laps: Dict[int, list], now: float):
+    def restore(self, started_at: Optional[float], laps: Dict[int, list], now: float,
+                lap_penalties: Optional[Dict[int, int]] = None):
         """Rebuild a race that was Running when lapdata went away. Call after load_lineup().
 
-        `laps` is driver_id -> that driver's counted lap times in order, from the DB. That
-        is all the DB can give back: the clock anchors and each car's last crossing were
-        in memory only, so the next lap can't be timed. Hence:
+        `laps` is driver_id -> that driver's counted lap times in order, from the DB, and
+        `lap_penalties` driver_id -> laps already deducted live (race_penalties), which
+        driver_laps doesn't reflect. That is all the DB can give back: the clock anchors
+        and each car's last crossing were in memory only, so the next lap can't be timed.
+        Hence:
 
         - the race comes back Paused with power at 0 — it can't be timed and the operator
           hasn't signed off on cars moving. Resume (or End) from Race Control.
@@ -169,20 +172,25 @@ class RaceManager:
         - positions within a lap count fall back to lane order: the order of last
           crossings is gone.
 
-        A timed race whose time ran out while we were away, or a Laps race where someone
-        had already reached the target, comes back Finished so the finish gets POSTed.
+        A timed race whose time ran out while we were away, or a Laps race where everyone
+        had already taken the chequered flag, comes back Finished so the finish gets POSTed.
         """
         self.recovered = True
         self.race_start_time = started_at
         if started_at is not None and self.race_duration_seconds:
             self.race_end_time = started_at + self.race_duration_seconds
+        lap_penalties = lap_penalties or {}
 
         for driver in self.drivers.values():
             times = laps.get(driver.driver_id, [])
             driver.lap_times = [round(t, 3) for t in times]
-            driver.laps_completed = len(times)
-            # The discarded start-line crossing isn't a lap, but it did happen.
-            driver.crossings = len(times) + (0 if self.count_first_crossing or not times else 1)
+            driver.laps_completed = max(0, len(times) - lap_penalties.get(driver.driver_id, 0))
+            # With the grid behind the line, the discarded start-line crossing isn't in
+            # driver_laps but did happen — and for a driver still on lap 1 there's no way to
+            # tell whether it had. Assume it had: counting them as started only means a car
+            # that truly never left holds the race open until the operator ends it, where
+            # the other guess could end the race under a driver who is still racing.
+            driver.crossings = len(times) + (0 if self.count_first_crossing else 1)
             if times:
                 driver.last_lap_time = times[-1]
                 driver.best_lap_time = min(times)
@@ -190,8 +198,9 @@ class RaceManager:
                 if self.session_type == 'FastestLap':
                     for t in times:
                         self._update_session_fastest(driver.driver_id, driver.driver_name, t)
-            if self.session_type != 'FastestLap' and driver.laps_completed >= self.target_laps:
-                driver.finished = True
+
+        if self.session_type != 'FastestLap':
+            self._restore_chequered_flag(laps, lap_penalties)
 
         self.state = 'Paused'
         self.power_pct = 0
@@ -204,6 +213,37 @@ class RaceManager:
             logger.warning(f"Race {self.race_id} ran out of time while lapdata was away — finished")
         else:
             self._check_race_end()
+
+    def _restore_chequered_flag(self, laps: Dict[int, list], lap_penalties: Dict[int, int]):
+        """Re-mark who had taken the chequered flag. on_lap finishes a driver on reaching the
+        target *or* on any counted lap after someone else has, so a count alone misses the
+        second group. Lap 1 is timed from lights-out, so a driver's running total of lap
+        times is the race time of each crossing — enough to say whose last counted lap came
+        after the first finish.
+
+        After a single restart this is exact: every counted lap is a counter subtraction,
+        so the running totals are true race times.
+
+        ⚠️ Not after a second restart in the same race. The lap that straddled the first
+        one is missing from every driver's total, by a different amount for each (how far
+        round the lap each car was), so a driver can land on the wrong side of the flag
+        either way: wrongly finished, they stop counting and lose a lap; wrongly not, they
+        must come back out after pulling in and gain one. Neither is safe — finishing
+        position is laps first. Only persisting each crossing's clock and counter_ms
+        (which driver_lap already carries and dbwriter drops) would fix it."""
+        flag_at = None
+        for driver in self.drivers.values():
+            if driver.laps_completed >= self.target_laps:
+                driver.finished = True
+                times = laps.get(driver.driver_id, [])
+                reached = sum(times[:self.target_laps + lap_penalties.get(driver.driver_id, 0)])
+                flag_at = reached if flag_at is None else min(flag_at, reached)
+        if flag_at is None:
+            return
+        for driver in self.drivers.values():
+            times = laps.get(driver.driver_id, [])
+            if times and sum(times) > flag_at:
+                driver.finished = True
 
     def _merge_session_drivers(self, lane_assignments: list, session_drivers: list):
         """Merge API session driver list into in-memory session_drivers.

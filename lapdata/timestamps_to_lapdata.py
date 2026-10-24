@@ -547,6 +547,13 @@ def handle_race_control(data: dict, arrival: float):
         # nextrace) stages the new lineup — the same shape lapdata broadcasts at
         # startup, so this is not a new state.
         race_id = data.get('race_id')
+        # Never over a race that is still under way: the queue head is the *next* race, and
+        # loading it would throw away this one's laps and its /finish. A client can send
+        # prepare from a stale view (RaceControl after ending a stuck race, or regenerating
+        # while Paused); End first is the only way to move on.
+        if race.state in ('ArmedForStart', 'Running', 'Yellow', 'Paused'):
+            logger.warning(f"prepare ignored: race {race.race_id} is {race.state} (end it first)")
+            return
         fresh = fetch_pending_race()
         if fresh:
             pending_race_cache = fresh
@@ -717,16 +724,19 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
 
 def fetch_running_recovery() -> dict | None:
     """The DB's record of a race still marked Running — lineup, start time, counted laps —
-    or None if there isn't one or the API can't be reached."""
+    or None if there isn't one, it can't be built, or the API can't be reached (only the
+    last leaves _api_reachable False)."""
     try:
         with urllib.request.urlopen(f"{api_url}/races/running/recovery/", timeout=5) as resp:
             _set_api_reachable(True)
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
-        if e.code == 404:
-            _set_api_reachable(True)  # reachable; nothing is Running
-        else:
-            _set_api_reachable(False)
+        # The API answered either way. A 500 here (say, a Running race whose session row
+        # is broken) must not read as "API down": that would retry forever, show
+        # Connection lost on every screen and never stage the queue head. Fall through to
+        # the normal startup instead; RaceControl still offers to end the stuck race.
+        _set_api_reachable(True)
+        if e.code != 404:  # 404: nothing is Running
             logger.error(f"API returned {e.code} when fetching running-race recovery: {e}")
     except Exception as e:
         _set_api_reachable(False)
@@ -734,22 +744,24 @@ def fetch_running_recovery() -> dict | None:
     return None
 
 
-def recover_running_race(recovery: dict):
+def recover_running_race(recovery: dict) -> bool:
     """Rebuild a race the DB still calls Running but this process knows nothing about —
     lapdata restarted mid-race. Holds _race_lock. The race comes back Paused (see
     RaceManager.restore); if it had already run out of time or been won it comes back
     Finished and publish_race_state() POSTs the finish, which also runs the API's
-    session auto-end — the step that never happened when this was a manual restart."""
+    session auto-end — the step that never happened when this was a manual restart.
+    Returns False, loading nothing, if the payload has no lineup to rebuild."""
     global pending_race_cache, _last_posted_state
     setup = recovery.get('setup')
     if not setup:
         logger.error(f"Race {recovery.get('race_id')} is Running in the DB but has no lineup — can't recover it")
-        return
+        return False
     _load_pending(setup)
     race.restore(
         recovery.get('started_at'),
         {int(driver_id): times for driver_id, times in (recovery.get('laps') or {}).items()},
         time.time(),
+        {int(driver_id): n for driver_id, n in (recovery.get('lap_penalties') or {}).items()},
     )
     # The state we just rebuilt is what the API already holds (Running), or is a Finished
     # transition it must be told about. Either way, don't POST a bogus /start for it.
@@ -758,6 +770,7 @@ def recover_running_race(recovery: dict):
         _schedule_end_timer()
     publish_race_state()
     pending_race_cache = None
+    return True
 
 
 def load_on_startup() -> bool:
@@ -775,11 +788,20 @@ def load_on_startup() -> bool:
         with _race_lock:
             if race.race_id:
                 return True
-            recover_running_race(recovery)
-        pending_race_cache = fetch_pending_race()
-        return True
+            recovered = recover_running_race(recovery)
+        if recovered:
+            pending_race_cache = fetch_pending_race()
+            return True
+        # No lineup to rebuild: start up as if nothing were Running, so the queue head is
+        # still staged. RaceControl offers to end the stuck race.
 
     pending = fetch_pending_race()
+    if pending is None and not _api_reachable:
+        # The API went away between the two reads — retry, same as if it had been down
+        # for the first.
+        _startup_load_pending = True
+        logger.warning("API unreachable at startup — will retry until the race can be loaded")
+        return False
     with _race_lock:
         if race.race_id:
             return True

@@ -274,6 +274,19 @@ def get_current_race(dbsession: SessionDep):
     raise HTTPException(status_code=404, detail="No current race — no session in progress")
 
 
+@app.get("/races/running/")
+def get_running_race(dbsession: SessionDep):
+    """Just the id and number of the race marked Running, or 404. RaceControl polls this on
+    every transition to spot a race lapdata has lost; the full /recovery/ payload (lineup,
+    session progress, every lap) is far more work than it needs."""
+    running = dbsession.exec(
+        select(Race).where(Race.state == 'Running').order_by(Race.id.desc())
+    ).first()
+    if not running:
+        raise HTTPException(status_code=404, detail="No race is marked Running")
+    return {"race_id": running.id, "race_number": running.race_number}
+
+
 @app.get("/races/running/recovery/")
 def get_running_race_recovery(dbsession: SessionDep):
     """What lapdata needs to pick a race back up after a restart: the Running race, when
@@ -298,6 +311,13 @@ def get_running_race_recovery(dbsession: SessionDep):
     laps: dict[str, list[float]] = {}
     for driver_id, lap_time in rows:
         laps.setdefault(str(driver_id), []).append(float(lap_time))
+    # Lap penalties lapdata had already applied live (the GPIO yellow-flag deterrent).
+    # driver_laps doesn't reflect them, so without these a restart would hand the laps back.
+    lap_penalties: dict[str, int] = {}
+    for p in dbsession.exec(
+        select(RacePenalty).where(RacePenalty.race_id == running.id, RacePenalty.penalty_type == 'lap')
+    ).all():
+        lap_penalties[str(p.driver_id)] = lap_penalties.get(str(p.driver_id), 0) + int(p.amount)
     # The same payload /races/pending/ sends, so lapdata loads it through its normal path.
     setup = _build_race_setup(dbsession, running)
     return {
@@ -306,6 +326,7 @@ def get_running_race_recovery(dbsession: SessionDep):
         "race_number": running.race_number,
         "started_at": running.started_at.timestamp() if running.started_at else None,
         "laps": laps,
+        "lap_penalties": lap_penalties,
         "setup": setup.model_dump() if setup else None,
     }
 

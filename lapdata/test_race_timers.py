@@ -310,6 +310,71 @@ def test_api_down_at_startup_is_retried_not_forgotten(lapdata, monkeypatch):
     assert fresh.race_id == 1
 
 
+def test_recovery_payload_without_a_lineup_still_stages_the_queue_head(lapdata, monkeypatch):
+    fresh = tsl.RaceManager()
+    monkeypatch.setattr(tsl, 'race', fresh)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: {**RECOVERY, 'setup': None})
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    assert tsl.load_on_startup() is True
+    assert fresh.race_id == 2
+    assert fresh.state == 'NotStarted'
+
+
+def test_api_lost_between_the_startup_reads_is_retried(lapdata, monkeypatch):
+    def pending_unreachable():
+        tsl._api_reachable = False
+        return None
+
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, '_startup_load_pending', False)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
+    monkeypatch.setattr(tsl, 'fetch_pending_race', pending_unreachable)
+    assert tsl.load_on_startup() is False
+    assert tsl._startup_load_pending is True
+
+
+def test_a_recovery_server_error_does_not_mark_the_api_unreachable(lapdata, monkeypatch):
+    """A 500 means the API answered. Treating it as down would retry forever and never
+    stage the queue head."""
+    def urlopen(url, timeout):
+        raise tsl.urllib.error.HTTPError(url, 500, 'boom', {}, None)
+
+    monkeypatch.setattr(tsl.urllib.request, 'urlopen', urlopen)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    assert tsl.fetch_running_recovery() is None
+    assert tsl._api_reachable is True
+
+
+def test_recovery_passes_lap_penalties_to_the_race(lapdata, monkeypatch):
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: None)
+    with tsl._race_lock:
+        tsl.recover_running_race({**RECOVERY, 'lap_penalties': {'1': 1}})
+    assert tsl.race.drivers[1].laps_completed == 1
+
+
+# --- prepare must never replace a race that is under way ---
+
+@pytest.mark.parametrize('command', [None, 'yellow', 'pause'])
+def test_prepare_is_ignored_while_a_race_is_under_way(lapdata, monkeypatch, command):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    if command:
+        control(command)
+    control('prepare')
+    assert lapdata.race.race_id == 1
+    assert lapdata.race.state != 'NotStarted'
+
+
+def test_prepare_stages_the_next_race_once_the_race_has_ended(lapdata, monkeypatch):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    control('end')
+    control('prepare')
+    assert lapdata.race.race_id == 2
+    assert lapdata.race.state == 'NotStarted'
+
+
 # --- Lineup edited in NextRace after the race was staged ---
 
 EDITED = {**PENDING, 'lane_assignments': PENDING['lane_assignments'] + [
