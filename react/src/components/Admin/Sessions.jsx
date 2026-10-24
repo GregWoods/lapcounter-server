@@ -92,6 +92,7 @@ const Sessions = () => {
             <MqttSubscriber
                 mqttHost={MQTT_URL}
                 clientRef={mqttClientRef}
+                onAdminUpdateMessage={reload}
                 onLayer1StatusMessage={msg => setLayer1Capabilities(msg.capabilities || [])}
             />
             <div className="admin-header">

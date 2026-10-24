@@ -87,6 +87,9 @@ prev_crossing: list = [None] * 6
 # line nobody's watching mid-meet. Starts True (optimistic) so a display doesn't flash a
 # false alarm before the first fetch has even happened.
 _api_reachable = True
+# Set when the startup load found the API down, so _api_recovery_loop tries again. Without
+# it a lapdata that starts before the API sits empty until an operator happens to prepare.
+_startup_load_pending = False
 
 
 def _set_api_reachable(reachable: bool):
@@ -705,21 +708,88 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
     # on_connect fires on every broker *re*connect too, not just startup. Reloading the
     # pending race then would replace a running race with the next one in the queue, so
     # once a race is loaded just republish it — race_state isn't retained on the broker.
-    global pending_race_cache
     with _race_lock:
         if race.race_id:
             publish_race_state()
             return
+    load_on_startup()
 
-    # Load pending race on startup so race state is available immediately
+
+def fetch_running_recovery() -> dict | None:
+    """The DB's record of a race still marked Running — lineup, start time, counted laps —
+    or None if there isn't one or the API can't be reached."""
+    try:
+        with urllib.request.urlopen(f"{api_url}/races/running/recovery/", timeout=5) as resp:
+            _set_api_reachable(True)
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            _set_api_reachable(True)  # reachable; nothing is Running
+        else:
+            _set_api_reachable(False)
+            logger.error(f"API returned {e.code} when fetching running-race recovery: {e}")
+    except Exception as e:
+        _set_api_reachable(False)
+        logger.error(f"API unreachable when fetching running-race recovery: {e}")
+    return None
+
+
+def recover_running_race(recovery: dict):
+    """Rebuild a race the DB still calls Running but this process knows nothing about —
+    lapdata restarted mid-race. Holds _race_lock. The race comes back Paused (see
+    RaceManager.restore); if it had already run out of time or been won it comes back
+    Finished and publish_race_state() POSTs the finish, which also runs the API's
+    session auto-end — the step that never happened when this was a manual restart."""
+    global pending_race_cache, _last_posted_state
+    setup = recovery.get('setup')
+    if not setup:
+        logger.error(f"Race {recovery.get('race_id')} is Running in the DB but has no lineup — can't recover it")
+        return
+    _load_pending(setup)
+    race.restore(
+        recovery.get('started_at'),
+        {int(driver_id): times for driver_id, times in (recovery.get('laps') or {}).items()},
+        time.time(),
+    )
+    # The state we just rebuilt is what the API already holds (Running), or is a Finished
+    # transition it must be told about. Either way, don't POST a bogus /start for it.
+    _last_posted_state = 'Running' if race.state != 'Finished' else None
+    if race.state != 'Finished':
+        _schedule_end_timer()
+    publish_race_state()
+    pending_race_cache = None
+
+
+def load_on_startup() -> bool:
+    """Put something in the race manager at startup: a race the DB says is still Running
+    (restarted mid-race) in preference to the queue head. Returns False if the API
+    couldn't be reached, so the caller can try again."""
+    global pending_race_cache, _startup_load_pending
+    recovery = fetch_running_recovery()
+    if recovery is None and not _api_reachable:
+        _startup_load_pending = True
+        logger.warning("API unreachable at startup — will retry until the race can be loaded")
+        return False
+    _startup_load_pending = False
+    if recovery is not None:
+        with _race_lock:
+            if race.race_id:
+                return True
+            recover_running_race(recovery)
+        pending_race_cache = fetch_pending_race()
+        return True
+
     pending = fetch_pending_race()
     with _race_lock:
+        if race.race_id:
+            return True
         if pending:
             pending_race_cache = pending
             _load_pending(pending)
             publish_race_state()
         else:
             logger.warning("No pending race found on startup — waiting for race_control start")
+    return True
 
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
@@ -737,7 +807,11 @@ def _api_recovery_loop():
     else would: with no race loaded, no fetch or POST happens to flip it back."""
     while True:
         time.sleep(API_RETRY_INTERVAL_S)
-        if not _api_reachable:
+        if _startup_load_pending:
+            # The API was down when lapdata started, so nothing was loaded — and a
+            # recovered Running race especially must not wait for someone to notice.
+            load_on_startup()
+        elif not _api_reachable:
             fetch_pending_race()
 
 

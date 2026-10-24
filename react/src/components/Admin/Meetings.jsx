@@ -91,7 +91,7 @@ const Meetings = () => {
 
     return (
         <div className="admin-page">
-            <MqttSubscriber mqttHost={MQTT_URL} clientRef={mqttClientRef} />
+            <MqttSubscriber mqttHost={MQTT_URL} clientRef={mqttClientRef} onAdminUpdateMessage={reloadAll} />
             <div className="admin-header">
                 <div className="admin-header-left">
                     <h1 className="admin-title">Race Meetings</h1>

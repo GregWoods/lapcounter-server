@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState, RaceSessionSummary
-from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup, effective_laps_completed
+from next_race import _build_race_setup, get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup, effective_laps_completed
 from points import calculate_race_points
 import app_settings
 
@@ -272,6 +272,42 @@ def get_current_race(dbsession: SessionDep):
     if pending:
         return pending
     raise HTTPException(status_code=404, detail="No current race — no session in progress")
+
+
+@app.get("/races/running/recovery/")
+def get_running_race_recovery(dbsession: SessionDep):
+    """What lapdata needs to pick a race back up after a restart: the Running race, when
+    it started, and every counted lap per driver (from dbwriter's driver_laps). The DB is
+    the durable record; lapdata's race state is in memory only.
+
+    Deliberately not limited to the active session: a Running race whose session was
+    ended by hand is exactly the stuck case this exists to surface. 404 when nothing is
+    marked Running. Lap times only — the clock anchors and last-crossing counters that
+    timed them are gone, which is why lapdata comes back Paused."""
+    running = dbsession.exec(
+        select(Race).where(Race.state == 'Running').order_by(Race.id.desc())
+    ).first()
+    if not running:
+        raise HTTPException(status_code=404, detail="No race is marked Running")
+    rows = dbsession.exec(
+        select(DriverRace.driver_id, DriverLap.lap_time)
+        .join(DriverLap, DriverLap.driver_race_id == DriverRace.id)
+        .where(DriverRace.race_id == running.id)
+        .order_by(DriverLap.id)
+    ).all()
+    laps: dict[str, list[float]] = {}
+    for driver_id, lap_time in rows:
+        laps.setdefault(str(driver_id), []).append(float(lap_time))
+    # The same payload /races/pending/ sends, so lapdata loads it through its normal path.
+    setup = _build_race_setup(dbsession, running)
+    return {
+        "race_id": running.id,
+        "session_id": running.session_id,
+        "race_number": running.race_number,
+        "started_at": running.started_at.timestamp() if running.started_at else None,
+        "laps": laps,
+        "setup": setup.model_dump() if setup else None,
+    }
 
 
 @app.get("/races/pending/")

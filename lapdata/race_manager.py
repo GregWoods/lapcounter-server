@@ -98,6 +98,9 @@ class RaceManager:
         self.race_duration_seconds: Optional[float] = None
         self.race_end_time: Optional[float] = None
         self.session_drivers: Dict[int, dict] = {}  # keyed by driver_id; FastestLap only
+        # True once restore() has rebuilt this race from the DB after a restart; only
+        # changes how a missing crossing baseline is logged.
+        self.recovered: bool = False
 
     def load_lineup(self, race_id: int, race_number: int, target_laps: int,
                     lane_assignments: list, count_first_crossing: bool = False,
@@ -127,6 +130,7 @@ class RaceManager:
         self.min_lap_time = min_lap_time
         self._paused_from_yellow_expiry = False
         self.pending_penalty_records = []
+        self.recovered = False
 
         # FastestLap: time-limited, so target_laps is irrelevant
         self.target_laps = target_laps if session_type != 'FastestLap' else 9999
@@ -149,6 +153,57 @@ class RaceManager:
             f"Loaded race {race_id} ({target_laps} laps/{race_duration_seconds}s, "
             f"{len(self.drivers)} drivers, session_type={session_type})"
         )
+
+    def restore(self, started_at: Optional[float], laps: Dict[int, list], now: float):
+        """Rebuild a race that was Running when lapdata went away. Call after load_lineup().
+
+        `laps` is driver_id -> that driver's counted lap times in order, from the DB. That
+        is all the DB can give back: the clock anchors and each car's last crossing were
+        in memory only, so the next lap can't be timed. Hence:
+
+        - the race comes back Paused with power at 0 — it can't be timed and the operator
+          hasn't signed off on cars moving. Resume (or End) from Race Control.
+        - each driver's first crossing after resume is only a new baseline, not a lap
+          (see on_lap's no-baseline branch). The lap that straddled the restart is lost
+          rather than guessed.
+        - positions within a lap count fall back to lane order: the order of last
+          crossings is gone.
+
+        A timed race whose time ran out while we were away, or a Laps race where someone
+        had already reached the target, comes back Finished so the finish gets POSTed.
+        """
+        self.recovered = True
+        self.race_start_time = started_at
+        if started_at is not None and self.race_duration_seconds:
+            self.race_end_time = started_at + self.race_duration_seconds
+
+        for driver in self.drivers.values():
+            times = laps.get(driver.driver_id, [])
+            driver.lap_times = [round(t, 3) for t in times]
+            driver.laps_completed = len(times)
+            # The discarded start-line crossing isn't a lap, but it did happen.
+            driver.crossings = len(times) + (0 if self.count_first_crossing or not times else 1)
+            if times:
+                driver.last_lap_time = times[-1]
+                driver.best_lap_time = min(times)
+                self.race_fastest_lap = min(self.race_fastest_lap, driver.best_lap_time)
+                if self.session_type == 'FastestLap':
+                    for t in times:
+                        self._update_session_fastest(driver.driver_id, driver.driver_name, t)
+            if self.session_type != 'FastestLap' and driver.laps_completed >= self.target_laps:
+                driver.finished = True
+
+        self.state = 'Paused'
+        self.power_pct = 0
+        self._paused_from_yellow_expiry = False
+        counts = {d.lane: d.laps_completed for d in self.drivers.values()}
+        logger.warning(f"Race {self.race_id} recovered from the database as Paused, laps by lane: {counts}")
+
+        if self.race_end_time is not None and now >= self.race_end_time:
+            self.end()
+            logger.warning(f"Race {self.race_id} ran out of time while lapdata was away — finished")
+        else:
+            self._check_race_end()
 
     def _merge_session_drivers(self, lane_assignments: list, session_drivers: list):
         """Merge API session driver list into in-memory session_drivers.
@@ -342,8 +397,11 @@ class RaceManager:
             # inventing an interval — a fabricated 0.0 would win fastest lap outright and
             # stand for the whole session.
             driver.last_crossing = crossing
-            logger.error(f"Lane {lane} crossed while Running with no recorded lights-out "
-                         f"(resumed without a start?) — using it as the lap 1 baseline")
+            if self.recovered:
+                logger.info(f"Lane {lane}: first crossing since recovery — new baseline, not a lap")
+            else:
+                logger.error(f"Lane {lane} crossed while Running with no recorded lights-out "
+                             f"(resumed without a start?) — using it as the lap 1 baseline")
             return True
 
         driver.last_lap_time = lap_time
