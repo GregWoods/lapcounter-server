@@ -1,9 +1,10 @@
 from typing import Optional
+import uuid
 from decimal import Decimal
 import datetime as _datetime
 from datetime import date, datetime, time, timezone
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, text
 
 class CarManufacturer(SQLModel, table=True):
     __tablename__ = "car_manufacturers"
@@ -80,6 +81,11 @@ class Meeting(SQLModel, table=True):
     # Set when the operator ends the meeting. An unended meeting stays active whatever its
     # date says; see get_active_meeting().
     ended_at: Optional[datetime] = Field(default=None)
+    # Unguessable id for guest-facing URLs (/m/<public_id>/...); see migration 007.
+    public_id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column_kwargs={"unique": True, "server_default": text("gen_random_uuid()")},
+    )
 
 
 class MeetingDriver(SQLModel, table=True):

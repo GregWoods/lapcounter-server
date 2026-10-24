@@ -4,6 +4,7 @@ import subprocess
 import time as time_module
 import logging
 import traceback
+import uuid
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, select
@@ -106,6 +107,14 @@ def get_all_meetings(dbsession: SessionDep):
 @app.get("/meetings/active", response_model=Meeting)
 def get_active_meeting_endpoint(dbsession: SessionDep):
     return get_active_meeting(dbsession)
+
+
+@app.get("/meetings/by-public-id/{public_id}", response_model=Meeting)
+def get_meeting_by_public_id(public_id: uuid.UUID, dbsession: SessionDep):
+    meeting = dbsession.exec(select(Meeting).where(Meeting.public_id == public_id)).first()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return meeting
 
 
 @app.get("/meetings/upcoming")

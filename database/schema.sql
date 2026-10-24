@@ -89,7 +89,8 @@ CREATE TABLE meetings (
     name VARCHAR(255) NOT NULL,
     date DATE,
     venue VARCHAR(255),
-    ended_at TIMESTAMPTZ
+    ended_at TIMESTAMPTZ,
+    public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE
 );
 
 CREATE TABLE meeting_drivers (
