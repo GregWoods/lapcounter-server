@@ -1,6 +1,7 @@
 import './RaceControl.css';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { useGuestBase } from '../utils/meetingPaths';
 import { House, Flag, Pause, Play } from 'lucide-react';
 import MqttSubscriber from '../MqttSubscriber';
 import ChequeredFlagIcon from '../ChequeredFlagIcon';
@@ -17,6 +18,7 @@ const STATE_LABELS = {
 };
 
 export default function RaceControl() {
+    const base = useGuestBase();
     const [raceState, setRaceState] = useState(null);
     const [infoLoaded, setInfoLoaded] = useState(false);
     const [info, setInfo] = useState({
@@ -191,7 +193,7 @@ export default function RaceControl() {
             />
 
             <header className="rc-header">
-                <Link to="/" className="rc-home"><House size={22} /></Link>
+                <Link to={base || '/'} className="rc-home"><House size={22} /></Link>
                 <h1>Race Control</h1>
             </header>
 

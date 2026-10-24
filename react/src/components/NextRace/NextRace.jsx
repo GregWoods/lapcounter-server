@@ -22,7 +22,7 @@ function NextRace() {
                 <div className="nr-empty">
                     <p>{sessionRunning ? 'No races queued for this session' : 'Session has ended'}</p>
                     {sessionRunning
-                        ? <Link to="/racecontrol" className="nr-empty-link">Regenerate in Race Control</Link>
+                        ? <Link to={`${base}/racecontrol`} className="nr-empty-link">Regenerate in Race Control</Link>
                         : <Link to={`${base}/results`} className="nr-empty-link">View Results</Link>}
                 </div>
             </div>
