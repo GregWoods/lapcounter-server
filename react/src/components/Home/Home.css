@@ -48,6 +48,12 @@
     transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
+.home-lock-admin {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+}
+
 .home-button svg {
     width: 1.8rem;
     height: 1.8rem;
