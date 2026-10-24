@@ -73,6 +73,15 @@
     color: #fff;
 }
 
+.admin-meeting-name a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.admin-meeting-name a:hover {
+    text-decoration: underline;
+}
+
 .admin-collapse-chevron {
     display: flex;
     align-items: center;
