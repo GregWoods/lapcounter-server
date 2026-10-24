@@ -10,6 +10,7 @@ const DEFAULT_LAPS = 20;
 const DEFAULT_MINUTES = 5;
 const DEFAULT_RACES_PER_DRIVER = 3;
 const DEFAULT_MAX_SIT_OUTS = 2;
+const DEFAULT_MIN_LAP_TIME = 3;
 const DEFAULT_YELLOW_GRACE_SECONDS = 5;
 const DEFAULT_YELLOW_LAP_PENALTY_LAPS = 1;
 const DEFAULT_POINTS = '10, 8, 6, 4, 3, 2';
@@ -42,6 +43,7 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
         yellow_post_grace_power_pct: initial?.yellow_post_grace_power_pct ?? 0,
         yellow_lap_penalty_laps: initial?.yellow_lap_penalty_laps ?? DEFAULT_YELLOW_LAP_PENALTY_LAPS,
         start_grid: initial?.start_grid ?? 'BehindLine',
+        min_lap_time: initial?.min_lap_time ?? DEFAULT_MIN_LAP_TIME,
         scoring_points: initial ? parsePoints(initial.scoring_points) : DEFAULT_POINTS,
     }));
     const [saving, setSaving] = useState(false);
@@ -89,6 +91,7 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
             yellow_lap_penalty_laps: (!hasPowerControl && !isFastestLap)
                 ? (form.yellow_lap_penalty_laps || DEFAULT_YELLOW_LAP_PENALTY_LAPS) : 0,
             start_grid: form.start_grid,
+            min_lap_time: form.min_lap_time || DEFAULT_MIN_LAP_TIME,
             scoring_method: isFastestLap ? 'FastestLap' : 'PositionPoints',
             scoring_points: isFastestLap ? null : serializePoints(form.scoring_points),
         };
@@ -173,6 +176,21 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
                     <option value="BehindLine">Behind the finish line</option>
                     <option value="InFrontOfLine">In front of the finish line</option>
                 </select>
+            </div>
+            <div className="admin-form-row">
+                <label>Minimum lap time</label>
+                <div className="admin-form-inline-value">
+                    <input
+                        className="admin-input-narrow"
+                        type="number"
+                        value={form.min_lap_time ?? ''}
+                        onChange={e => set('min_lap_time', parseFloat(e.target.value) || null)}
+                        min="0.1"
+                        step="0.1"
+                    />
+                    <span className="admin-form-unit">s</span>
+                </div>
+                <p className="admin-form-hint">Crossings closer together than this are ignored as false triggers. Set below your fastest genuine lap (about 60% of a typical lap).</p>
             </div>
             <div className="admin-form-section">
                 <h4 className="admin-form-section-title">Yellow Flag</h4>

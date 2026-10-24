@@ -65,6 +65,7 @@ class RaceManager:
         self.race_start_time: Optional[float] = None
         self.race_fastest_lap: float = 999.999
         self.yellow_grace_seconds: float = 5.0
+        self.min_lap_time: Optional[float] = None  # seconds; None = use lapdata's MINIMUM_LAP_TIME fallback
         # Whole seconds until a yellow flag's grace period cuts power; None outside
         # Yellow. Ticked down by lapdata's own timers, like start_lights, so a display
         # renders the number it's given instead of comparing a deadline against its
@@ -103,7 +104,8 @@ class RaceManager:
                     session_type: str = 'Points', race_duration_seconds=None,
                     session_drivers=None, yellow_grace_seconds: float = 5.0,
                     yellow_grace_power_pct: int = 100, yellow_post_grace_power_pct: int = 0,
-                    yellow_lap_penalty_laps: int = 0):
+                    yellow_lap_penalty_laps: int = 0,
+                    min_lap_time: Optional[float] = None):
         """Load a pending race lineup. Call before start()."""
         self.race_id = race_id
         self.race_number = race_number
@@ -122,6 +124,7 @@ class RaceManager:
         self.yellow_grace_power_pct = yellow_grace_power_pct
         self.yellow_post_grace_power_pct = yellow_post_grace_power_pct
         self.yellow_lap_penalty_laps = yellow_lap_penalty_laps
+        self.min_lap_time = min_lap_time
         self._paused_from_yellow_expiry = False
         self.pending_penalty_records = []
 

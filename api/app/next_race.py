@@ -527,6 +527,7 @@ def _build_race_setup(dbsession, race):
         yellow_grace_power_pct=race_session.yellow_grace_power_pct,
         yellow_post_grace_power_pct=race_session.yellow_post_grace_power_pct,
         yellow_lap_penalty_laps=race_session.yellow_lap_penalty_laps,
+        min_lap_time=race_session.min_lap_time,
         session_drivers=session_drivers,
     )
 
