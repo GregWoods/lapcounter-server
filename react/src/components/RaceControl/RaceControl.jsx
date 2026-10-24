@@ -15,6 +15,8 @@ const STATE_LABELS = {
     Yellow: 'Yellow Flag',
     Paused: 'Paused',
     Finished: 'Finished',
+    Orphaned: 'Not tracked',
+    Connecting: 'Connecting…',
 };
 
 export default function RaceControl() {
@@ -26,6 +28,7 @@ export default function RaceControl() {
         racesTotal: null, targetLaps: 20, pendingRaceId: null,
         sessionInProgress: false, nextSessionAvailable: false, activeSessionId: null,
         needsRegen: false, missingDrivers: [], sitOutCandidates: [],
+        runningRaceId: null, runningRaceNumber: null,
     });
     const clientRef = useRef(null);
 
@@ -34,14 +37,16 @@ export default function RaceControl() {
     // on pending just means no session is in progress, not that one should be created.
     const loadInfo = useCallback(async () => {
         try {
-            const [pendingRes, meetingRes, regenRes] = await Promise.all([
+            const [pendingRes, meetingRes, regenRes, runningRes] = await Promise.all([
                 fetch(`${API_URL}/races/pending/`),
                 fetch(`${API_URL}/meetings/active`),
                 fetch(`${API_URL}/sessions/active/regen-status`),
+                fetch(`${API_URL}/races/running/`),
             ]);
             const pending = pendingRes.ok ? await pendingRes.json() : null;
             const meeting = meetingRes.ok ? await meetingRes.json() : null;
             const regen = regenRes.ok ? await regenRes.json() : null;
+            const running = runningRes.ok ? await runningRes.json() : null;
 
             let targetLaps = 20;
             let sessionInProgress = false, nextSessionAvailable = false, activeSessionId = null;
@@ -84,6 +89,8 @@ export default function RaceControl() {
                 needsRegen: regen?.needs_regeneration ?? false,
                 missingDrivers: regen?.missing_driver_names ?? [],
                 sitOutCandidates: regen?.sit_out_candidates ?? [],
+                runningRaceId: running?.race_id ?? null,
+                runningRaceNumber: running?.race_number ?? null,
             });
         } catch {
             /* leave previous info in place */
@@ -97,6 +104,15 @@ export default function RaceControl() {
     // Ask lapdata for the current state once (race_state is not retained on the broker).
     useEffect(() => {
         const t = setTimeout(() => publish('status'), 500);
+        return () => clearTimeout(t);
+    }, []);
+
+    // Until lapdata answers that status, "no race_state" means "not heard yet", not
+    // "lapdata has nothing" — so a stuck-race check can't be made. If it never answers
+    // (lapdata down), stop waiting so the End Race fallback for a stuck race still shows.
+    const [lapdataSilent, setLapdataSilent] = useState(false);
+    useEffect(() => {
+        const t = setTimeout(() => setLapdataSilent(true), 5000);
         return () => clearTimeout(t);
     }, []);
 
@@ -135,15 +151,40 @@ export default function RaceControl() {
     const noRaceLoaded = raceState && !raceState.race_id && raceState.state === 'NotStarted';
     const liveRaceState = raceStateStale || noRaceLoaded ? null : raceState;
 
-    // Live values win; fall back to the API snapshot before the first MQTT message.
-    const state = liveRaceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
+    // The DB says a race is Running but lapdata isn't running it — it restarted mid-race
+    // (lapdata recovers a Running race itself now, so this is the fallback for when it
+    // can't, or hasn't yet). Every button below hangs off lapdata's state, so none would
+    // show, and `end` over MQTT would reach a lapdata with nothing to end. Ending it
+    // through the API finishes the race and runs the session auto-end. A Finished race_state
+    // for that same race is not this: lapdata's finish POST is simply still in flight.
+    // ⚠️ Judged on the raw message, not liveRaceState: that one is nulled for a stale or
+    // empty message too, and neither means lapdata has lost anything.
+    const lapdataHeard = raceState != null || lapdataSilent;
+    const orphanedRaceId = info.runningRaceId != null && lapdataHeard && raceState?.race_id !== info.runningRaceId
+        ? info.runningRaceId : null;
+    // lapdata has a race of its own under way. Its controls must stay — a stuck race is
+    // a DB record to clean up, not a reason to lose the yellow flag mid-race — and
+    // nothing may stage the next race over it.
+    const lapdataRaceUnderWay = ['ArmedForStart', 'Running', 'Yellow', 'Paused'].includes(raceState?.state);
+
+    // Live values win; fall back to the API snapshot before the first MQTT message. An
+    // orphaned race takes over when lapdata is idle: offering Start Race or Next Race while
+    // the DB still has another race Running would stack a second one on top. With a race
+    // Running in the DB and no word from lapdata yet, show nothing rather than guess.
+    const state = orphanedRaceId != null && !lapdataRaceUnderWay
+        ? 'Orphaned'
+        : liveRaceState?.state ?? (
+            info.runningRaceId != null && !lapdataHeard ? 'Connecting'
+                : info.pendingRaceId ? 'NotStarted' : null);
     // ⚠️ `||`, not `??`. lapdata now publishes `race_number: null` when no race is loaded, so
     // `??` would be correct against current lapdata — but an older lapdata image publishes 0
     // (it used to default to 0), and `??` passes a 0 straight through. 0 is falsy, so the title
     // rendered "No race" even though the API had already supplied the number. Race numbers are
     // 1-based, so treating 0 as "no race" can never discard a real one, and this keeps the page
     // right against a Pi whose lapdata hasn't been redeployed yet.
-    const raceNumber = liveRaceState?.race_number || info.raceNumber;
+    const raceNumber = state === 'Orphaned'
+        ? info.runningRaceNumber
+        : liveRaceState?.race_number || info.raceNumber;
     const raceId = liveRaceState?.race_id ?? info.pendingRaceId;
 
     const live = state === 'Running' || state === 'ArmedForStart';
@@ -162,8 +203,31 @@ export default function RaceControl() {
     const yellowFlag = () => publish('yellow');
     const resumeRace = () => publish('resume');
 
+    // Close a race lapdata has lost: finish it in the DB (which auto-ends the session if
+    // that was the last race), tell other pages, then stage whatever is next — unless
+    // lapdata is racing something else, which prepare would replace (lapdata refuses it
+    // too, but don't rely on one guard).
+    const endOrphanedRace = async () => {
+        await apiPost(`/races/${orphanedRaceId}/finish`);
+        clientRef.current?.publish('admin_update', JSON.stringify({ reason: 'race_finished', race_id: orphanedRaceId }));
+        await loadInfo();
+        if (!lapdataRaceUnderWay) publish('prepare', {});
+    };
+
     // "Next Session": begin the next NotStarted session and pre-populate its queue.
     const nextSession = async () => { await apiPost('/sessions/start-next'); await loadInfo(); };
+
+    // A session with every race run can still be InProgress (e.g. races_per_driver unset,
+    // or the target was met some other way), so the operator ends it from here too, same
+    // endpoint and admin_update ping as the Admin Sessions page.
+    const endSession = async () => {
+        if (!info.activeSessionId) return;
+        await apiPost(`/sessions/${info.activeSessionId}/finish`);
+        clientRef.current?.publish('admin_update', JSON.stringify({
+            reason: 'session_finished', session_id: info.activeSessionId,
+        }));
+        await loadInfo();
+    };
 
     // Regenerate the upcoming queue after the roster changed. If a race is staged but
     // not yet running, re-stage the new head so the display reflects the new lineup.
@@ -171,7 +235,7 @@ export default function RaceControl() {
         if (!info.activeSessionId) return;
         await apiPost(`/sessions/${info.activeSessionId}/regenerate-races`);
         await loadInfo();
-        if (!live) publish('prepare', {});
+        if (!lapdataRaceUnderWay) publish('prepare', {});
     };
 
     // Disqualify a driver who has sat out too many races: drops them from the rest of the
@@ -180,7 +244,7 @@ export default function RaceControl() {
         if (!info.activeSessionId) return;
         await apiPost(`/sessions/${info.activeSessionId}/drivers/${driverId}/disqualify`);
         await loadInfo();
-        if (!live) publish('prepare', {});
+        if (!lapdataRaceUnderWay) publish('prepare', {});
     };
 
     return (
@@ -237,7 +301,19 @@ export default function RaceControl() {
                 </div>
             ))}
 
+            {orphanedRaceId != null && state !== 'Orphaned' && (
+                <div className="rc-regen-banner">
+                    <span>
+                        Race {info.runningRaceNumber} is also still marked Running, but the lap
+                        counter isn&apos;t tracking it.
+                    </span>
+                    <button className="rc-btn rc-btn--regen" onClick={endOrphanedRace}>Close it</button>
+                </div>
+            )}
+
             <section className="rc-actions">
+                {state === 'Connecting' && <p className="rc-connecting">Connecting…</p>}
+
                 {live && (
                     <>
                         <button className="rc-btn rc-btn--yellow" onClick={yellowFlag}>
@@ -274,6 +350,18 @@ export default function RaceControl() {
                     </>
                 )}
 
+                {state === 'Orphaned' && (
+                    <>
+                        <p className="rc-session-complete">
+                            Race {info.runningRaceNumber} is still marked Running, but the lap counter
+                            has lost track of it (it was restarted mid-race).
+                        </p>
+                        <button className="rc-btn rc-btn--end" onClick={endOrphanedRace}>
+                            <ChequeredFlagIcon /> End Race
+                        </button>
+                    </>
+                )}
+
                 {state === 'NotStarted' && (
                     <>
                         <button className="rc-btn rc-btn--start" onClick={startRace}>
@@ -287,7 +375,7 @@ export default function RaceControl() {
 
                 {/* Idle (Finished / not connected): advance the race queue, start the
                     next session, or report completion. */}
-                {!live && state !== 'Yellow' && state !== 'Paused' && state !== 'NotStarted' && (
+                {!live && !['Yellow', 'Paused', 'NotStarted', 'Orphaned', 'Connecting'].includes(state) && (
                     info.pendingRaceId ? (
                         <button className="rc-btn rc-btn--next" onClick={nextRace}>
                             <Flag size={32} /> Next Race
@@ -297,9 +385,14 @@ export default function RaceControl() {
                             <Flag size={32} /> Start Session
                         </button>
                     ) : info.sessionInProgress ? (
-                        <p className="rc-session-complete">
-                            Session complete — every driver has run all their races.
-                        </p>
+                        <>
+                            <p className="rc-session-complete">
+                                Session complete — every driver has run all their races.
+                            </p>
+                            <button className="rc-btn rc-btn--next" onClick={endSession}>
+                                <Flag size={32} /> End Session
+                            </button>
+                        </>
                     ) : infoLoaded ? (
                         <p className="rc-session-complete">Meeting complete — no more sessions.</p>
                     ) : (

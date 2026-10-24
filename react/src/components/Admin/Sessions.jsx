@@ -26,9 +26,11 @@ const Sessions = () => {
     // elsewhere. admin_update is a plain "something changed, re-fetch" ping — deliberately
     // not race_control, which is lapdata/BLE's command channel, not a browser-to-browser
     // UI-refresh signal. RaceControl.jsx just calls its own loadInfo() on receipt.
+    // Tagged with this tab's id so it can ignore its own echo: it has already reloaded.
     const mqttClientRef = useRef(null);
+    const senderId = useRef(Math.random().toString(36).slice(2));
     const publishAdminUpdate = (reason, extra = {}) => {
-        mqttClientRef.current?.publish('admin_update', JSON.stringify({ reason, ...extra }));
+        mqttClientRef.current?.publish('admin_update', JSON.stringify({ reason, ...extra, sender: senderId.current }));
     };
 
     // null = no layer1_status seen yet. Treated the same as "no power control" for
@@ -92,6 +94,7 @@ const Sessions = () => {
             <MqttSubscriber
                 mqttHost={MQTT_URL}
                 clientRef={mqttClientRef}
+                onAdminUpdateMessage={msg => { if (msg?.sender !== senderId.current) reload(); }}
                 onLayer1StatusMessage={msg => setLayer1Capabilities(msg.capabilities || [])}
             />
             <div className="admin-header">

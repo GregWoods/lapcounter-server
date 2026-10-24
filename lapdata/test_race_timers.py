@@ -241,10 +241,138 @@ def test_broker_reconnect_does_not_replace_the_loaded_race(lapdata, monkeypatch)
 def test_first_connect_loads_the_pending_race(lapdata, monkeypatch):
     fresh = tsl.RaceManager()
     monkeypatch.setattr(tsl, 'race', fresh)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: PENDING)
     tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
 
     assert fresh.race_id == 1
     assert fresh.state == 'NotStarted'
+
+
+RECOVERY = {
+    'race_id': 1, 'session_id': 1, 'race_number': 1, 'started_at': time.time() - 30,
+    'laps': {'1': [5.0, 4.8]}, 'setup': PENDING,
+}
+
+
+def test_restart_mid_race_recovers_the_running_race_paused(lapdata, monkeypatch):
+    fresh = tsl.RaceManager()
+    monkeypatch.setattr(tsl, 'race', fresh)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: RECOVERY)
+    # The queue head must NOT be loaded in its place.
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
+
+    assert fresh.race_id == 1
+    assert fresh.state == 'Paused'
+    assert fresh.drivers[1].laps_completed == 2
+    assert lapdata.published[-1]['state'] == 'Paused'
+
+
+def test_recovering_a_race_does_not_post_a_second_start(lapdata, monkeypatch):
+    posts = []
+    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: posts.append(path))
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
+    with tsl._race_lock:
+        tsl.recover_running_race(RECOVERY)
+    assert posts == []
+
+
+def test_a_recovered_race_that_is_over_posts_its_finish(lapdata, monkeypatch):
+    """The whole point: the finish that never happened is what auto-ends the session."""
+    posts = []
+    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: posts.append(path))
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    expired = {**RECOVERY, 'started_at': time.time() - 600,
+               'setup': {**PENDING, 'session_type': 'FastestLap', 'race_duration_seconds': 60}}
+    with tsl._race_lock:
+        tsl.recover_running_race(expired)
+    assert posts == ['/races/1/finish']
+
+
+def test_api_down_at_startup_is_retried_not_forgotten(lapdata, monkeypatch):
+    fresh = tsl.RaceManager()
+    monkeypatch.setattr(tsl, 'race', fresh)
+    monkeypatch.setattr(tsl, '_api_reachable', False)
+    monkeypatch.setattr(tsl, '_startup_load_pending', False)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
+    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
+    assert tsl._startup_load_pending is True
+    assert fresh.race_id is None
+
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: RECOVERY)
+    tsl.load_on_startup()
+    assert tsl._startup_load_pending is False
+    assert fresh.race_id == 1
+
+
+def test_recovery_payload_without_a_lineup_still_stages_the_queue_head(lapdata, monkeypatch):
+    fresh = tsl.RaceManager()
+    monkeypatch.setattr(tsl, 'race', fresh)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: {**RECOVERY, 'setup': None})
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    assert tsl.load_on_startup() is True
+    assert fresh.race_id == 2
+    assert fresh.state == 'NotStarted'
+
+
+def test_api_lost_between_the_startup_reads_is_retried(lapdata, monkeypatch):
+    def pending_unreachable():
+        tsl._api_reachable = False
+        return None
+
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, '_startup_load_pending', False)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
+    monkeypatch.setattr(tsl, 'fetch_pending_race', pending_unreachable)
+    assert tsl.load_on_startup() is False
+    assert tsl._startup_load_pending is True
+
+
+def test_a_recovery_server_error_does_not_mark_the_api_unreachable(lapdata, monkeypatch):
+    """A 500 means the API answered. Treating it as down would retry forever and never
+    stage the queue head."""
+    def urlopen(url, timeout):
+        raise tsl.urllib.error.HTTPError(url, 500, 'boom', {}, None)
+
+    monkeypatch.setattr(tsl.urllib.request, 'urlopen', urlopen)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    assert tsl.fetch_running_recovery() is None
+    assert tsl._api_reachable is True
+
+
+def test_recovery_passes_lap_penalties_to_the_race(lapdata, monkeypatch):
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: None)
+    with tsl._race_lock:
+        tsl.recover_running_race({**RECOVERY, 'lap_penalties': {'1': 1}})
+    assert tsl.race.drivers[1].laps_completed == 1
+
+
+# --- prepare must never replace a race that is under way ---
+
+@pytest.mark.parametrize('command', [None, 'yellow', 'pause'])
+def test_prepare_is_ignored_while_a_race_is_under_way(lapdata, monkeypatch, command):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    if command:
+        control(command)
+    control('prepare')
+    assert lapdata.race.race_id == 1
+    assert lapdata.race.state != 'NotStarted'
+
+
+def test_prepare_stages_the_next_race_once_the_race_has_ended(lapdata, monkeypatch):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
+    control('end')
+    control('prepare')
+    assert lapdata.race.race_id == 2
+    assert lapdata.race.state == 'NotStarted'
 
 
 # --- Lineup edited in NextRace after the race was staged ---
