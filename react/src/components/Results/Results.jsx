@@ -4,6 +4,7 @@ import { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import MqttSubscriber from '../MqttSubscriber';
 import './Results.css';
 import { API_URL, MQTT_URL } from '../../endpoints.js';
+import { useGuestBase } from '../utils/meetingPaths';
 
 function posClass(pos) {
     if (!pos) return 'pos-dns';
@@ -127,6 +128,7 @@ function Results() {
     const SESSION_TYPE_LABELS = { Points: 'Points', FastestLap: 'Fastest Lap', Championship: 'Championship' };
 
     const loaded = useLoaderData();
+    const base = useGuestBase();
     const [results, setResults] = useState(loaded);
     const {
         races = [], drivers = [], sessions = [],
@@ -226,7 +228,7 @@ function Results() {
                 onRaceStateMessage={handleRaceState}
             />
             <div className="results-header">
-                <Link to="/" className="home-icon-link"><House /></Link>
+                <Link to={base || '/'} className="home-icon-link"><House /></Link>
                 <h1>Results{meeting_name ? ` — ${meeting_name}` : ''}</h1>
                 {races.length > 0 && (
                     <button className="view-toggle" onClick={() => setWideView(v => !v)} title={wideView ? 'Split view' : 'Wide view'}>
@@ -248,7 +250,7 @@ function Results() {
                     {sessions.map((s, idx) => (
                         <Link
                             key={s.id}
-                            to={`/results/${s.id}`}
+                            to={`${base}/results/${s.id}`}
                             className={[
                                 'session-tab',
                                 s.id === session_id ? 'session-tab--active' : '',

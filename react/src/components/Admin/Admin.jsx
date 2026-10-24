@@ -602,7 +602,7 @@ const Admin = () => {
                                                 </button>
                                             )}
                                             {['Finished', 'InProgress'].includes(session.state) ? (
-                                                <Link to={`/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
+                                                <Link to={`/m/${meeting.public_id}/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
                                                     Results
                                                 </Link>
                                             ) : (

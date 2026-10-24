@@ -10,6 +10,8 @@ const DEFAULT_TITLE = 'Go! Go! Go! Race Manager';
 function Home() {
     const activeMeeting = useLoaderData();
     const title = activeMeeting?.name || DEFAULT_TITLE;
+    // The same pages a driver reaches from the QR code, for the meeting that is running now.
+    const guestBase = activeMeeting?.public_id ? `/m/${activeMeeting.public_id}` : null;
 
     const [clockModalShown, setClockModalShown] = useState(false);
     const [clockDiff, setClockDiff] = useState(0);
@@ -52,11 +54,13 @@ function Home() {
         <div className="home-page">
             <h1 className="home-title">{title}</h1>
             <nav className="home-nav">
-                <Link to="/register" className="home-button"><UserPlus /><span>Driver Registration</span></Link>
-                <Link to="/currentrace" className="home-button"><Flag /><span>Current Race</span></Link>
-                <Link to="/nextrace" className="home-button"><ListOrdered /><span>Next Race</span></Link>
+                {guestBase && <>
+                    <Link to={`${guestBase}/register`} className="home-button"><UserPlus /><span>Driver Registration</span></Link>
+                    <Link to={`${guestBase}/currentrace`} className="home-button"><Flag /><span>Current Race</span></Link>
+                    <Link to={`${guestBase}/nextrace`} className="home-button"><ListOrdered /><span>Next Race</span></Link>
+                </>}
                 <Link to="/racecontrol" className="home-button"><ChequeredFlagIcon /><span>Race Control</span></Link>
-                <Link to="/results" className="home-button"><Trophy /><span>Results</span></Link>
+                {guestBase && <Link to={`${guestBase}/results`} className="home-button"><Trophy /><span>Results</span></Link>}
                 <Link to="/drivers" className="home-button"><Users /><span>Drivers</span></Link>
                 <Link to="/meetings" className="home-button"><CalendarDays /><span>Meetings &amp; Sessions</span></Link>
             </nav>

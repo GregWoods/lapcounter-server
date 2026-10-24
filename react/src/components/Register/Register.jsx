@@ -1,22 +1,19 @@
 import { useState } from 'react';
-import { useLoaderData, Link } from 'react-router-dom';
+import { useRouteLoaderData, Link } from 'react-router-dom';
 import { House } from 'lucide-react';
 import './Register.css';
 import { API_URL } from '../../endpoints.js';
 
-
-const formatDate = (dateStr) =>
-    new Date(dateStr).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
-
 const Register = () => {
-    const meetings = useLoaderData() || [];
+    // Registration is always for the meeting whose link the driver opened.
+    const meeting = useRouteLoaderData('meeting');
+    const base = `/m/${meeting.public_id}`;
 
     const [step, setStep] = useState('name');
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
     const [searchResults, setSearchResults] = useState([]);
     const [selectedDriverId, setSelectedDriverId] = useState(null);
-    const [selectedMeetingIds, setSelectedMeetingIds] = useState(new Set());
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -33,8 +30,7 @@ const Register = () => {
                 setSearchResults(results);
                 setStep('found');
             } else {
-                setSelectedDriverId(null);
-                setStep('meetings');
+                await register(null);
             }
         } catch {
             setError('Could not search for drivers. Please try again.');
@@ -43,41 +39,13 @@ const Register = () => {
         }
     };
 
-    const handleSelectExisting = async (driverId) => {
-        setSelectedDriverId(driverId);
-        setLoading(true);
-        try {
-            const res = await fetch(`${API_URL}/drivers/${driverId}/meetings`);
-            if (res.ok) {
-                const registeredIds = await res.json();
-                const upcomingIds = new Set(meetings.map(m => m.id));
-                setSelectedMeetingIds(new Set(registeredIds.filter(id => upcomingIds.has(id))));
-            }
-        } catch {
-            setSelectedMeetingIds(new Set());
-        } finally {
-            setLoading(false);
-        }
-        setStep('meetings');
-    };
-
-    const toggleMeeting = (id) => {
-        setSelectedMeetingIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id); else next.add(id);
-            return next;
-        });
-    };
-
-    const handleRegister = async () => {
-        if (selectedMeetingIds.size === 0) {
-            setError('Please select at least one meeting.');
-            return;
-        }
+    // Adds the driver to this meeting, creating their profile first when they're new.
+    // Returns on success with the step moved to 'done'.
+    const register = async (existingDriverId) => {
         setLoading(true);
         setError(null);
         try {
-            let driverId = selectedDriverId;
+            let driverId = existingDriverId;
 
             if (driverId === null) {
                 const res = await fetch(`${API_URL}/drivers/`, {
@@ -92,21 +60,15 @@ const Register = () => {
                 if (!res.ok) throw new Error('Failed to create driver profile');
                 driverId = (await res.json()).id;
             }
+            setSelectedDriverId(existingDriverId);
 
-            const results = await Promise.allSettled(
-                [...selectedMeetingIds].map(async (meetingId) => {
-                    const res = await fetch(`${API_URL}/meetings/${meetingId}/drivers`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ driver_id: driverId }),
-                    });
-                    // 409 = already registered for this meeting — treat as success
-                    if (!res.ok && res.status !== 409) throw new Error(`Meeting ${meetingId}: ${res.status}`);
-                })
-            );
-
-            const failures = results.filter(r => r.status === 'rejected');
-            if (failures.length > 0) throw new Error('Some meeting registrations failed');
+            const res = await fetch(`${API_URL}/meetings/${meeting.id}/drivers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ driver_id: driverId }),
+            });
+            // 409 = already registered for this meeting — treat as success
+            if (!res.ok && res.status !== 409) throw new Error('Registration failed. Please try again.');
 
             setStep('done');
         } catch (err) {
@@ -122,7 +84,6 @@ const Register = () => {
         setLastName('');
         setSearchResults([]);
         setSelectedDriverId(null);
-        setSelectedMeetingIds(new Set());
         setError(null);
     };
 
@@ -133,7 +94,7 @@ const Register = () => {
                 {step === 'name' && (
                     <>
                         <div className="register-title-row">
-                            <Link to="/" className="home-icon-link"><House /></Link>
+                            <Link to={base} className="home-icon-link"><House /></Link>
                             <h1 className="register-heading">Driver Registration</h1>
                         </div>
                         <form onSubmit={handleNameSubmit} className="register-form">
@@ -177,50 +138,16 @@ const Register = () => {
                                 <button
                                     key={d.id}
                                     className="register-driver-btn"
-                                    onClick={() => handleSelectExisting(d.id)}
+                                    onClick={() => register(d.id)}
                                     disabled={loading}
                                 >
                                     {d.first_name}{d.last_name ? ` ${d.last_name}` : ''}
                                 </button>
                             ))}
                         </div>
-                        <button className="register-btn-secondary" onClick={() => { setSelectedDriverId(null); setStep('meetings'); }}>
-                            I&rsquo;m new — create my profile
-                        </button>
-                    </>
-                )}
-
-                {step === 'meetings' && (
-                    <>
-                        <button className="register-back" onClick={() => setStep(searchResults.length > 0 ? 'found' : 'name')}>← Back</button>
-                        <h1 className="register-heading">Select meetings</h1>
-                        {meetings.length === 0 ? (
-                            <p className="register-subtext">No upcoming meetings found.</p>
-                        ) : (
-                            <div className="register-meetings">
-                                {meetings.map(m => (
-                                    <label key={m.id} className="register-meeting-row">
-                                        <input
-                                            type="checkbox"
-                                            className="register-checkbox"
-                                            checked={selectedMeetingIds.has(m.id)}
-                                            onChange={() => toggleMeeting(m.id)}
-                                        />
-                                        <span className="register-meeting-info">
-                                            <span className="register-meeting-name">{m.name}</span>
-                                            <span className="register-meeting-date">{formatDate(m.date)}</span>
-                                        </span>
-                                    </label>
-                                ))}
-                            </div>
-                        )}
                         {error && <p className="register-error">{error}</p>}
-                        <button
-                            className="register-btn-primary"
-                            onClick={handleRegister}
-                            disabled={loading || selectedMeetingIds.size === 0}
-                        >
-                            {loading ? 'Registering…' : 'Register'}
+                        <button className="register-btn-secondary" onClick={() => register(null)} disabled={loading}>
+                            I&rsquo;m new — create my profile
                         </button>
                     </>
                 )}
@@ -232,13 +159,13 @@ const Register = () => {
                             {selectedDriverId ? 'Welcome back!' : 'You\'re registered!'}
                         </h1>
                         <p className="register-subtext">
-                            {firstName} is set for {selectedMeetingIds.size === 1 ? '1 meeting' : `${selectedMeetingIds.size} meetings`}.
+                            {firstName} is set for {meeting.name}.
                         </p>
                         <div className="register-done-actions">
                             <button className="register-btn-secondary" onClick={reset}>
                                 Register another driver
                             </button>
-                            <Link to="/" className="register-btn-primary register-btn-link">
+                            <Link to={base} className="register-btn-primary register-btn-link">
                                 Done
                             </Link>
                         </div>

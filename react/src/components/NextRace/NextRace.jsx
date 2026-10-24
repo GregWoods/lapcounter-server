@@ -4,11 +4,13 @@ import { useLoaderData, Link } from 'react-router-dom';
 import CarSelectorModal from '../LapCounter/CarSelectorModal';
 import MqttSubscriber from '../MqttSubscriber';
 import PageHeader from '../PageHeader/PageHeader';
+import { useGuestBase } from '../utils/meetingPaths';
 import { API_URL, MQTT_URL, CAR_MEDIA_URL } from '../../endpoints.js';
 
 
 function NextRace() {
     const next_race_setup = useLoaderData();
+    const base = useGuestBase();
 
     if (next_race_setup?.error || !next_race_setup?.lane_assignments) {
         // With a session still in progress the queue is empty, not finished — say so, and
@@ -21,7 +23,7 @@ function NextRace() {
                     <p>{sessionRunning ? 'No races queued for this session' : 'Session has ended'}</p>
                     {sessionRunning
                         ? <Link to="/racecontrol" className="nr-empty-link">Regenerate in Race Control</Link>
-                        : <Link to="/results" className="nr-empty-link">View Results</Link>}
+                        : <Link to={`${base}/results`} className="nr-empty-link">View Results</Link>}
                 </div>
             </div>
         );

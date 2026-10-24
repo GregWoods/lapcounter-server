@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, redirect } from 'react-router-dom';
 import App from './App.jsx'
 import NextRace from './components/NextRace/NextRace.jsx'
 import Home from './components/Home/Home.jsx'
@@ -7,14 +7,34 @@ import Register from './components/Register/Register.jsx'
 import Admin from './components/Admin/Admin.jsx'
 import Drivers from './components/Drivers/Drivers.jsx'
 import RaceControl from './components/RaceControl/RaceControl.jsx'
+import MeetingLayout from './components/Meeting/MeetingLayout.jsx'
+import MeetingHome from './components/Meeting/MeetingHome.jsx'
 import RequireAdmin from './components/RequireAdmin/RequireAdmin.jsx'
 import { API_URL } from './endpoints.js';
+
+// Loader for a legacy top-level path: forward to the same page under the active meeting,
+// or to the admin home when no meeting is active.
+function redirectToActive(path) {
+    return {
+        path,
+        loader: async ({ params }) => {
+            let meeting = null;
+            try {
+                const res = await fetch(`${API_URL}/meetings/active`);
+                if (res.ok) meeting = await res.json();
+            } catch { /* fall through to "/" */ }
+            if (!meeting) return redirect("/");
+            const rest = path.replace(":sessionId", params.sessionId ?? "");
+            return redirect(`/m/${meeting.public_id}/${rest}`);
+        },
+    };
+}
 
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
     {
         path: "/",
-        element: <Home />,
+        element: <RequireAdmin><Home /></RequireAdmin>,
         loader: async () => {
             try {
                 const res = await fetch(`${API_URL}/meetings/active`);
@@ -26,83 +46,97 @@ const router = createBrowserRouter([
         },
     },
     {
-        path: "currentrace",
-        element: <App />,
-        loader: async () => {
+        // Everything a driver sees lives under their meeting's unguessable id.
+        id: "meeting",
+        path: "m/:publicId",
+        element: <MeetingLayout />,
+        loader: async ({ params }) => {
             try {
-                // The DB is authoritative for which race is current (Running else pending).
-                const res = await fetch(`${API_URL}/races/current/`);
-                if (!res.ok) return null;
-                return res.json();
+                const res = await fetch(`${API_URL}/meetings/by-public-id/${params.publicId}`);
+                return res.ok ? res.json() : null;
             } catch {
                 return null;
             }
         },
-    },
-    {
-        path: "nextrace",
-        element: <NextRace />,
-        loader: async () => {
-            try {
-                const res = await fetch(`${API_URL}/races/pending/`);
-                if (!res.ok) {
-                    const body = await res.json().catch(() => ({}));
-                    // A 404 means "no race queued", which is NOT the same as "session over":
-                    // a running session whose queue was never generated (sample data) or was
-                    // emptied looks identical here. regen-status is what tells them apart.
-                    const regen = await fetch(`${API_URL}/sessions/active/regen-status`)
-                        .then(r => r.ok ? r.json() : null)
-                        .catch(() => null);
-                    return {
-                        error: body.detail || 'No pending race available',
-                        activeSessionId: regen?.session_id ?? null,
-                    };
+        children: [
+            { index: true, element: <MeetingHome /> },
+        {
+            path: "currentrace",
+            element: <App />,
+            loader: async () => {
+                try {
+                    // The DB is authoritative for which race is current (Running else pending).
+                    const res = await fetch(`${API_URL}/races/current/`);
+                    if (!res.ok) return null;
+                    return res.json();
+                } catch {
+                    return null;
                 }
-                return res.json();
-            } catch {
-                return { error: 'Could not reach the server' };
-            }
+            },
         },
-    },
-    {
-        path: "results",
-        element: <Results />,
-        loader: async () => {
-            try {
-                const res = await fetch(`${API_URL}/sessions/current/results`);
-                if (!res.ok) return { races: [], drivers: [] };
-                return res.json();
-            } catch {
-                return { races: [], drivers: [] };
-            }
+        {
+            path: "nextrace",
+            element: <NextRace />,
+            loader: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/races/pending/`);
+                    if (!res.ok) {
+                        const body = await res.json().catch(() => ({}));
+                        // A 404 means "no race queued", which is NOT the same as "session over":
+                        // a running session whose queue was never generated (sample data) or was
+                        // emptied looks identical here. regen-status is what tells them apart.
+                        const regen = await fetch(`${API_URL}/sessions/active/regen-status`)
+                            .then(r => r.ok ? r.json() : null)
+                            .catch(() => null);
+                        return {
+                            error: body.detail || 'No pending race available',
+                            activeSessionId: regen?.session_id ?? null,
+                        };
+                    }
+                    return res.json();
+                } catch {
+                    return { error: 'Could not reach the server' };
+                }
+            },
         },
-    },
-    {
-        path: "results/:sessionId",
-        element: <Results />,
-        loader: async ({ params }) => {
-            try {
-                const res = await fetch(`${API_URL}/sessions/${params.sessionId}/results`);
-                if (!res.ok) return { races: [], drivers: [] };
-                return res.json();
-            } catch {
-                return { races: [], drivers: [] };
-            }
+        {
+            path: "results",
+            element: <Results />,
+            loader: async () => {
+                try {
+                    const res = await fetch(`${API_URL}/sessions/current/results`);
+                    if (!res.ok) return { races: [], drivers: [] };
+                    return res.json();
+                } catch {
+                    return { races: [], drivers: [] };
+                }
+            },
         },
-    },
-    {
-        path: "register",
-        element: <Register />,
-        loader: async () => {
-            try {
-                const res = await fetch(`${API_URL}/meetings/upcoming`);
-                if (!res.ok) return [];
-                return res.json();
-            } catch {
-                return [];
-            }
+        {
+            path: "results/:sessionId",
+            element: <Results />,
+            loader: async ({ params }) => {
+                try {
+                    const res = await fetch(`${API_URL}/sessions/${params.sessionId}/results`);
+                    if (!res.ok) return { races: [], drivers: [] };
+                    return res.json();
+                } catch {
+                    return { races: [], drivers: [] };
+                }
+            },
         },
+        {
+            path: "register",
+            element: <Register />,
+        },
+        ],
     },
+    // The old top-level guest URLs (bookmarks, TV browsers) go to the active meeting's page.
+    redirectToActive("currentrace"),
+    redirectToActive("nextrace"),
+    redirectToActive("results"),
+    redirectToActive("results/:sessionId"),
+    redirectToActive("register"),
     {
         path: "racecontrol",
         element: <RequireAdmin><RaceControl /></RequireAdmin>,

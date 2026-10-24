@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../../contexts/adminAuth';
 import './PinPrompt.css';
 
 function PinPrompt() {
     const { login } = useAdminAuth();
+    const navigate = useNavigate();
+    const atRoot = useLocation().pathname === '/';
     const [pin, setPin] = useState('');
     const [error, setError] = useState(false);
 
@@ -34,7 +36,7 @@ function PinPrompt() {
                     {error && <p className="pin-error">Incorrect PIN</p>}
                     <button type="submit" className="pin-btn">Enter</button>
                 </form>
-                <Link to="/" className="pin-back">← Back to home</Link>
+                {!atRoot && <button type="button" className="pin-back" onClick={() => navigate(-1)}>← Back</button>}
             </div>
         </div>
     );

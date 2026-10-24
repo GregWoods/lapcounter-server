@@ -88,6 +88,9 @@
     font-size: 0.95rem;
     text-decoration: none;
     margin-top: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
 }
 
 .pin-back:hover {
