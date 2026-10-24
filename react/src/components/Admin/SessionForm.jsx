@@ -177,20 +177,22 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
                     <option value="InFrontOfLine">In front of the finish line</option>
                 </select>
             </div>
-            <div className="admin-form-row">
-                <label>Minimum lap time</label>
-                <div className="admin-form-inline-value">
-                    <input
-                        className="admin-input-narrow"
-                        type="number"
-                        value={form.min_lap_time ?? ''}
-                        onChange={e => set('min_lap_time', parseFloat(e.target.value) || null)}
-                        min="0.1"
-                        step="0.1"
-                    />
-                    <span className="admin-form-unit">s</span>
+            <div className="admin-form-field-group">
+                <div className="admin-form-row">
+                    <label>Minimum lap time</label>
+                    <div className="admin-form-inline-value">
+                        <input
+                            className="admin-input-narrow"
+                            type="number"
+                            value={form.min_lap_time ?? ''}
+                            onChange={e => set('min_lap_time', parseFloat(e.target.value) || null)}
+                            min="0.1"
+                            step="0.1"
+                        />
+                        <span className="admin-form-unit">s</span>
+                    </div>
                 </div>
-                <p className="admin-form-hint">Crossings closer together than this are ignored as false triggers. Set below your fastest genuine lap (about 60% of a typical lap).</p>
+                <p className="admin-form-hint">Crossings closer together than this are ignored as false triggers. Set below your fastest genuine lap.</p>
             </div>
             <div className="admin-form-section">
                 <h4 className="admin-form-section-title">Yellow Flag</h4>
