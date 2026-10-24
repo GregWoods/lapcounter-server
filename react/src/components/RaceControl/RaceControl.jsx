@@ -66,6 +66,8 @@ export default function RaceControl() {
                         const lastRun = [...sessions].reverse().find(s => s.state !== 'NotStarted');
                         if (lastRun) sessionNumber = sessions.indexOf(lastRun) + 1;
                     }
+                    // Nothing has run yet: name the session the Start Session button will begin.
+                    if (sessionNumber == null && upcoming) sessionNumber = sessions.indexOf(upcoming) + 1;
                 }
             }
             setInfo({
@@ -125,7 +127,11 @@ export default function RaceControl() {
     // which is exactly the tell. Discard the whole stale message rather than one field,
     // the same way `info.pendingRaceId` is treated as "no live message yet".
     const raceStateStale = raceState && info.racesTotal != null && raceState.race_number > info.racesTotal;
-    const liveRaceState = raceStateStale ? null : raceState;
+    // lapdata also publishes an empty NotStarted state (race_id null) whenever no race is
+    // loaded — before a session is started, or between sessions. That is "nothing staged",
+    // not a race to start, so treat it like no message and let `info` decide what to offer.
+    const noRaceLoaded = raceState && !raceState.race_id && raceState.state === 'NotStarted';
+    const liveRaceState = raceStateStale || noRaceLoaded ? null : raceState;
 
     // Live values win; fall back to the API snapshot before the first MQTT message.
     const state = liveRaceState?.state ?? (info.pendingRaceId ? 'NotStarted' : null);
@@ -202,7 +208,8 @@ export default function RaceControl() {
                         : 'No race'}
                 </div>
                 <div className={`rc-state rc-state--${(state ?? 'unknown').toLowerCase()}`}>
-                    {STATE_LABELS[state] ?? 'Connecting…'}
+                    {/* No state with info loaded means nothing is staged, not that we're offline. */}
+                    {STATE_LABELS[state] ?? (infoLoaded ? 'Not started' : 'Connecting…')}
                 </div>
             </section>
 
@@ -285,7 +292,7 @@ export default function RaceControl() {
                         </button>
                     ) : info.nextSessionAvailable ? (
                         <button className="rc-btn rc-btn--next" onClick={nextSession}>
-                            <Flag size={32} /> Next Session
+                            <Flag size={32} /> Start Session
                         </button>
                     ) : info.sessionInProgress ? (
                         <p className="rc-session-complete">

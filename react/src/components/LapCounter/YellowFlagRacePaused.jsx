@@ -40,7 +40,7 @@ const YellowFlagRacePaused = ({showMe, secondsLeft, onRacePaused, onEndYellowFla
 
     const pauseRace = () => {
         console.log('_-_-_- startYellowFlashing _-_-_-_-');
-        setYfFlashingPeriod(500);
+        setYfFlashingPeriod(400);
         onRacePaused();
     }
 
