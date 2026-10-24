@@ -106,6 +106,15 @@ def test_phantom_filter_works_on_counters(published, monkeypatch):
     assert len(_laps(published)) == 1
 
 
+def test_the_staged_races_session_setting_overrides_the_env_fallback(published, monkeypatch):
+    """min_lap_time comes from the session; the env var is only the fallback."""
+    monkeypatch.setattr(tsl, 'min_lap_time_s', 4.0)
+    monkeypatch.setattr(tsl.race, 'min_lap_time', 1.0)
+    tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(1, 12_000), arrival=1012.0)   # 2s: over 1s, under 4s
+    assert len(_laps(published)) == 2
+
+
 def test_a_genuine_lap_is_not_filtered_by_a_late_notification(published, monkeypatch):
     """The mirror case, and the one that loses a real lap: a delayed notification must
     not be able to push two genuine crossings under MINIMUM_LAP_TIME."""

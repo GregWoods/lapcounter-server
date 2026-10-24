@@ -65,7 +65,7 @@ DB Writer service    React apps        Any client
 ```
 
 **`lap`:** `{"type":"lap","car":<1-6>,"time":<unix_seconds>,"lapTime":<elapsed_seconds>|null}`  
-`car` is 1-based lane number. `lapTime` is filtered by `MINIMUM_LAP_TIME` env var (seconds, fractional allowed; 3 on the race Pi for ~5s laps) and is **null** for a lane's first crossing since lights-out, where there is genuinely no interval to report. `time` is a converted unix time for display only — nothing times a lap with it. Published for every crossing — does **not** mean a lap was counted.
+`car` is 1-based lane number. `lapTime` is filtered by the session's `min_lap_time` (seconds, fractional allowed, default 3 for ~5s laps; `sessions.min_lap_time`, migration `009`, Admin session form, `/races/pending/` → `race.min_lap_time`). The `MINIMUM_LAP_TIME` env var is only lapdata's fallback when no race is staged and is **null** for a lane's first crossing since lights-out, where there is genuinely no interval to report. `time` is a converted unix time for display only — nothing times a lap with it. Published for every crossing — does **not** mean a lap was counted.
 
 **`car_timestamp`:** `{"car":<1-6>,"lane":<1|2>,"counter_ms":<int ≥ 0>,"clock":"<opaque string>"}`
 

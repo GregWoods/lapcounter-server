@@ -91,6 +91,7 @@ class RaceSessionWithState(SQLModel):
     yellow_grace_power_pct: int = 100
     yellow_post_grace_power_pct: int = 0
     yellow_lap_penalty_laps: int = 0
+    min_lap_time: float = 3.0  # seconds; crossings closer than this are phantom triggers
     start_grid: str = 'BehindLine'  # 'InFrontOfLine' or 'BehindLine' — which crossing ends lap 1
     scoring_method: str
     scoring_points: Optional[str]
@@ -129,6 +130,7 @@ class NextRaceSetup(SQLModel):
     yellow_grace_power_pct: int = 100  # % power during the grace period (BLE only)
     yellow_post_grace_power_pct: int = 0  # % power once the grace period expires (BLE only)
     yellow_lap_penalty_laps: int = 0  # laps deducted for crossing after grace expiry (GPIO-only, Points sessions only)
+    min_lap_time: float = 3.0  # seconds; lapdata drops crossings closer together than this
     session_drivers: list[SessionDriverFastestLap] = []  # FastestLap sessions only
 
 

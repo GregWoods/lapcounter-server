@@ -48,7 +48,7 @@ services:
     pull_policy: never
     environment:
       - MQTT_HOSTNAME=mosquitto
-      - MINIMUM_LAP_TIME=4
+      - MINIMUM_LAP_TIME=3
     container_name: lapdata
     restart: unless-stopped
     depends_on:

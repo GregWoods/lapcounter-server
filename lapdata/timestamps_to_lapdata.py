@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
 api_url = os.getenv('API_URL', 'http://api:8000')
-# Seconds, fractional allowed (a small test circuit can lap in under 2s).
+# Seconds, fractional allowed (a small test circuit can lap in under 2s). Only the
+# fallback now: the staged race's session setting (race.min_lap_time) wins when present.
 min_lap_time_s = float(os.getenv('MINIMUM_LAP_TIME', '2'))
 # lapdata owns the whole start-light sequence: the 5 lights come on at
 # START_LIGHT_INTERVAL spacing, then after a random hold all lights go out (race
@@ -173,7 +174,7 @@ def handle_car_timestamp(data: dict, arrival: float):
     elapsed = None
     if previous is not None:
         elapsed, _ = interval_s(previous, crossing, anchors)
-        if elapsed <= min_lap_time_s:
+        if elapsed <= (race.min_lap_time if race.min_lap_time is not None else min_lap_time_s):
             return  # phantom trigger — too soon after last crossing
 
     prev_crossing[idx] = crossing
@@ -444,6 +445,7 @@ def _load_pending(pending: dict, target_laps: int | None = None):
         yellow_grace_power_pct=pending.get('yellow_grace_power_pct', 100),
         yellow_post_grace_power_pct=pending.get('yellow_post_grace_power_pct', 0),
         yellow_lap_penalty_laps=pending.get('yellow_lap_penalty_laps', 0),
+        min_lap_time=pending.get('min_lap_time'),
     )
 
 

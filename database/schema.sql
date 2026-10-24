@@ -121,6 +121,7 @@ CREATE TABLE sessions (
     yellow_grace_power_pct INT NOT NULL DEFAULT 100,      -- % power during the grace period (BLE only)
     yellow_post_grace_power_pct INT NOT NULL DEFAULT 0,   -- % power once the grace period expires (BLE only)
     yellow_lap_penalty_laps INT NOT NULL DEFAULT 0,       -- laps deducted for crossing after grace expiry (GPIO-only substitute; Points sessions only)
+    min_lap_time DOUBLE PRECISION NOT NULL DEFAULT 3,   -- seconds; crossings closer than this are dropped as phantom triggers
     start_grid VARCHAR(20) NOT NULL DEFAULT 'BehindLine' CHECK (start_grid IN ('InFrontOfLine', 'BehindLine')),  -- which crossing ends lap 1; see CLAUDE.md "Discarded first crossing"
     scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,

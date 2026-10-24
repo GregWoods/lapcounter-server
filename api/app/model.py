@@ -115,6 +115,7 @@ class RaceSession(SQLModel, table=True):
     yellow_grace_power_pct: int = Field(default=100)  # % power during the grace period (BLE only; locked to 100 without power_control)
     yellow_post_grace_power_pct: int = Field(default=0)  # % power once the grace period expires (BLE only; locked to 100 without power_control)
     yellow_lap_penalty_laps: int = Field(default=0)  # laps deducted for crossing after grace expiry (GPIO-only substitute; Points sessions only, 0 = no penalty)
+    min_lap_time: float = Field(default=3.0)  # seconds; lapdata drops crossings closer together than this as phantom triggers
     start_grid: str = Field(default='BehindLine')   # 'InFrontOfLine' or 'BehindLine' — which crossing ends lap 1 (see CLAUDE.md "Discarded first crossing")
     scoring_method: str             # 'PositionPoints' (Finishing Position) or 'FastestLap' (personal best)
     scoring_points: Optional[str]   # JSON string with points array used for PositionPoints
@@ -220,6 +221,7 @@ class RaceSessionUpdate(SQLModel):
     yellow_grace_power_pct: Optional[int] = None
     yellow_post_grace_power_pct: Optional[int] = None
     yellow_lap_penalty_laps: Optional[int] = None
+    min_lap_time: Optional[float] = None
     start_grid: Optional[str] = None
     scoring_method: Optional[str] = None
     scoring_points: Optional[str] = None
@@ -252,6 +254,7 @@ class RaceSessionCreate(SQLModel):
     yellow_grace_power_pct: int = 100
     yellow_post_grace_power_pct: int = 0
     yellow_lap_penalty_laps: int = 0
+    min_lap_time: float = 3.0
     start_grid: str = 'BehindLine'
     scoring_method: str
     scoring_points: Optional[str] = None
