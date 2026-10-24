@@ -22,9 +22,32 @@ DB Writer service    React apps        Any client
 - **gpio/** - Raspberry Pi GPIO reader (has `Dockerfile.Mocked` for dev without hardware)
 - **ble/** - Alternative Layer 1: reads laps from a Scalextric ARC Pro powerbase over Bluetooth LE instead of the two GPIO finish-line sensors, publishing the same `car_timestamp` contract. **Now the default Layer 1 on the live Pi** (`gpio` is the `--profile gpio` fallback), though still not validated against real hardware. See "Layer 1 hardware options" below for the protocol and future capabilities beyond lap timing.
 - **lapdata/** - Hardware abstraction + race manager: normalises raw timing into `lap` events, tracks full race state, publishes `race_state`. `race_manager.py` is pure/DB-free and covered by `lapdata/test_race_manager.py` (see "Run Python tests" below). ⚠️ `last_crossing_time` must be set even on discarded first crossings (`count_first_crossing=False`) — without it, `race_time()` returns `0.0` and the initial position sort falls back to lane number order instead of crossing order; this is a regression test in that suite.
+  ⚠️ **lapdata recovers a Running race after a restart** (it holds race state in memory only). On startup it asks `GET /races/running/recovery/` (the Running race's lineup, start time and counted laps from `driver_laps`) and `RaceManager.restore()` rebuilds it as **Paused, power 0** — the clock anchors and last-crossing counters are gone, so the next lap can't be timed. Each driver's first crossing after resume is only a new baseline (that straddling lap is lost, not guessed) and positions within a lap count fall back to lane order. A timed race that expired while away, or one where a driver hit the target, comes back Finished, so the `/finish` POST (and the session auto-end it triggers) finally happens. If the API is down at startup it retries every 10s (`_startup_load_pending`). RaceControl's fallback for a DB-Running race lapdata isn't tracking is an "End Race" that calls `/races/{id}/finish` directly (`orphanedRaceId`).
 - **api/app/** - FastAPI backend (SQLModel ORM, PostgreSQL) — REST only, no race logic; see `api/CLAUDE.md` for endpoint/model docs
 - **react/src/** - React 18 frontend — display only, subscribes to `race_state` via MQTT WebSocket, contains no race logic
 - **dbwriter/** - Small service: subscribes to `driver_lap` (counted laps) only, and writes `driver_laps` rows + `driver_races` aggregates (`laps_completed`, `last_lap_time`, `fastest_lap_time`) **directly to PostgreSQL** (psycopg2, raw SQL — *not* via the API). It does *not* track race/session state: lapdata owns those transitions and POSTs `/races/{id}/start` and `/finish` to the API itself (`publish_race_state()`), which is what keeps persistence browser-independent.
+
+### Target separation of concerns (the direction of travel — not fully reached)
+
+Each part owns one thing and talks to its neighbours through a narrow interface. **When adding code, move toward this table, never away from it.**
+
+| Part | Owns | Talks via |
+|---|---|---|
+| Layer 1 (gpio / ble) | Hardware timing | MQTT out (`car_timestamp`, `layer1_clock`, `layer1_status`) |
+| lapdata | Live race state and the rules | MQTT in/out only, plus a **startup read** to recover (queries are HTTP) |
+| Persistence (an API MQTT subscriber, or `dbwriter`) | **Every** race-lifecycle DB write — laps, start, finish, penalties, and the session auto-end rule | MQTT in, DB out |
+| API | Queries, lineup management, meeting/driver/session admin | HTTP |
+| React | Display and operator commands | MQTT (`race_state` in, `race_control` out); API for reads and admin |
+
+Persistence should reconcile on **level, not edge**: compare each `race_state` (republished constantly, not retained, QoS 0) with the DB and fix any difference. A dropped message then heals on the next one, and a restarted subscriber needs no memory of the previous state.
+
+**Where the code still departs from this** (each is debt to remove, not a pattern to copy):
+- lapdata POSTs `/races/{id}/start`, `/finish` and `/penalty` to the API from `publish_race_state()` (fire-and-forget, so a dropped call is lost for good), and holds `_last_posted_state` to do it. Only counted laps follow the target, via `dbwriter`.
+- The session auto-end rule lives in the API's `finish_race`, so the API is not "REST only, no race logic".
+- RaceControl's orphaned-race **End Race** button POSTs `/races/{id}/finish` from the browser. It should instead publish `race_control` `end` carrying a `race_id`, and lapdata should load and finish that race.
+- Penalties are not in `race_state` (only the transient `penalty_notice`), so persistence could not reconcile them; a cumulative per-driver count would be needed.
+
+The startup read (`GET /races/running/recovery/`) is **not** a departure: lapdata is reading durable facts that persistence wrote, which is what "the DB owns durable facts" means.
 
 ### Core design principles
 
@@ -195,6 +218,17 @@ GPIO differs: its counter is `CLOCK_MONOTONIC` in ms, so 1 ms there is real (`ti
 This keeps the principle intact in its useful form: *layers 2+ don't know which hardware is attached, only what it can do.*
 
 The throttle-driven features above (fuel, a general per-car power vector, throttle profiles, rumble, KERS, CarID) and the virtual-safety-car/per-driver-cap work in `docs/per-car-power-plan.md` remain unimplemented — capability advertising and the yellow-flag power percentages (0/100 or anything between) are the first real consumer of this design, built to unblock those two specifically. `ble/` still keeps parity with GPIO everywhere else, while the BLE swap itself gets validated on real hardware first.
+
+## ⚠️ The dev environment runs on the LXC (10.0.1.10), not locally
+
+**After EVERY edit, with no asking or offering first, sync it to the LXC** — this is Greg's standing instruction and he should never have to repeat it:
+
+1. `scp -o ControlMaster=no -o ControlPath=none -o BatchMode=yes <file> 10.0.1.10:/root/lapcounter-server/<same path>` (the `-o` overrides are needed because Windows OpenSSH can't multiplex).
+2. Compare `sha256sum` local vs remote.
+3. New file in `database/migrations/`? Copying doesn't apply it — run it with `docker exec -i database psql -U lap -d lapcounter_server` on the LXC.
+4. Touched anything under `lapdata/`? Restart it there (`docker compose -f compose.dev.yaml restart lapdata`); it doesn't hot-reload. `api` and `react` do.
+
+The app is viewed at http://10.0.1.10:8088. The local Docker Desktop stack is not used.
 
 ## Development Commands
 
