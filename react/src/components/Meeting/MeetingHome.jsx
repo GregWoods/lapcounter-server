@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useRouteLoaderData } from 'react-router-dom';
-import { UserPlus, Flag, ListOrdered, Trophy, CalendarDays, ArrowLeft, LogOut, KeyRound } from 'lucide-react';
+import { UserPlus, Flag, ListOrdered, Trophy, CalendarDays, ArrowLeft, LogOut, KeyRound, QrCode } from 'lucide-react';
 import ChequeredFlagIcon from '../ChequeredFlagIcon';
 import PinPrompt from '../PinPrompt/PinPrompt.jsx';
 import { useAdminAuth } from '../../contexts/adminAuth';
@@ -43,9 +43,10 @@ export default function MeetingHome() {
                 <Link to={`${base}/nextrace`} className="home-button"><ListOrdered /><span>Next Race</span></Link>
                 <Link to={`${base}/results`} className="home-button"><Trophy /><span>Results</span></Link>
                 {isAdmin && <>
+                    <Link to={`${base}/welcome`} className="home-button"><QrCode /><span>Welcome Page</span></Link>
                     <Link to={`${base}/racecontrol`} className="home-button"><ChequeredFlagIcon /><span>Race Control</span></Link>
                     <Link to={`${base}/sessions`} className="home-button"><CalendarDays /><span>Sessions</span></Link>
-                    <Link to="/" className="home-button"><ArrowLeft /><span>All Meetings</span></Link>
+                    <Link to="/meetings" className="home-button"><ArrowLeft /><span>All Meetings</span></Link>
                 </>}
             </nav>
         </div>

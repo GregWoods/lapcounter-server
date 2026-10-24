@@ -18,6 +18,7 @@ from model import *
 from responsemodel import RaceSessionWithState, RaceSessionSummary
 from next_race import get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup, effective_laps_completed
 from points import calculate_race_points
+import app_settings
 
 settings = Settings()
 
@@ -856,6 +857,28 @@ def get_session_results(session_id: int, dbsession: SessionDep):
     if not race_session:
         raise HTTPException(status_code=404, detail="Session not found")
     return build_session_results(race_session, dbsession)
+
+
+# === Installation settings ===
+# GET is open on purpose: the Welcome page shows the WiFi password to guests. Writes are
+# gated by the admin PIN in the React Settings page only, like the rest of the API.
+
+@app.get("/settings")
+def get_app_settings(dbsession: SessionDep):
+    stored = {row.key: row.value for row in dbsession.exec(select(AppSetting)).all()}
+    return {**app_settings.DEFAULTS, **{k: v for k, v in stored.items() if k in app_settings.DEFAULTS}}
+
+
+@app.put("/settings")
+def put_app_settings(update: app_settings.AppSettingsUpdate, dbsession: SessionDep):
+    try:
+        changes = app_settings.validate_update(update)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    for key, value in changes.items():
+        dbsession.merge(AppSetting(key=key, value=value))
+    dbsession.commit()
+    return get_app_settings(dbsession)
 
 
 # === Admin Utility Endpoints ===

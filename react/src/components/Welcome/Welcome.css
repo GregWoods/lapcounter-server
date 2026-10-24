@@ -1,0 +1,87 @@
+/* Must fit one TV screen with no scrolling, whatever its size: every dimension is in
+   viewport units rather than px, and the page is exactly one viewport tall. */
+.welcome-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    height: 100vh;
+    overflow: hidden;
+    background: #111;
+    color: #fff;
+    padding: 2vh 3vw;
+    box-sizing: border-box;
+}
+
+.welcome-title {
+    font-size: min(7vh, 5vw);
+    letter-spacing: 0.05em;
+    margin: 0;
+    text-align: center;
+}
+
+.welcome-codes {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 6vw;
+}
+
+.welcome-code {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2vh;
+}
+
+.welcome-code h2 {
+    font-size: min(4.5vh, 3.5vw);
+    margin: 0;
+}
+
+/* QR codes need a light background to scan reliably on a dark page. The SVG scales to
+   whichever limit is tighter: screen height (landscape) or width (portrait). */
+.welcome-qr {
+    background: #fff;
+    padding: 1.2vh;
+    border-radius: 1.2vh;
+    line-height: 0;
+}
+
+.welcome-qr svg {
+    width: min(46vh, 38vw);
+    height: auto;
+}
+
+.welcome-detail {
+    font-size: min(3vh, 2.2vw);
+    margin: 0;
+    max-width: min(46vh, 38vw);
+    word-break: break-all;
+    text-align: center;
+}
+
+/* Portrait: stack the codes, so the width limit stops being the tight one. */
+@media (orientation: portrait) {
+    .welcome-codes {
+        flex-direction: column;
+        align-items: center;
+        gap: 3vh;
+    }
+    .welcome-title { font-size: 4vh; }
+    .welcome-code h2 { font-size: 3vh; }
+    .welcome-qr svg { width: min(26vh, 70vw); }
+    .welcome-detail { font-size: 2vh; max-width: 90vw; }
+}
+
+/* Top-left, out of the flow so it can't push the layout past one screen. Used together with
+   .home-icon-link (index.css), which supplies the colour and size shared with every other page;
+   this only overrides where it sits. The doubled selector outranks .home-icon-link so the
+   result doesn't depend on which stylesheet happens to load last. */
+.home-icon-link.welcome-home {
+    right: auto;
+    top: 32px;
+    left: 32px;
+    transform: none;
+    margin: 0;
+}

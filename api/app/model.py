@@ -282,6 +282,13 @@ class RacePenaltyCreate(SQLModel):
     reason: str
 
 
+class AppSetting(SQLModel, table=True):
+    """Installation-wide key/value setting; see app_settings.py for the known keys."""
+    __tablename__ = "app_settings"
+    key: str = Field(primary_key=True, max_length=64)
+    value: str = Field(max_length=255)
+
+
 # not using relationships yet
 #  https://sqlmodel.tiangolo.com/tutorial/relationship-attributes/define-relationships-attributes/#declare-relationship-attributes
 

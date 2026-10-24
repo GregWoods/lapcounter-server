@@ -9,6 +9,9 @@ import Drivers from './components/Drivers/Drivers.jsx'
 import RaceControl from './components/RaceControl/RaceControl.jsx'
 import MeetingLayout from './components/Meeting/MeetingLayout.jsx'
 import MeetingHome from './components/Meeting/MeetingHome.jsx'
+import NoMeeting from './components/Welcome/NoMeeting.jsx'
+import Welcome from './components/Welcome/Welcome.jsx'
+import Settings from './components/Settings/Settings.jsx'
 import RequireAdmin from './components/RequireAdmin/RequireAdmin.jsx'
 import { API_URL } from './endpoints.js';
 
@@ -23,7 +26,7 @@ function redirectToActive(path) {
                 const res = await fetch(`${API_URL}/meetings/active`);
                 if (res.ok) meeting = await res.json();
             } catch { /* fall through to "/" */ }
-            if (!meeting) return redirect("/");
+            if (!meeting) return redirect("/meetings");
             const rest = path.replace(":sessionId", params.sessionId ?? "");
             return redirect(`/m/${meeting.public_id}/${rest}`);
         },
@@ -33,7 +36,21 @@ function redirectToActive(path) {
 // https://reactrouter.com/start/modes  - using Data mode
 const router = createBrowserRouter([
     {
+        // The short address people type or scan: straight to the meeting in progress. With
+        // none in progress there is deliberately nothing to land on (an ended meeting may
+        // be old news), so show "No Meetings in Progress" with a way in for admins.
         path: "/",
+        element: <NoMeeting adminLink />,
+        loader: async () => {
+            try {
+                const res = await fetch(`${API_URL}/meetings/active`);
+                if (res.ok) return redirect(`/m/${(await res.json()).public_id}`);
+            } catch { /* fall through to the message */ }
+            return null;
+        },
+    },
+    {
+        path: "/meetings",
         element: <RequireAdmin><Meetings /></RequireAdmin>,
         loader: async () => {
             try {
@@ -64,6 +81,7 @@ const router = createBrowserRouter([
         },
         children: [
             { index: true, element: <MeetingHome /> },
+            { path: "welcome", element: <Welcome /> },
             {
                 path: "sessions",
                 element: <RequireAdmin><Sessions /></RequireAdmin>,
@@ -170,8 +188,7 @@ const router = createBrowserRouter([
             }
         },
     },
-    // Sessions moved under their meeting; the old combined page is gone.
-    { path: "meetings", loader: () => redirect("/") },
+    { path: "settings", element: <RequireAdmin><Settings /></RequireAdmin> },
 ]);
 
 export default router;

@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS app_settings;
 DROP TABLE IF EXISTS race_penalties;
 DROP TABLE IF EXISTS race_withdrawals;
 DROP TABLE IF EXISTS session_drivers;
@@ -197,4 +198,10 @@ CREATE TABLE race_penalties (
     amount NUMERIC NOT NULL,
     reason VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Installation-wide settings (WiFi details for the Welcome page QR code, public base URL).
+CREATE TABLE app_settings (
+    key VARCHAR(64) PRIMARY KEY,
+    value VARCHAR(255) NOT NULL
 );

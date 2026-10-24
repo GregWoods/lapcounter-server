@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
-import { LogOut, Users } from 'lucide-react';
+import { LogOut, Settings, Users } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/adminAuth';
 import MqttSubscriber from '../MqttSubscriber.jsx';
 import MeetingForm from './MeetingForm.jsx';
@@ -99,6 +99,9 @@ const Meetings = () => {
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <Link to="/drivers" className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }} title="All drivers">
                         <Users size={16} /> Drivers
+                    </Link>
+                    <Link to="/settings" className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }} title="Settings">
+                        <Settings size={16} /> Settings
                     </Link>
                     <button className="admin-btn-ghost admin-btn-sm" onClick={logout} title="Lock admin">
                         <LogOut size={16} />

@@ -94,7 +94,7 @@ const Drivers = () => {
         <div className="admin-page">
             <div className="admin-header">
                 <div className="admin-header-left">
-                    <Link to="/" className="home-icon-link"><House /></Link>
+                    <Link to="/meetings" className="home-icon-link"><House /></Link>
                     <h1 className="admin-title">Drivers</h1>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
