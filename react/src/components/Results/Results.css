@@ -73,8 +73,18 @@
         overflow-y: hidden;
     }
 
-    .results-columns--wide {
+    .results-columns--wide,
+    .results-columns--single {
         margin-right: -40px;
+    }
+
+    /* Everyone fits in the first column: don't leave half the width to an empty one */
+    .results-columns--single .results-column:first-child {
+        flex: 1 1 100%;
+    }
+
+    .results-columns--single .results-column:nth-child(2) {
+        display: none;
     }
 
     .results-columns--wide .results-column {

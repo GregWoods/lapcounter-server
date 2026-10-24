@@ -215,6 +215,30 @@ function Results() {
         };
     }, [wideView]);
 
+    // The frozen columns' `left` offsets must equal the widths of the columns before
+    // them, or the sticky cells sit further right than their natural spot and cover the
+    // next column. Widths depend on the root font size (which scales with viewport
+    // width), so measure them rather than hardcoding pixels in the CSS.
+    useLayoutEffect(() => {
+        const syncStickyOffsets = () => {
+            document.querySelectorAll('.results-table').forEach(table => {
+                const headers = [...table.querySelectorAll('thead th')];
+                const rows = [...table.querySelectorAll('tbody tr')];
+                let offset = 0;
+                for (let i = 0; i < headers.length; i++) {
+                    if (getComputedStyle(headers[i]).position !== 'sticky') break;
+                    const left = `${offset}px`;
+                    headers[i].style.left = left;
+                    rows.forEach(row => { if (row.children[i]) row.children[i].style.left = left; });
+                    offset += headers[i].getBoundingClientRect().width;
+                }
+            });
+        };
+        syncStickyOffsets();
+        window.addEventListener('resize', syncStickyOffsets);
+        return () => window.removeEventListener('resize', syncStickyOffsets);
+    });
+
     const col1 = drivers.slice(0, splitAt);
     const col2 = drivers.slice(splitAt);
     // Medal ranks computed from the full field so they stay correct when the
@@ -272,7 +296,7 @@ function Results() {
                         : <ResultsTable drivers={drivers} races={races} scrollRef={col1Ref} />}
                 </div>
             ) : (
-                <div className="results-columns" ref={colRef}>
+                <div className={`results-columns${col2.length === 0 ? ' results-columns--single' : ''}`} ref={colRef}>
                     {isFastestLap ? (
                         <>
                             <FastestLapResultsTable drivers={col1} races={races} scrollRef={col1Ref} scoringMethod={scoring_method} raceRanks={raceRanks} startIndex={0} />
