@@ -557,6 +557,11 @@ def handle_race_control(data: dict, arrival: float):
         # A client (e.g. the race-control page) asking for the current state,
         # since race_state is not retained on the broker.
         publish_race_state()
+        # A browser refresh lands here. If we believe the API is down, re-check now so the
+        # refresh clears a stale "Connection lost" instead of republishing it; on recovery
+        # _set_api_reachable publishes again. Off-thread: the probe can take 5s to time out.
+        if not _api_reachable:
+            threading.Thread(target=fetch_pending_race, daemon=True).start()
 
     elif command == 'reload_lineup':
         # NextRace edited the queued lineup through the API (added/removed a driver,
@@ -722,6 +727,19 @@ client.on_message = on_message
 # Constructing the client is pure, connecting is not — so only the I/O sits behind the
 # guard. That keeps this module importable by test_timestamps.py while the container
 # (CMD ["python", "timestamps_to_lapdata.py"]) still runs as __main__ and connects.
+API_RETRY_INTERVAL_S = 10
+
+
+def _api_recovery_loop():
+    """While the API is believed down, keep probing so the flag clears itself. Nothing
+    else would: with no race loaded, no fetch or POST happens to flip it back."""
+    while True:
+        time.sleep(API_RETRY_INTERVAL_S)
+        if not _api_reachable:
+            fetch_pending_race()
+
+
 if __name__ == '__main__':
+    threading.Thread(target=_api_recovery_loop, daemon=True).start()
     client.connect(mqtt_hostname)
     client.loop_forever()
