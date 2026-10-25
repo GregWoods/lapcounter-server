@@ -210,7 +210,11 @@ def handle_car_timestamp(data: dict, arrival: float):
         d = race.drivers.get(lane)
         if d:
             counted = outcome == CROSSING_COUNTED
-            client.publish('driver_lap', json.dumps({
+            # QoS 1 (#77): the broker queues it for dbwriter's persistent session while
+            # dbwriter is down, and paho holds it here while our own link is down.
+            # Redelivery is safe: driver_laps is keyed on (driver_race_id, clock,
+            # counter_ms), so a duplicate is dropped.
+            client.publish('driver_lap', qos=1, payload=json.dumps({
                 'race_id': race.race_id,
                 'driver_id': d.driver_id,
                 'lane': lane,
