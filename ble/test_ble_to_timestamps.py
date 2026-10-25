@@ -556,15 +556,50 @@ def test_race_state_repeated_same_percent_does_not_resend(monkeypatch):
     assert sent == []
 
 
-@pytest.mark.parametrize('last', [0, 100, None])
-def test_race_state_offline_leaves_power_alone(monkeypatch, last):
-    """lapdata's Last Will carries no power_pct. Read as "no race" it would mean full
-    power, so a lapdata dying while Paused would set cars moving under a yellow flag."""
+OFFLINE = {'state': 'Offline', 'race_id': None, 'drivers': []}
+
+
+@pytest.mark.parametrize('last', [100, None])
+def test_race_state_offline_stops_the_cars(monkeypatch, last):
+    """lapdata gone (its Last Will) means nothing counts laps or can flag a yellow. It
+    carries no power_pct, and read as "no race" it would mean full power."""
     monkeypatch.setattr(ble, '_last_seen_power_pct', last)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
     sent = sent_commands(monkeypatch)
-    ble.handle_race_state({'state': 'Offline', 'race_id': None, 'drivers': []})
+    ble.handle_race_state(OFFLINE)
+    assert sent == [ble.CARS_STOPPED]
+    assert ble._last_seen_power_pct == 0
+
+
+def test_race_state_offline_while_already_stopped_does_not_rewrite(monkeypatch):
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 0)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
     assert sent == []
-    assert ble._last_seen_power_pct == last
+
+
+@pytest.mark.parametrize('command', ['resume', 'arm', 'start', 'yellow', 'end', 'prepare', 'pause'])
+def test_race_control_while_lapdata_offline_writes_nothing(monkeypatch, command):
+    """A page that hasn't noticed lapdata is gone must not put the cars back on track
+    with a Resume — nothing would count their laps."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
+    sent.clear()
+    ble.handle_race_control({'command': command})
+    assert sent == []
+
+
+def test_lapdata_returning_restores_its_power(monkeypatch):
+    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
+    ble.handle_race_state({'state': 'NotStarted', 'power_pct': 100})
+    ble.handle_race_control({'command': 'arm'})
+    assert sent == [ble.CARS_STOPPED, ble.TRACK_RACING, ble.TRACK_RACING]
 
 
 def test_race_state_missing_power_pct_defaults_to_full(monkeypatch):
