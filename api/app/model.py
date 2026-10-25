@@ -185,6 +185,11 @@ class SessionDriver(SQLModel, table=True):
 
 class DriverLap(SQLModel, table=True):
     __tablename__ = "driver_laps"
+    # One row per Layer 1 crossing (migration 004, #77): dbwriter's redelivered
+    # driver_lap messages hit this and are dropped.
+    __table_args__ = (
+        UniqueConstraint("driver_race_id", "clock", "counter_ms", name="driver_laps_one_row_per_crossing"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     driver_race_id: Optional[int] = Field(default=None, foreign_key="driver_races.id")
     #Used only for sorting, not for calculations
