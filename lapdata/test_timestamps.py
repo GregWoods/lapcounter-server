@@ -193,6 +193,39 @@ def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkey
     assert laps[0]['crossed_at'] == pytest.approx(laps[1]['crossed_at'] - 5.0, abs=0.01)
 
 
+# --- driver_penalty ---
+
+def test_a_penalty_is_published_as_its_own_event_after_its_crossing(published, monkeypatch):
+    """#88: a penalty is its own fact on its own topic, not a crossing outcome. It follows
+    the void crossing that incurred it, and is published once."""
+    driver = types.SimpleNamespace(driver_id=9, lap_times=[4.5], last_lap_timing='counter')
+
+    def yellow_flag_crossing(lane, crossing):
+        tsl.race.pending_penalty_records.append({
+            'driver_id': 9, 'penalty_type': 'lap', 'amount': 2,
+            'reason': 'yellow_flag_grace_expired',
+            'clock': crossing.clock, 'counter_ms': crossing.counter_ms,
+        })
+        return 'yellow_flag'
+
+    monkeypatch.setattr(tsl.race, 'on_lap', yellow_flag_crossing)
+    monkeypatch.setattr(tsl.race, 'drivers', {1: driver})
+    monkeypatch.setattr(tsl.race, 'race_id', 5)
+    monkeypatch.setattr(tsl.race, 'pending_penalty_records', [])
+    monkeypatch.setattr(tsl, 'publish_race_state', lambda: None)
+
+    tsl.handle_car_timestamp(_crossing(1, 20_000), arrival=1020.0)
+
+    topics = [topic for topic, _ in published if topic in ('driver_lap', 'driver_penalty')]
+    assert topics == ['driver_lap', 'driver_penalty']
+    penalty = next(p for topic, p in published if topic == 'driver_penalty')
+    assert penalty == {
+        'race_id': 5, 'driver_id': 9, 'penalty_type': 'lap', 'amount': 2,
+        'reason': 'yellow_flag_grace_expired', 'clock': CLOCK, 'counter_ms': 20_000,
+    }
+    assert tsl.race.pending_penalty_records == []
+
+
 # --- layer1_clock heartbeat ---
 
 def test_layer1_clock_feeds_the_anchor():

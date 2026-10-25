@@ -279,7 +279,8 @@ class RaceSessionCreate(SQLModel):
 
 # A penalty applied by lapdata's race manager (currently only a yellow-flag lap penalty
 # for Points sessions) so it survives past the race and factors into
-# build_session_results() instead of only affecting live race_state.
+# build_session_results() instead of only affecting live race_state. Written by dbwriter
+# from the `driver_penalty` MQTT topic (#88).
 class RacePenalty(SQLModel, table=True):
     __tablename__ = "race_penalties"
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -292,12 +293,6 @@ class RacePenalty(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
-
-
-class RacePenaltyCreate(SQLModel):
-    penalty_type: str
-    amount: Decimal
-    reason: str
 
 
 class AppSetting(SQLModel, table=True):

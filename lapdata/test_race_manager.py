@@ -586,15 +586,17 @@ def test_lap_penalty_never_fires_for_fastest_lap_sessions():
     assert race.pending_penalty_records == []
 
 
-def test_penalty_is_queued_for_the_api_and_drained_once():
+def test_penalty_is_queued_with_the_crossing_that_incurred_it():
     race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
-    race.on_lap(1, at(5.0))
+    crossing = at(5.0)
+    race.on_lap(1, crossing)
 
     assert race.pending_penalty_records == [{
         'driver_id': 1, 'penalty_type': 'lap', 'amount': 1,
         'reason': 'yellow_flag_grace_expired',
+        'clock': crossing.clock, 'counter_ms': crossing.counter_ms,
     }]
 
 
