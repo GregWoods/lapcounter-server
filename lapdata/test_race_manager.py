@@ -439,6 +439,25 @@ def test_lap_penalty_floors_at_zero_laps():
     assert race.drivers[1].laps_completed == 0
 
 
+def test_a_lap_after_a_penalty_to_zero_is_not_timed_from_lights_out_again():
+    """The penalty floors laps_completed to 0, but the driver has already done a real
+    lap 1 — the next lap is a plain interval from the previous crossing (#83)."""
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.on_lap(1, at(5.0))        # lap 1, from lights-out
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(10.0))       # penalty crossing: 1 - 1 = 0
+    assert race.drivers[1].laps_completed == 0
+
+    race.resume()
+    race.on_lap(1, at(16.0))
+    driver = race.drivers[1]
+    assert driver.last_lap_timing == TIMING_COUNTER
+    assert driver.last_lap_time == pytest.approx(6.0)   # from the penalty crossing, not 16.0
+    assert driver.laps_completed == 1
+    assert len(driver.lap_times) == 2
+
+
 def test_lap_penalty_resets_on_a_new_yellow_flag_incident():
     race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
     race.yellow()

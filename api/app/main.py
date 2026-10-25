@@ -847,8 +847,9 @@ def build_session_results(race_session, dbsession):
 
     # Yellow-flag lap penalties (GPIO-only substitute for a real power cut) are recorded
     # separately in race_penalties rather than in driver_races.laps_completed, since
-    # that column is dbwriter's own aggregate from driver_lap messages and a penalty
-    # never emits one. Fold them in here so a penalized driver's final position/points
+    # that column is dbwriter's own aggregate from driver_lap messages, whose lap_number
+    # is the raw ordinal before any penalty (#83). This is the one place the penalty is
+    # subtracted. Fold them in here so a penalized driver's final position/points
     # reflect it, not just the live race_state lapdata published mid-race.
     lap_penalties = dbsession.exec(
         select(RacePenalty).where(RacePenalty.race_id.in_(race_ids), RacePenalty.penalty_type == 'lap')
