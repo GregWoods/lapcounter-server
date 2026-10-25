@@ -556,6 +556,52 @@ def test_race_state_repeated_same_percent_does_not_resend(monkeypatch):
     assert sent == []
 
 
+OFFLINE = {'state': 'Offline', 'race_id': None, 'drivers': []}
+
+
+@pytest.mark.parametrize('last', [100, None])
+def test_race_state_offline_stops_the_cars(monkeypatch, last):
+    """lapdata gone (its Last Will) means nothing counts laps or can flag a yellow. It
+    carries no power_pct, and read as "no race" it would mean full power."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', last)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
+    assert sent == [ble.CARS_STOPPED]
+    assert ble._last_seen_power_pct == 0
+
+
+def test_race_state_offline_while_already_stopped_does_not_rewrite(monkeypatch):
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 0)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
+    assert sent == []
+
+
+@pytest.mark.parametrize('command', ['resume', 'arm', 'start', 'yellow', 'end', 'prepare', 'pause'])
+def test_race_control_while_lapdata_offline_writes_nothing(monkeypatch, command):
+    """A page that hasn't noticed lapdata is gone must not put the cars back on track
+    with a Resume — nothing would count their laps."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
+    sent.clear()
+    ble.handle_race_control({'command': command})
+    assert sent == []
+
+
+def test_lapdata_returning_restores_its_power(monkeypatch):
+    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
+    monkeypatch.setattr(ble, '_lapdata_offline', False)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state(OFFLINE)
+    ble.handle_race_state({'state': 'NotStarted', 'power_pct': 100})
+    ble.handle_race_control({'command': 'arm'})
+    assert sent == [ble.CARS_STOPPED, ble.TRACK_RACING, ble.TRACK_RACING]
+
+
 def test_race_state_missing_power_pct_defaults_to_full(monkeypatch):
     """An old lapdata image that hasn't shipped power_pct yet must not read as 0%."""
     monkeypatch.setattr(ble, '_last_seen_power_pct', None)
@@ -587,17 +633,18 @@ def test_connect_time_power_follows_the_race(pct, expected):
     assert ble._command_for_power_pct(pct) == expected
 
 
-def test_mqtt_connect_asks_lapdata_for_race_state():
-    """race_state isn't retained: after a container restart, this is how BLE learns the
-    race is Paused before its connect-time power write."""
+def test_mqtt_connect_subscribes_to_retained_race_state_without_asking():
+    """race_state is retained (#76): subscribing is how BLE learns the race is Paused
+    before its connect-time power write, with no `status` round trip."""
     import json
-    published = []
+    published, subscribed = [], []
     client = types.SimpleNamespace(
-        subscribe=lambda topic: None,
+        subscribe=subscribed.append,
         publish=lambda topic, payload, retain=False: published.append((topic, json.loads(payload), retain)),
     )
     ble.on_mqtt_connect(client, None, None, None, None)
-    assert ('race_control', {'command': 'status'}, False) in published
+    assert 'race_state' in subscribed
+    assert not any(topic == 'race_control' for topic, _, _ in published)
 
 
 def test_mqtt_connect_advertises_capabilities():

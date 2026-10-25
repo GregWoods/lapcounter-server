@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useGuestBase } from '../utils/meetingPaths';
 import { House, Flag, Pause, Play } from 'lucide-react';
 import MqttSubscriber from '../MqttSubscriber';
+import useLapdataAlive from '../hooks/useLapdataAlive.js';
 import ChequeredFlagIcon from '../ChequeredFlagIcon';
 import { API_URL, MQTT_URL } from '../../endpoints.js';
 
@@ -21,7 +22,12 @@ const STATE_LABELS = {
 
 export default function RaceControl() {
     const base = useGuestBase();
-    const [raceState, setRaceState] = useState(null);
+    const [lastRaceState, setRaceState] = useState(null);
+    // race_state is retained and heartbeated (#76), so there's no `status` to ask on load.
+    // Gone silent, or its Offline will retained: lapdata is down, and its last state
+    // (it may well say Running) no longer describes anything.
+    const [lapdataAlive, noteLapdataRaceState] = useLapdataAlive();
+    const raceState = lapdataAlive ? lastRaceState : null;
     const [infoLoaded, setInfoLoaded] = useState(false);
     const [info, setInfo] = useState({
         meetingName: '', sessionType: null, sessionNumber: null, raceNumber: null,
@@ -101,21 +107,6 @@ export default function RaceControl() {
 
     useEffect(() => { loadInfo(); }, [loadInfo]);
 
-    // Ask lapdata for the current state once (race_state is not retained on the broker).
-    useEffect(() => {
-        const t = setTimeout(() => publish('status'), 500);
-        return () => clearTimeout(t);
-    }, []);
-
-    // Until lapdata answers that status, "no race_state" means "not heard yet", not
-    // "lapdata has nothing" — so a stuck-race check can't be made. If it never answers
-    // (lapdata down), stop waiting so the End Race fallback for a stuck race still shows.
-    const [lapdataSilent, setLapdataSilent] = useState(false);
-    useEffect(() => {
-        const t = setTimeout(() => setLapdataSilent(true), 5000);
-        return () => clearTimeout(t);
-    }, []);
-
     const publish = (command, extra = {}) => {
         clientRef.current?.publish('race_control', JSON.stringify({ command, ...extra }));
     };
@@ -124,6 +115,8 @@ export default function RaceControl() {
     // on every lap crossing or yellow countdown tick — so refetch (4 requests) only then.
     const lastRaceKeyRef = useRef(null);
     const onRaceState = (rs) => {
+        noteLapdataRaceState(rs);
+        if (rs.state === 'Offline') return;
         setRaceState(rs);
         const raceKey = `${rs.race_id}:${rs.state}`;
         if (raceKey !== lastRaceKeyRef.current) {
@@ -159,7 +152,10 @@ export default function RaceControl() {
     // for that same race is not this: lapdata's finish POST is simply still in flight.
     // ⚠️ Judged on the raw message, not liveRaceState: that one is nulled for a stale or
     // empty message too, and neither means lapdata has lost anything.
-    const lapdataHeard = raceState != null || lapdataSilent;
+    // Until the retained race_state arrives, "no race_state" means "not heard yet", not
+    // "lapdata has nothing" — so a stuck-race check can't be made. Once lapdata is known to
+    // be down, stop waiting so the End Race fallback for a stuck race still shows.
+    const lapdataHeard = raceState != null || !lapdataAlive;
     const orphanedRaceId = info.runningRaceId != null && lapdataHeard && raceState?.race_id !== info.runningRaceId
         ? info.runningRaceId : null;
     // lapdata has a race of its own under way. Its controls must stay — a stuck race is
@@ -278,6 +274,12 @@ export default function RaceControl() {
                     {STATE_LABELS[state] ?? (infoLoaded ? 'Not started' : 'Connecting…')}
                 </div>
             </section>
+
+            {!lapdataAlive && (
+                <div className="rc-regen-banner">
+                    <span>The lap counter (lapdata) has stopped responding — race commands won&apos;t be acted on.</span>
+                </div>
+            )}
 
             {info.needsRegen && (
                 <div className="rc-regen-banner">

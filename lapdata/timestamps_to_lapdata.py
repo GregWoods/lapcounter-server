@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import random
+import signal
 import threading
 import urllib.request
 import urllib.error
@@ -576,14 +577,10 @@ def handle_race_control(data: dict, arrival: float):
             logger.info("prepare: no queued race to stage (start a session first)")
 
     elif command == 'status':
-        # A client (e.g. the race-control page) asking for the current state,
-        # since race_state is not retained on the broker.
+        # No longer needed to get the state — race_state is retained and heartbeated
+        # (#76), and the heartbeat re-probes a down API — but still answered, so an older
+        # client that asks isn't left waiting.
         publish_race_state()
-        # A browser refresh lands here. If we believe the API is down, re-check now so the
-        # refresh clears a stale "Connection lost" instead of republishing it; on recovery
-        # _set_api_reachable publishes again. Off-thread: the probe can take 5s to time out.
-        if not _api_reachable:
-            threading.Thread(target=fetch_pending_race, daemon=True).start()
 
     elif command == 'reload_lineup':
         # NextRace edited the queued lineup through the API (added/removed a driver,
@@ -672,7 +669,8 @@ def publish_race_state():
     # here rather than in RaceManager.to_dict() — see _api_reachable above.
     state_dict['api_reachable'] = _api_reachable
     state_dict['capabilities'] = _layer1_capabilities
-    client.publish('race_state', json.dumps(state_dict))
+    # Retained, so a subscriber that (re)connects gets the current state at once (#76).
+    client.publish('race_state', json.dumps(state_dict), retain=True)
 
     # Persist race-lifecycle transitions via the API (race Running/Finished, session
     # InProgress, and the automatic session-end). Starting the next race/session stays
@@ -729,7 +727,8 @@ def on_connect(_client, _userdata, _flags, _reason_code, _properties):
 
     # on_connect fires on every broker *re*connect too, not just startup. Reloading the
     # pending race then would replace a running race with the next one in the queue, so
-    # once a race is loaded just republish it — race_state isn't retained on the broker.
+    # once a race is loaded just republish it — the broker may hold our Last Will
+    # (`Offline`) as the retained race_state, which must be replaced straight away.
     with _race_lock:
         if race.race_id:
             publish_race_state()
@@ -794,6 +793,14 @@ def load_on_startup() -> bool:
     """Put something in the race manager at startup: a race the DB says is still Running
     (restarted mid-race) in preference to the queue head. Returns False if the API
     couldn't be reached, so the caller can try again."""
+    global _startup_done
+    try:
+        return _load_on_startup()
+    finally:
+        _startup_done = True
+
+
+def _load_on_startup() -> bool:
     global pending_race_cache, _startup_load_pending
     recovery = fetch_running_recovery()
     if recovery is None and not _api_reachable:
@@ -831,30 +838,86 @@ def load_on_startup() -> bool:
     return True
 
 
+# What the retained race_state says when lapdata is gone: its Last Will (an ungraceful
+# disconnect), and what it publishes itself before a clean one. Consumers treat it as
+# "nothing known" — BLE in particular keeps whatever power it last set. No race_id, so
+# nothing reads it as a race that ended.
+OFFLINE_STATE = json.dumps({'state': 'Offline', 'race_id': None, 'drivers': []})
+
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
 client.on_message = on_message
+# The broker only fires this after 1.5x keepalive on a half-open link (a Pi power cut),
+# so the heartbeat stopping is the real liveness signal; the will is the backstop.
+client.will_set('race_state', OFFLINE_STATE, retain=True)
 
 # Constructing the client is pure, connecting is not — so only the I/O sits behind the
 # guard. That keeps this module importable by test_timestamps.py while the container
 # (CMD ["python", "timestamps_to_lapdata.py"]) still runs as __main__ and connects.
 API_RETRY_INTERVAL_S = 10
 
+# race_state is republished this often whatever happens (#76): it heals a message a
+# subscriber missed, and its absence is how a consumer tells that lapdata has gone.
+# React's useLapdataAlive waits a few beats before calling lapdata offline.
+HEARTBEAT_INTERVAL_S = 2
+# Until the first startup load has been attempted, the race manager is empty only because
+# nothing has been read yet. Beating that would make an empty NotStarted the retained
+# state for a moment, mid-recovery.
+_startup_done = False
+_api_probe_running = threading.Lock()
+
+
+def _probe_api():
+    """One reachability check, never two at once: a down API takes 5s to time out,
+    longer than a beat."""
+    if not _api_probe_running.acquire(blocking=False):
+        return
+    try:
+        fetch_pending_race()
+    finally:
+        _api_probe_running.release()
+
+
+def _beat():
+    if _startup_done:
+        with _race_lock:
+            publish_race_state()
+    # This used to happen on a `status` request, which is what cleared a stale
+    # "Connection lost" when a browser refreshed. A beat does it now, so the display
+    # clears itself within a beat of the API coming back.
+    if not _api_reachable and not _startup_load_pending:
+        threading.Thread(target=_probe_api, daemon=True).start()
+
+
+def _heartbeat_loop():
+    while True:
+        time.sleep(HEARTBEAT_INTERVAL_S)
+        try:
+            _beat()
+        except Exception as e:
+            logger.error(f"Heartbeat failed: {e}", exc_info=True)
+
+
+def _shutdown(_signum, _frame):
+    """A clean disconnect doesn't fire the Last Will, so say Offline ourselves first."""
+    logger.info("Shutting down: publishing Offline race_state")
+    client.publish('race_state', OFFLINE_STATE, retain=True).wait_for_publish(timeout=2)
+    client.disconnect()
+
 
 def _api_recovery_loop():
-    """While the API is believed down, keep probing so the flag clears itself. Nothing
-    else would: with no race loaded, no fetch or POST happens to flip it back."""
+    """Retry the startup load while the API was down when lapdata started, so nothing was
+    loaded — a recovered Running race especially must not wait for someone to notice.
+    Clearing api_reachable once the startup load is done is the heartbeat's job."""
     while True:
         time.sleep(API_RETRY_INTERVAL_S)
         if _startup_load_pending:
-            # The API was down when lapdata started, so nothing was loaded — and a
-            # recovered Running race especially must not wait for someone to notice.
             load_on_startup()
-        elif not _api_reachable:
-            fetch_pending_race()
 
 
 if __name__ == '__main__':
+    signal.signal(signal.SIGTERM, _shutdown)
     threading.Thread(target=_api_recovery_loop, daemon=True).start()
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
     client.connect(mqtt_hostname)
     client.loop_forever()

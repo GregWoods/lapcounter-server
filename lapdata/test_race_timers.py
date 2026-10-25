@@ -24,7 +24,8 @@ _stub('paho.mqtt')
 _stub(
     'paho.mqtt.client',
     Client=lambda *a, **k: types.SimpleNamespace(
-        publish=lambda *a, **k: None, on_connect=None, on_message=None,
+        publish=lambda *a, **k: None, will_set=lambda *a, **k: None,
+        on_connect=None, on_message=None,
     ),
     CallbackAPIVersion=types.SimpleNamespace(VERSION2=2),
 )
@@ -74,7 +75,7 @@ def lapdata(monkeypatch):
     monkeypatch.setattr(tsl.threading, 'Timer', make_timer)
     published = []
     monkeypatch.setattr(tsl, 'client', types.SimpleNamespace(
-        publish=lambda topic, payload: published.append(json.loads(payload))))
+        publish=lambda topic, payload, **k: published.append(json.loads(payload))))
     monkeypatch.setattr(tsl, '_post_api', lambda *a, **k: None)
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: PENDING)
     monkeypatch.setattr(tsl, 'pending_race_cache', None)

@@ -24,3 +24,7 @@ react/.env.production
 
 # Greg's personal scratchpad, not part of the project
 lapcounter-server-tasks.md
+
+# Broker persistence (persist-sqlite plugin, #76) and logs
+mosquitto/data/
+mosquitto/log/

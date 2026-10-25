@@ -11,7 +11,7 @@
 services:
 
   mosquitto:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:2.1.2-alpine
     container_name: mosquitto
     volumes:
       - ./mosquitto:/mosquitto

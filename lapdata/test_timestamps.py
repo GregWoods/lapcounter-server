@@ -23,7 +23,8 @@ _stub('paho.mqtt')
 _stub(
     'paho.mqtt.client',
     Client=lambda *a, **k: types.SimpleNamespace(
-        publish=lambda *a, **k: None, on_connect=None, on_message=None,
+        publish=lambda *a, **k: None, will_set=lambda *a, **k: None,
+        on_connect=None, on_message=None,
     ),
     CallbackAPIVersion=types.SimpleNamespace(VERSION2=2),
 )
@@ -40,7 +41,7 @@ def published(monkeypatch):
     """Capture MQTT publishes, and give each test a clean anchor set and phantom filter."""
     sent = []
     monkeypatch.setattr(tsl, 'client', types.SimpleNamespace(
-        publish=lambda topic, payload: sent.append((topic, json.loads(payload)))))
+        publish=lambda topic, payload, **k: sent.append((topic, json.loads(payload)))))
     monkeypatch.setattr(tsl, 'anchors', ClockAnchors())
     monkeypatch.setattr(tsl, 'prev_crossing', [None] * 6)
     monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing: False)
@@ -436,3 +437,68 @@ def test_every_race_state_carries_the_current_reachability(monkeypatch, publishe
     monkeypatch.setattr(tsl, '_api_reachable', False)
     tsl.publish_race_state()
     assert published[-1][1]['api_reachable'] is False
+
+
+# --- race_state is retained, heartbeated and has a Last Will (#76) ---
+
+@pytest.fixture
+def publish_calls(monkeypatch):
+    """Capture every publish with its keyword arguments (retain)."""
+    calls = []
+
+    class _Published:
+        def wait_for_publish(self, timeout=None):
+            return True
+
+    def publish(topic, payload, **kwargs):
+        calls.append((topic, json.loads(payload), kwargs))
+        return _Published()
+    monkeypatch.setattr(tsl, 'client', types.SimpleNamespace(
+        publish=publish, disconnect=lambda: calls.append(('disconnect', None, {}))))
+    return calls
+
+
+def test_race_state_is_published_retained(publish_calls):
+    """A subscriber that (re)connects — a refreshed browser, a restarted BLE — must get
+    the current state from the broker at once, with no `status` round trip."""
+    tsl.publish_race_state()
+    topic, _, kwargs = publish_calls[-1]
+    assert topic == 'race_state'
+    assert kwargs.get('retain') is True
+
+
+def test_heartbeat_republishes_race_state(monkeypatch, publish_calls):
+    monkeypatch.setattr(tsl, '_startup_done', True)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    tsl._beat()
+    assert [t for t, _, _ in publish_calls] == ['race_state']
+
+
+def test_heartbeat_waits_for_the_startup_load(monkeypatch, publish_calls):
+    """Before the first startup load the race manager is empty only because nothing has
+    been read yet; beating that would make it the retained state mid-recovery."""
+    monkeypatch.setattr(tsl, '_startup_done', False)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    tsl._beat()
+    assert publish_calls == []
+
+
+def test_heartbeat_reprobes_a_down_api(monkeypatch, publish_calls):
+    """What a `status` request used to do: clear a stale "Connection lost" once the API
+    answers again, without waiting for a race event."""
+    monkeypatch.setattr(tsl, '_startup_done', True)
+    monkeypatch.setattr(tsl, '_api_reachable', False)
+    monkeypatch.setattr(tsl, '_startup_load_pending', False)
+    probed = threading.Event()
+    monkeypatch.setattr(tsl, 'fetch_pending_race', probed.set)
+    tsl._beat()
+    assert probed.wait(2)
+
+
+def test_clean_shutdown_publishes_offline_before_disconnecting(publish_calls):
+    """A clean disconnect doesn't fire the Last Will, so lapdata must say Offline itself."""
+    tsl._shutdown(None, None)
+    (topic, payload, kwargs), last = publish_calls
+    assert topic == 'race_state' and kwargs.get('retain') is True
+    assert payload['state'] == 'Offline' and payload['race_id'] is None
+    assert last[0] == 'disconnect'

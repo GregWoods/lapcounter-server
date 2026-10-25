@@ -19,7 +19,7 @@ env:
     gregkwoods/lapcounter-server-gpio:latest
     gregkwoods/lapcounter-server-dbwriter:latest
     postgres:17
-    eclipse-mosquitto:latest
+    eclipse-mosquitto:2.1.2-alpine
 
 jobs:
   build:
