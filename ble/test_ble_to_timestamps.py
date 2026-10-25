@@ -556,6 +556,17 @@ def test_race_state_repeated_same_percent_does_not_resend(monkeypatch):
     assert sent == []
 
 
+@pytest.mark.parametrize('last', [0, 100, None])
+def test_race_state_offline_leaves_power_alone(monkeypatch, last):
+    """lapdata's Last Will carries no power_pct. Read as "no race" it would mean full
+    power, so a lapdata dying while Paused would set cars moving under a yellow flag."""
+    monkeypatch.setattr(ble, '_last_seen_power_pct', last)
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Offline', 'race_id': None, 'drivers': []})
+    assert sent == []
+    assert ble._last_seen_power_pct == last
+
+
 def test_race_state_missing_power_pct_defaults_to_full(monkeypatch):
     """An old lapdata image that hasn't shipped power_pct yet must not read as 0%."""
     monkeypatch.setattr(ble, '_last_seen_power_pct', None)
@@ -587,17 +598,18 @@ def test_connect_time_power_follows_the_race(pct, expected):
     assert ble._command_for_power_pct(pct) == expected
 
 
-def test_mqtt_connect_asks_lapdata_for_race_state():
-    """race_state isn't retained: after a container restart, this is how BLE learns the
-    race is Paused before its connect-time power write."""
+def test_mqtt_connect_subscribes_to_retained_race_state_without_asking():
+    """race_state is retained (#76): subscribing is how BLE learns the race is Paused
+    before its connect-time power write, with no `status` round trip."""
     import json
-    published = []
+    published, subscribed = [], []
     client = types.SimpleNamespace(
-        subscribe=lambda topic: None,
+        subscribe=subscribed.append,
         publish=lambda topic, payload, retain=False: published.append((topic, json.loads(payload), retain)),
     )
     ble.on_mqtt_connect(client, None, None, None, None)
-    assert ('race_control', {'command': 'status'}, False) in published
+    assert 'race_state' in subscribed
+    assert not any(topic == 'race_control' for topic, _, _ in published)
 
 
 def test_mqtt_connect_advertises_capabilities():

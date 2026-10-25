@@ -10,6 +10,7 @@ import StartLights from './StartLights.jsx';
 import SoundBlockedModal from './SoundBlockedModal.jsx';
 import ApiUnreachableModal from './ApiUnreachableModal.jsx';
 import YellowFlagRacePaused from './YellowFlagRacePaused.jsx';
+import useLapdataAlive from '../hooks/useLapdataAlive.js';
 import { useState, useRef, useEffect } from 'react';
 import { useLoaderData } from 'react-router-dom';
 import { defaultConfig, defaultRace, getInitialDrivers } from '../../defaultConfig.js';
@@ -131,13 +132,9 @@ const LapCounter = () => {
         applyRaceSetup(pendingRace);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Ask lapdata for the current state on load — race_state is not retained on the broker.
-    useEffect(() => {
-        const t = setTimeout(() => {
-            mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'status' }));
-        }, 800);
-        return () => clearTimeout(t);
-    }, []);
+    // No need to ask lapdata for the current state on load: race_state is retained and
+    // heartbeated (#76). Silence, or its retained Offline will, means lapdata is gone.
+    const [lapdataAlive, noteLapdataRaceState] = useLapdataAlive();
 
     const [racePhase, setRacePhase] = useState(pendingRace?.lane_assignments ? 'getready' : null);
     const [startLightsShown, setStartLightsShown] = useState(false);
@@ -201,7 +198,11 @@ const LapCounter = () => {
 
     // Primary display update: map race_state from LapData onto the drivers viewmodel
     const processRaceStateMsg = (raceState) => {
+        noteLapdataRaceState(raceState);
         const { state, race_fastest_lap } = raceState;
+        // lapdata's Last Will: says nothing about the race, so leave the last real state
+        // on screen behind the offline modal rather than treating it as a new race.
+        if (state === 'Offline') return;
 
         // Reconcile identity against the DB (authoritative for which race is
         // current). A race_state for a different race than the one we're showing is
@@ -363,6 +364,10 @@ const LapCounter = () => {
                     secondsLeft={yellowSecondsLeft}
                 />
                 <ApiUnreachableModal showMe={!apiReachable} />
+                <ApiUnreachableModal
+                    showMe={apiReachable && !lapdataAlive}
+                    message="The lap counter has stopped responding — waiting for it to come back…"
+                />
                 <SoundBlockedModal armed={startLightsShown} />
                 <StartLights
                     showMe={startLightsShown}

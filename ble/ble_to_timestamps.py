@@ -534,7 +534,7 @@ def handle_race_control(data: dict):
 
 # Last power_pct seen in a race_state message, so handle_race_state() can detect edges
 # instead of rewriting on every message (race_state is republished on every single lap
-# crossing). None means "haven't heard from lapdata yet", which always writes on the
+# crossing, and every 2s as a heartbeat). None means "haven't heard from lapdata yet", which always writes on the
 # first message regardless of what it says.
 _last_seen_power_pct: int | None = None
 
@@ -558,8 +558,15 @@ def handle_race_state(data: dict):
     branches on the bare state name any more, just the resolved percent.
 
     Edge-triggered, so a transition that lands while BLE is disconnected is dropped
-    here — run() makes up for it by writing _command_for_power_pct() on every connect."""
+    here — run() makes up for it by writing _command_for_power_pct() on every connect.
+
+    `Offline` (lapdata's Last Will, #76) says nothing about power, so it changes nothing:
+    the cars stay at whatever lapdata last asked for. Reading it as "no race" would mean
+    full power, and a lapdata dying while Paused would set cars moving with marshals on
+    track. What BLE should do when lapdata is gone is its own policy decision."""
     global _last_seen_power_pct
+    if data.get('state') == 'Offline':
+        return
     pct = data.get('power_pct')
     resolved = 100 if pct is None else pct
     if resolved != _last_seen_power_pct:
@@ -580,11 +587,10 @@ def on_mqtt_message(_client, _userdata, msg):
 
 def on_mqtt_connect(client, _userdata, _flags, _reason_code, _properties):
     client.subscribe('race_control')
+    # race_state is retained (#76), so subscribing is enough to hear the current state:
+    # a container restart mid-pause learns the race is Paused before run()'s connect-time
+    # power write, rather than putting cars back on full power.
     client.subscribe('race_state')
-    # race_state isn't retained, so ask lapdata for it. Without this, a container
-    # restart mid-pause would have no idea the race is Paused, and the connect-time
-    # power write in run() would put cars back on full power.
-    client.publish('race_control', json.dumps({'command': 'status'}))
     # Retained: a browser or lapdata connecting mid-meet needs the answer immediately,
     # the same reason race_state itself is meant to be browser-independent. Static for
     # this Layer 1 — it always targets an ARC Pro powerbase, which is what the Command
