@@ -687,9 +687,14 @@ def publish_pending_penalties():
     `driver_penalty` event (#88), currently only a yellow-flag lap penalty. dbwriter
     writes it to race_penalties, the one penalty record; the leaderboard will announce it
     (#89). Its own topic, not a crossing outcome: a void crossing may cost 0 or more laps,
-    and a future penalty (a jump start, an operator's) may have no crossing at all."""
+    and a future penalty (a jump start, an operator's) may have no crossing at all.
+
+    QoS 1 (#94), like driver_lap: the broker queues it for dbwriter's persistent session.
+    Redelivery is safe because each record carries the penalty_id race_manager minted
+    when it applied the penalty, and race_penalties is unique on it."""
     for record in race.pending_penalty_records:
-        client.publish('driver_penalty', json.dumps({'race_id': race.race_id, **record}))
+        client.publish('driver_penalty', qos=1,
+                       payload=json.dumps({'race_id': race.race_id, **record}))
         logger.info(f"driver_penalty: race={race.race_id} {record}")
     race.pending_penalty_records = []
 

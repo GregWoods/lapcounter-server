@@ -58,7 +58,7 @@ def _reset_conn():
 
 
 # A database that can't be reached, as opposed to one that rejects this particular row.
-# Only these leave a driver_lap unacked for redelivery: anything else would be rejected
+# Only these leave a message unacked for redelivery: anything else would be rejected
 # again on every redelivery and block the queue behind it.
 DB_UNAVAILABLE = (psycopg2.OperationalError, psycopg2.InterfaceError)
 
@@ -170,31 +170,58 @@ def on_driver_penalty(payload: dict):
     """Persist a penalty lapdata's race manager already applied live (#88), so
     build_session_results() can fold it into final standings. race_penalties is the one
     penalty record: the void crossing that incurred it is in driver_laps, but nothing
-    reads penalties from there. The crossing's clock/counter_ms are published for
-    traceability and not stored (yet)."""
+    reads penalties from there. The crossing's clock/counter_ms are stored alongside, for
+    traceability only.
+
+    Idempotent (#94), with the same delivery handling as on_driver_lap: driver_penalty
+    arrives at least once, and race_penalties is unique on the penalty_id lapdata minted
+    when it applied the penalty, so a redelivery is skipped rather than charged twice.
+    Raises DB_UNAVAILABLE if the database can't be reached, so the caller leaves the
+    message unacked; returns normally once the message is dealt with."""
     race_id = payload.get('race_id')
     driver_id = payload.get('driver_id')
     penalty_type = payload.get('penalty_type')
     amount = payload.get('amount')
     reason = payload.get('reason')
+    penalty_id = payload.get('penalty_id')
     if None in (race_id, driver_id, penalty_type, amount, reason):
         log.warning("Ignoring driver_penalty with missing fields: %s", payload)
         return
+    if penalty_id is None:
+        # A lapdata older than #94. Still stored, but a NULL never matches the unique
+        # key, so a redelivery of this one would be charged twice.
+        log.warning("driver_penalty without penalty_id can't be deduplicated: %s", payload)
 
+    conn = get_conn()
     try:
-        conn = get_conn()
         with conn.cursor() as cur:
             cur.execute(
+                # issued_at is lapdata's stamp from the payload, never NOW(): a
+                # redelivery is the same message, written later.
                 "INSERT INTO race_penalties (race_id, driver_id, penalty_type, amount, reason, "
-                "created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
-                (race_id, driver_id, penalty_type, amount, reason)
+                "penalty_id, issued_at, clock, counter_ms, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, to_timestamp(%s), %s, %s, NOW()) "
+                "ON CONFLICT (penalty_id) DO NOTHING",
+                (race_id, driver_id, penalty_type, amount, reason, penalty_id,
+                 payload.get('issued_at'), payload.get('clock'), payload.get('counter_ms'))
             )
+            inserted = cur.rowcount == 1
         conn.commit()
+    except DB_UNAVAILABLE:
+        _reset_conn()
+        raise
+    except psycopg2.Error as e:
+        # This row was rejected; retrying it won't help.
+        log.error("Dropping driver_penalty the database rejected (%s): %s", e, payload)
+        conn.rollback()
+        return
+
+    if inserted:
         log.info("Race %s driver %s: %s penalty of %s (%s) recorded",
                  race_id, driver_id, penalty_type, amount, reason)
-    except Exception as e:
-        log.error("Error persisting penalty: %s", e)
-        _reset_conn()
+    else:
+        log.info("Race %s driver %s: penalty %s already recorded (redelivery)",
+                 race_id, driver_id, penalty_id)
 
 
 # Set when the database stopped answering mid-connection. Every message after that is
@@ -203,8 +230,8 @@ _awaiting_redelivery = False
 
 
 def on_message(client, userdata, msg):
-    """With manual_ack, a QoS 1 driver_lap is acked only once it is committed (or
-    deliberately dropped). If the database is unreachable it is left unacked and we
+    """With manual_ack, a QoS 1 driver_lap or driver_penalty is acked only once it is
+    committed (or deliberately dropped). If the database is unreachable it is left unacked and we
     disconnect: the broker resends unacked messages only when a persistent session
     reconnects — there is no ack timeout — and 20 unacked ones would stop it sending
     anything at all (max_inflight_messages). main() reconnects once the database answers."""
@@ -228,25 +255,24 @@ def on_message(client, userdata, msg):
     except Exception as e:
         log.error("Unexpected error in on_message: %s", e)
         _reset_conn()
-    # A no-op for driver_penalty, which is QoS 0.
     client.ack(msg.mid, msg.qos)
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
     log.info("Connected to MQTT broker (rc=%s, session present=%s)",
              reason_code, flags.session_present)
-    # QoS 1 into a persistent session (#77): the broker queues driver_lap while we're
-    # away and resends any we hadn't acked. driver_penalty stays QoS 0 — race_penalties
-    # has no natural key yet, so a redelivered penalty would be charged twice.
+    # QoS 1 into a persistent session (#77, #94): the broker queues both while we're
+    # away and resends any we hadn't acked. Safe because both tables have a dedup key:
+    # driver_laps on the crossing, race_penalties on penalty_id.
     client.subscribe('driver_lap', qos=1)
-    client.subscribe('driver_penalty', qos=0)
-    log.info("Subscribed to 'driver_lap' (QoS 1) and 'driver_penalty' (QoS 0)")
+    client.subscribe('driver_penalty', qos=1)
+    log.info("Subscribed to 'driver_lap' and 'driver_penalty' (QoS 1)")
 
 
 def main():
     global _awaiting_redelivery
     # A fixed client id and clean_session=False make the broker keep our subscriptions
-    # and queue driver_lap while we're disconnected (for persistent_client_expiration,
+    # and queue driver_lap/driver_penalty while we're disconnected (for persistent_client_expiration,
     # in mosquitto.conf). The id must be unique to this one service.
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id='dbwriter',
                          clean_session=False, manual_ack=True)

@@ -288,6 +288,11 @@ class RaceSessionCreate(SQLModel):
 # from the `driver_penalty` MQTT topic (#88).
 class RacePenalty(SQLModel, table=True):
     __tablename__ = "race_penalties"
+    # One row per penalty (migration 005, #94): dbwriter's redelivered driver_penalty
+    # messages hit this and are dropped.
+    __table_args__ = (
+        UniqueConstraint("penalty_id", name="race_penalties_one_row_per_penalty"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     race_id: Optional[int] = Field(default=None, foreign_key="races.id")
     driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id")
@@ -298,6 +303,13 @@ class RacePenalty(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+    # Minted by lapdata when it applied the penalty; NULL on rows from before #94.
+    penalty_id: Optional[uuid.UUID] = Field(default=None)
+    # When it was given (created_at is when dbwriter wrote it).
+    issued_at: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
+    # The crossing that incurred it, if any — for traceability only.
+    clock: Optional[str] = Field(default=None, max_length=64)
+    counter_ms: Optional[int] = Field(default=None, sa_type=BigInteger)
 
 
 class AppSetting(SQLModel, table=True):

@@ -203,6 +203,7 @@ def test_a_penalty_is_published_as_its_own_event_after_its_crossing(published, m
 
     def yellow_flag_crossing(lane, crossing):
         tsl.race.pending_penalty_records.append({
+            'penalty_id': 'c0ffee00-0000-4000-8000-000000000001', 'issued_at': 1020.0,
             'driver_id': 9, 'penalty_type': 'lap', 'amount': 2,
             'reason': 'yellow_flag_grace_expired',
             'clock': crossing.clock, 'counter_ms': crossing.counter_ms,
@@ -221,10 +222,29 @@ def test_a_penalty_is_published_as_its_own_event_after_its_crossing(published, m
     assert topics == ['driver_lap', 'driver_penalty']
     penalty = next(p for topic, p in published if topic == 'driver_penalty')
     assert penalty == {
-        'race_id': 5, 'driver_id': 9, 'penalty_type': 'lap', 'amount': 2,
+        'race_id': 5, 'penalty_id': 'c0ffee00-0000-4000-8000-000000000001',
+        'issued_at': 1020.0, 'driver_id': 9, 'penalty_type': 'lap', 'amount': 2,
         'reason': 'yellow_flag_grace_expired', 'clock': CLOCK, 'counter_ms': 20_000,
     }
     assert tsl.race.pending_penalty_records == []
+
+
+def test_a_penalty_is_published_at_qos_1(monkeypatch):
+    """#94: at least once, like driver_lap, so the broker queues it for dbwriter's
+    persistent session. Safe because race_penalties is unique on penalty_id."""
+    sent = []
+    monkeypatch.setattr(tsl, 'client', types.SimpleNamespace(
+        publish=lambda topic, payload=None, qos=0, **k: sent.append((topic, qos))))
+    monkeypatch.setattr(tsl.race, 'race_id', 5)
+    monkeypatch.setattr(tsl.race, 'pending_penalty_records', [{
+        'penalty_id': 'c0ffee00-0000-4000-8000-000000000001', 'issued_at': 1020.0,
+        'driver_id': 9, 'penalty_type': 'lap', 'amount': 1,
+        'reason': 'yellow_flag_grace_expired', 'clock': CLOCK, 'counter_ms': 20_000,
+    }])
+
+    tsl.publish_pending_penalties()
+
+    assert sent == [('driver_penalty', 1)]
 
 
 # --- layer1_clock heartbeat ---
