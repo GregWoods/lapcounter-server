@@ -613,10 +613,10 @@ def handle_race_control(data: dict, arrival: float):
         _schedule_yellow_sequence()
 
     elif command == 'pause':
-        # Immediate, no-grace stop — distinct from 'yellow', which delays the cut.
-        _cancel_yellow_timers()
-        race.pause()
-        publish_race_state()
+        # Immediate, no-grace stop — distinct from 'yellow', which delays the cut. Also
+        # what BLE sends, with a `reason`, when it has stopped the cars over a lost link.
+        if _stop_race(data.get('reason') or 'pause requested'):
+            publish_race_state()
 
     elif command == 'resume':
         _cancel_yellow_timers()
@@ -632,6 +632,34 @@ def handle_race_control(data: dict, arrival: float):
 
     else:
         logger.warning(f"Unknown race_control command: {command}")
+
+
+def _stop_race(reason: str) -> bool:
+    """Stop the race. Caller holds _race_lock and publishes if this returns True.
+
+    ⚠️ Any connection loss stops the race (Greg, 2026-10-25): a link that is down is a
+    lap that can't be counted. BLE stops the cars; this makes the race say so, and an
+    operator resumes it. Racing -> Paused (a manual-style pause, so never a yellow-flag
+    penalty). During the start lights the start is aborted instead, since a Paused race
+    has no lights-out to resume from. Anything else is left alone: pausing a staged or
+    finished race would break it."""
+    if race.state in RaceManager.COUNTING_STATES:
+        _cancel_yellow_timers()
+        race.pause()
+    elif race.state == 'ArmedForStart':
+        _cancel_start_timers()
+        race.abort_start()
+    else:
+        return False
+    logger.warning(f"Race {race.race_id} stopped: {reason}")
+    return True
+
+
+def on_disconnect(_client, _userdata, _flags, _reason_code, _properties):
+    """We can't hear crossings, and nothing can hear us. Paused here, the race is
+    republished by on_connect when the broker is back."""
+    with _race_lock:
+        _stop_race('lapdata lost the MQTT broker')
 
 
 def _post_api(path: str, json_body: dict | None = None):
@@ -690,6 +718,14 @@ def handle_layer1_status(data: dict):
     data.get('layer1') here or anywhere downstream — only on the capabilities list."""
     global _layer1_capabilities
     _layer1_capabilities = data.get('capabilities', [])
+    # Layer 1's Last Will: it can't publish crossings. (A Layer 1 that doesn't say is
+    # online.) A powerbase link drop is deliberately not this — the crossings made while
+    # it was down arrive on reconnect and must count, so BLE asks for the pause itself
+    # once they're in.
+    if data.get('online') is False:
+        with _race_lock:
+            if _stop_race(f"Layer 1 ({data.get('layer1')}) went offline"):
+                publish_race_state()
 
 
 def on_message(_client, _userdata, msg):
@@ -846,9 +882,11 @@ OFFLINE_STATE = json.dumps({'state': 'Offline', 'race_id': None, 'drivers': []})
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
+client.on_disconnect = on_disconnect
 client.on_message = on_message
-# The broker only fires this after 1.5x keepalive on a half-open link (a Pi power cut),
-# so the heartbeat stopping is the real liveness signal; the will is the backstop.
+# On a half-open link (a Pi power cut) the broker only fires this after 1.5x keepalive
+# (7.5s, see connect below), so the heartbeat stopping is the faster signal; the will is
+# the backstop.
 client.will_set('race_state', OFFLINE_STATE, retain=True)
 
 # Constructing the client is pure, connecting is not — so only the I/O sits behind the
@@ -919,5 +957,8 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, _shutdown)
     threading.Thread(target=_api_recovery_loop, daemon=True).start()
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
-    client.connect(mqtt_hostname)
+    # The broker fires our Last Will 1.5x keepalive after we silently vanish (a dropped
+    # network, a hung process). Displays and BLE notice sooner from the missing beats,
+    # but this is what makes the retained state itself say Offline.
+    client.connect(mqtt_hostname, keepalive=5)
     client.loop_forever()

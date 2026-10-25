@@ -28,6 +28,9 @@ export default function RaceControl() {
     // (it may well say Running) no longer describes anything.
     const [lapdataAlive, noteLapdataRaceState] = useLapdataAlive();
     const raceState = lapdataAlive ? lastRaceState : null;
+    // Same rule as LapCounter: Layer 1's Last Will, or BLE's powerbase link down.
+    const [layer1Status, setLayer1Status] = useState(null);
+    const trackOnline = layer1Status?.online !== false && layer1Status?.powerbase_connected !== false;
     const [infoLoaded, setInfoLoaded] = useState(false);
     const [info, setInfo] = useState({
         meetingName: '', sessionType: null, sessionNumber: null, raceNumber: null,
@@ -249,6 +252,7 @@ export default function RaceControl() {
                 mqttHost={MQTT_URL}
                 onRaceStateMessage={onRaceState}
                 onAdminUpdateMessage={loadInfo}
+                onLayer1StatusMessage={setLayer1Status}
                 clientRef={clientRef}
             />
 
@@ -278,6 +282,12 @@ export default function RaceControl() {
             {!lapdataAlive && (
                 <div className="rc-regen-banner">
                     <span>The lap counter (lapdata) has stopped responding — race commands won&apos;t be acted on.</span>
+                </div>
+            )}
+
+            {lapdataAlive && !trackOnline && (
+                <div className="rc-regen-banner">
+                    <span>Track offline — laps aren&apos;t being counted. The race pauses when the track is back; resume it from here.</span>
                 </div>
             )}
 

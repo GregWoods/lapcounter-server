@@ -135,7 +135,7 @@ async def main():
 
 if __name__ == '__main__':
     # Same startup as ble_to_timestamps' __main__ block, plus the observer.
-    ble.mqtt_client.connect(ble.mqtt_hostname)
+    ble.mqtt_client.connect(ble.mqtt_hostname, keepalive=ble.MQTT_KEEPALIVE_S)
     ble.mqtt_client.loop_start()
     observer.connect(ble.mqtt_hostname)
     observer.loop_start()

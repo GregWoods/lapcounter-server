@@ -246,7 +246,50 @@ _power_retry_delay = POWER_RETRY_INITIAL_DELAY
 _bleak_client: BleakClient | None = None
 _ble_loop: asyncio.AbstractEventLoop | None = None
 
+# ⚠️ Any connection loss stops the cars (Greg, 2026-10-25): a link that is down is a lap
+# that can't be counted, and drivers racing on unaware is how "you missed my lap"
+# complaints happen. _power_hold names why the cars are held, or is None. While held:
+# power stays 0, race_control power writes are ignored, and lapdata is asked to pause the
+# race, so what the race says matches what the track is doing and an operator resumes it.
+# The hold ends on a race_state that isn't racing (lapdata has paused, or there's no race).
+RACING_STATES = ('ArmedForStart', 'Running', 'Yellow')
+# lapdata republishes race_state every 2s, so three missed beats means it is hung, or the
+# broker or our link to it is gone.
+RACE_STATE_TIMEOUT_S = 6.0
+# After a powerbase reconnect, the stamps of crossings made while away arrive over one Slot
+# rotation (~1.8s measured). They are real laps, so lapdata isn't asked to pause until
+# they're in: a crossing reaching a Paused race is void.
+POWERBASE_ROTATION_S = 2.5
+MQTT_KEEPALIVE_S = 5
+_power_hold: str | None = None
+_pause_request_due: float | None = None   # time.monotonic() from which to ask lapdata to pause
+_last_race_state_at = time.monotonic()
+_powerbase_connected = False
+
 mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+
+CAPABILITIES = ['lap_timing', 'power_control', 'throttle', 'rumble', 'car_id']
+
+
+def _layer1_status(online: bool = True) -> str:
+    """`online` is this container's own MQTT link (False only in its Last Will);
+    `powerbase_connected` is the BLE link. Laps are only counted, and power only
+    controllable, when both are up — displays show "Track offline" otherwise. Static
+    otherwise: this Layer 1 always targets an ARC Pro powerbase, which is what the
+    Command writes throughout this file assume. Nothing downstream may branch on
+    'layer1', only on 'capabilities' (CLAUDE.md "Layer 1 capability advertising")."""
+    return json.dumps({
+        'layer1': 'ble',
+        'capabilities': CAPABILITIES,
+        'timing_resolution_ms': 10,
+        'online': online,
+        'powerbase_connected': _powerbase_connected and online,
+    })
+
+
+# The broker publishes this if we vanish (a crash, a dropped Pi link), so lapdata pauses
+# the race and every display says the track is offline.
+mqtt_client.will_set('layer1_status', _layer1_status(online=False), retain=True)
 
 
 def counter_ms(device_ticks: int) -> int:
@@ -524,11 +567,12 @@ def handle_race_control(data: dict):
     exactly then.
     """
     command = data.get('command')
-    if _lapdata_offline and command in ('prepare', 'arm', 'start', 'yellow', 'resume', 'end', 'pause'):
-        # Nothing is counting laps, and lapdata will act on none of these, so a stale
-        # page's Resume must not put the cars back on track. They stay stopped until
-        # lapdata's next race_state says otherwise.
-        logger.warning(f"race_control {command} ignored: lapdata is offline, cars stay stopped")
+    if _power_hold is not None and command in ('prepare', 'arm', 'start', 'yellow', 'resume', 'end', 'pause'):
+        # A connection is down, so a Resume from a page that hasn't noticed must not put
+        # the cars back on track with nothing counting. They stay stopped until lapdata
+        # reports the race stopped (see _power_hold).
+        if command != 'pause':
+            logger.warning(f"race_control {command} ignored: cars held stopped ({_power_hold})")
         return
     if command == 'pause':
         send_command(CARS_STOPPED)
@@ -543,8 +587,6 @@ def handle_race_control(data: dict):
 # crossing, and every 2s as a heartbeat). None means "haven't heard from lapdata yet",
 # which always writes on the first message regardless of what it says.
 _last_seen_power_pct: int | None = None
-# The latest race_state was lapdata's Offline (its Last Will, or its own clean shutdown).
-_lapdata_offline = False
 
 
 def _command_for_power_pct(pct: int | None) -> PowerState:
@@ -568,14 +610,23 @@ def handle_race_state(data: dict):
     Edge-triggered, so a transition that lands while BLE is disconnected is dropped
     here — run() makes up for it by writing _command_for_power_pct() on every connect.
 
-    `Offline` (lapdata's Last Will, or its clean shutdown, #76) stops the cars: with
-    lapdata gone nothing counts laps or can flag a yellow, so nobody should be racing.
-    It must never read as "no race", which would mean full power — a lapdata dying while
-    Paused would set cars moving with marshals on track. lapdata publishes an explicit
-    power_pct in every state, so its first race_state on return restores the right power."""
-    global _last_seen_power_pct, _lapdata_offline
-    _lapdata_offline = data.get('state') == 'Offline'
-    pct = 0 if _lapdata_offline else data.get('power_pct')
+    `Offline` (lapdata's Last Will, or its clean shutdown, #76) holds the cars stopped:
+    with lapdata gone nothing counts laps. It must never read as "no race", which would
+    mean full power — a lapdata dying while Paused would set cars moving with marshals
+    on track. While held (see _power_hold), a racing state keeps them stopped and asks
+    lapdata again to pause; the first state that isn't racing ends the hold."""
+    global _last_seen_power_pct, _last_race_state_at, _power_hold
+    if data.get('state') == 'Offline':
+        hold_power('lapdata is offline')
+        return
+    _last_race_state_at = time.monotonic()
+    if _power_hold is not None:
+        if data.get('state') in RACING_STATES:
+            _request_pause_if_due()
+            return
+        logger.info(f"Power hold ended: race is {data.get('state')} ({_power_hold})")
+        _power_hold = None
+    pct = data.get('power_pct')
     resolved = 100 if pct is None else pct
     if resolved != _last_seen_power_pct:
         send_command(_command_for_power_pct(pct))
@@ -600,16 +651,49 @@ def on_mqtt_connect(client, _userdata, _flags, _reason_code, _properties):
     # power write, rather than putting cars back on full power.
     client.subscribe('race_state')
     # Retained: a browser or lapdata connecting mid-meet needs the answer immediately,
-    # the same reason race_state itself is meant to be browser-independent. Static for
-    # this Layer 1 — it always targets an ARC Pro powerbase, which is what the Command
-    # characteristic writes throughout this file assume. See CLAUDE.md "Layer 1
-    # capability advertising"; nothing downstream may branch on 'layer1', only on
-    # 'capabilities'.
-    client.publish('layer1_status', json.dumps({
-        'layer1': 'ble',
-        'capabilities': ['lap_timing', 'power_control', 'throttle', 'rumble', 'car_id'],
-        'timing_resolution_ms': 10,
-    }), retain=True)
+    # the same reason race_state itself is meant to be browser-independent.
+    _publish_layer1_status(client)
+
+
+def _publish_layer1_status(client=None):
+    (client or mqtt_client).publish('layer1_status', _layer1_status(), retain=True)
+
+
+def on_mqtt_disconnect(_client, _userdata, _flags, _reason_code, _properties):
+    """Our crossings can't reach lapdata, and we can't hear it stop the race."""
+    hold_power('lost the MQTT broker')
+
+
+def hold_power(reason: str, pause_after_s: float = 0.0, write: bool = True):
+    """Stop the cars and hold them stopped until lapdata reports a race that isn't
+    racing. Thread-safe (send_command is). See _power_hold. `write=False` is for run()'s
+    reconnect, whose connect-time write sends the 0 itself."""
+    global _power_hold, _last_seen_power_pct, _pause_request_due
+    if _power_hold is None:
+        logger.warning(f"Cars stopped: {reason}. Held until lapdata reports the race stopped.")
+        _pause_request_due = time.monotonic() + pause_after_s
+    _power_hold = reason
+    if write and _last_seen_power_pct != 0:
+        send_command(CARS_STOPPED)
+    _last_seen_power_pct = 0
+    _request_pause_if_due()
+
+
+def _request_pause_if_due():
+    """Ask lapdata to pause, so the race stops too and an operator restarts it. Repeated
+    on each racing race_state while held, so a lapdata that missed it (hung, or the
+    broker was down) still gets it. Harmless when the race isn't racing: lapdata ignores
+    a pause then."""
+    if _power_hold is None or _pause_request_due is None or time.monotonic() < _pause_request_due:
+        return
+    mqtt_client.publish('race_control', json.dumps({'command': 'pause', 'reason': _power_hold}))
+
+
+def check_race_state_timeout():
+    """Called once a second from run()'s connected loop."""
+    if _power_hold is None and time.monotonic() - _last_race_state_at > RACE_STATE_TIMEOUT_S:
+        hold_power(f"no race_state for {RACE_STATE_TIMEOUT_S:.0f}s")
+    _request_pause_if_due()
 
 
 def _name_matches(device, adv) -> bool:
@@ -664,8 +748,9 @@ async def _subscribe_clock_heartbeat(client):
 
 async def run():
     global _bleak_client, _ble_loop, _timestamps_halted, _power_retry_at, _power_retry_delay
-    global _last_heartbeat_at, _disconnected_at
+    global _last_heartbeat_at, _disconnected_at, _powerbase_connected
     attempts_since_drop = 0
+    _publish_layer1_status()  # not connected yet: displays say the track is offline
     while True:
         try:
             address = await find_device_address()
@@ -718,6 +803,15 @@ async def run():
                 # run_coroutine_threadsafe.
                 _bleak_client = client
                 _ble_loop = asyncio.get_running_loop()
+                if _disconnected_at is not None:
+                    # The cars kept their power while we were away (HW-07: nothing can
+                    # cut it over a dead link) and may still be racing. Stop them now,
+                    # and have lapdata pause only once the stamps of crossings made while
+                    # away have arrived — they're real laps, and void if the race is
+                    # already Paused. A race that isn't racing ends the hold at once.
+                    hold_power(f"the powerbase link was down for "
+                               f"{time.monotonic() - _disconnected_at:.1f}s",
+                               pause_after_s=POWERBASE_ROTATION_S, write=False)
                 # Match the race, not a blanket TRACK_RACING: reconnecting while the
                 # race is Paused must not set cars moving with marshals on the track.
                 # Read the percent only after _ble_loop is set, so a race_state edge
@@ -726,9 +820,12 @@ async def run():
 
                 _disconnected_at = None
                 attempts_since_drop = 0
+                _powerbase_connected = True
+                _publish_layer1_status()
                 while client.is_connected:
                     await asyncio.sleep(1)
                     await _retry_power_if_due()
+                    check_race_state_timeout()
                 logger.warning("BLE connection dropped.")
         except Exception as e:
             # exc_info matters here: this wraps discovery, connection, start_notify and
@@ -742,6 +839,11 @@ async def run():
             _ble_loop = None
             if _disconnected_at is None:
                 _disconnected_at = time.monotonic()
+            if _powerbase_connected:
+                # Power can't be cut over a dead link, so the next best thing: every
+                # display says the track is offline, so drivers stop.
+                _powerbase_connected = False
+                _publish_layer1_status()
 
         # Retry fast at first, then back off. ⚠️ Every second we are not subscribed is a
         # second of crossings the powerbase can only remember one of per car, so the first
@@ -759,13 +861,17 @@ async def run():
 
 
 mqtt_client.on_connect = on_mqtt_connect
+mqtt_client.on_disconnect = on_mqtt_disconnect
 mqtt_client.on_message = on_mqtt_message
 
 # Only the I/O sits behind the guard, so this module stays importable by
 # test_ble_to_timestamps.py. The container (CMD ["python", "ble_to_timestamps.py"])
 # runs as __main__ and still connects exactly as before.
 if __name__ == '__main__':
-    mqtt_client.connect(mqtt_hostname)
+    # The broker fires our Last Will 1.5x keepalive after we silently vanish (a dropped
+    # network rather than a closed socket). At paho's default 60s that is 90s of a race
+    # still reading Running, with nothing saying the track is offline.
+    mqtt_client.connect(mqtt_hostname, keepalive=MQTT_KEEPALIVE_S)
     # create a new thread to handle the network loop. Also handles reconnecting
     mqtt_client.loop_start()
 

@@ -324,6 +324,14 @@ class RaceManager:
         self.start_lights = 0
         logger.info(f"Race {self.race_id} armed — awaiting lights-out timer")
 
+    def abort_start(self):
+        """Back to staged from the start lights: nothing has been timed yet, so the
+        operator simply arms again. A Paused race needs a lights-out to resume from."""
+        self.state = 'NotStarted'
+        self.start_lights = 0
+        self.power_pct = 100
+        logger.info(f"Race {self.race_id} start aborted — staged again")
+
     def start(self, go_local: Optional[float] = None):
         """Lights out. `go_local` is that instant on lapdata's time.monotonic() clock,
         taken by the caller *before* it waited for any lock — it is the base every lap 1

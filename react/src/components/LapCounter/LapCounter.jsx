@@ -135,6 +135,12 @@ const LapCounter = () => {
     // No need to ask lapdata for the current state on load: race_state is retained and
     // heartbeated (#76). Silence, or its retained Offline will, means lapdata is gone.
     const [lapdataAlive, noteLapdataRaceState] = useLapdataAlive();
+    // Layer 1's retained layer1_status. `online` false is its Last Will; BLE also says
+    // when its powerbase link is down — the one loss where power can't be cut, so this
+    // screen telling drivers to stop is all there is. A Layer 1 that says neither (GPIO)
+    // is online.
+    const [layer1Status, setLayer1Status] = useState(null);
+    const trackOnline = layer1Status?.online !== false && layer1Status?.powerbase_connected !== false;
 
     const [racePhase, setRacePhase] = useState(pendingRace?.lane_assignments ? 'getready' : null);
     const [startLightsShown, setStartLightsShown] = useState(false);
@@ -249,6 +255,12 @@ const LapCounter = () => {
         else setRacePhase('live');
         if (state === 'NotStarted') setPreviewDriverCards(true);
         else if (state === 'Running' || state === 'Finished') setPreviewDriverCards(false);
+        // A start aborted during the lights (a lost connection) comes back NotStarted.
+        if (state === 'NotStarted') {
+            setStartLightsShown(false);
+            setLightsOut(false);
+            setRace(r => (r.underStartersOrders ? { ...r, underStartersOrders: false } : r));
+        }
 
         // Race/session state persistence is owned by lapdata (server-side), so the
         // display no longer POSTs transitions — it is purely a viewer now.
@@ -337,6 +349,13 @@ const LapCounter = () => {
     //   !underStartersOrders && (hasStartedRacing || (previewDriverCards && inLineup))
     // so N must be counted the same way. Falls back to 6 so the layout never
     // collapses to 0.
+    // Any lost link means laps can't be counted, so it takes the whole screen. One at a
+    // time, the most fundamental first: each one below also explains those after it.
+    const fault = !apiReachable ? {}
+        : !lapdataAlive ? { message: 'The lap counter has stopped responding — waiting for it to come back…' }
+        : !trackOnline ? { heading: 'Track offline', message: 'Lost contact with the track — laps are not being counted. Stop racing.' }
+        : null;
+
     const shownDriverCount = race.underStartersOrders
         ? 0
         : drivers.filter(d => d?.hasStartedRacing || (previewDriverCards && d?.inLineup)).length;
@@ -348,6 +367,7 @@ const LapCounter = () => {
                 <MqttSubscriber
                     mqttHost={MQTT_URL}
                     onRaceStateMessage={processRaceStateMsg}
+                    onLayer1StatusMessage={setLayer1Status}
                     clientRef={mqttClientRef}
                     debug={DEBUG}
                 />
@@ -363,11 +383,7 @@ const LapCounter = () => {
                     showMe={race.paused}
                     secondsLeft={yellowSecondsLeft}
                 />
-                <ApiUnreachableModal showMe={!apiReachable} />
-                <ApiUnreachableModal
-                    showMe={apiReachable && !lapdataAlive}
-                    message="The lap counter has stopped responding — waiting for it to come back…"
-                />
+                <ApiUnreachableModal showMe={fault != null} {...fault} />
                 <SoundBlockedModal armed={startLightsShown} />
                 <StartLights
                     showMe={startLightsShown}

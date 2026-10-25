@@ -8,12 +8,12 @@ import './ApiUnreachableModal.css';
 // up. Unlike SoundBlockedModal this is never dismissable and never fades the background:
 // there's nothing behind it worth preserving a view of, and it clears itself the instant
 // lapdata's own next fetch succeeds (see _set_api_reachable in timestamps_to_lapdata.py).
-// Also used, with its own message, when lapdata itself has gone silent (useLapdataAlive):
-// every number on screen comes from it, so that is the same kind of fault.
-const ApiUnreachableModal = ({ showMe, message = 'Cannot reach the race server — waiting to reconnect…' }) => (
+// Also used, with its own wording, for every other lost link that means laps can't be
+// counted (see LapCounter's `fault`): lapdata gone silent, or the track offline.
+const ApiUnreachableModal = ({ showMe, heading = 'Connection lost', message = 'Cannot reach the race server — waiting to reconnect…' }) => (
     <ReactModal
         isOpen={showMe}
-        contentLabel="Connection lost"
+        contentLabel={heading}
         className="apiUnreachableModal"
         overlayClassName="apiUnreachableModalOverlay"
         shouldCloseOnOverlayClick={false}
@@ -22,7 +22,7 @@ const ApiUnreachableModal = ({ showMe, message = 'Cannot reach the race server �
     >
         <div id="apiUnreachableContainer">
             <div id="apiUnreachableIcon">⚠️</div>
-            <h1>Connection lost</h1>
+            <h1>{heading}</h1>
             <p>{message}</p>
         </div>
     </ReactModal>
