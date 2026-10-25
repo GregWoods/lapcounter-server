@@ -19,6 +19,10 @@ log = logging.getLogger(__name__)
 
 _conn = None
 
+# What lapdata's race manager can make of a crossing (race_manager.CROSSING_OUTCOMES), and
+# what migration 003's CHECK constraint allows. Kept in step with both by hand.
+OUTCOMES = ('counted', 'start_line', 'yellow_flag', 'baseline')
+
 
 def get_conn():
     global _conn
@@ -54,15 +58,26 @@ def _reset_conn():
 
 
 def on_driver_lap(payload: dict):
-    """Persist one authoritative counted lap published by lapdata. The race manager
-    has already filtered idle/non-running crossings and the discarded start-line
-    crossing, so we record this verbatim — no race logic is re-derived here."""
+    """Persist one crossing published by lapdata, as the race manager judged it. Its
+    `outcome` is 'counted' for a real lap; anything else ('start_line', 'yellow_flag',
+    'baseline') is a void crossing, stored for traceability with no lap time and left
+    out of the driver_races aggregates (#86). We record it verbatim — no race logic is
+    re-derived here."""
     race_id = payload.get('race_id')
     driver_id = payload.get('driver_id')
     lap_number = payload.get('lap_number')
     lap_time = payload.get('lap_time')
-    if race_id is None or driver_id is None or lap_time is None:
+    # A lapdata older than #86 sends counted laps only, without an outcome.
+    outcome = payload.get('outcome', 'counted')
+    counted = outcome == 'counted'
+    if race_id is None or driver_id is None or (counted and lap_time is None):
         log.warning("Ignoring driver_lap with missing fields: %s", payload)
+        return
+    # Said here, not left to the CHECK constraint: a rejected INSERT only surfaces as a
+    # generic "Error persisting lap", and the crossing is lost either way.
+    if outcome not in OUTCOMES:
+        log.error("Dropping driver_lap with unknown outcome %r (lapdata newer than "
+                  "dbwriter, or a migration missing?): %s", outcome, payload)
         return
 
     try:
@@ -88,9 +103,19 @@ def on_driver_lap(payload: dict):
             cur.execute(
                 # created_at explicitly, so this doesn't depend on the table having a DB
                 # default — a create_all-built schema once had none and lost every lap (#84).
-                "INSERT INTO driver_laps (driver_race_id, lap_time, created_at) VALUES (%s, %s, NOW())",
-                (dr['id'], lap_time)
+                # A void crossing is recorded exactly like a lap, with no lap_time. The
+                # provenance columns (#27) are what lets a disputed lap be re-checked.
+                "INSERT INTO driver_laps (driver_race_id, lap_time, outcome, clock, counter_ms, "
+                "crossed_at, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, to_timestamp(%s), NOW())",
+                (dr['id'], lap_time if counted else None, outcome,
+                 payload.get('clock'), payload.get('counter_ms'), payload.get('crossed_at'))
             )
+
+            if not counted:
+                conn.commit()
+                log.info("Race %s driver %s: %s crossing recorded", race_id, driver_id, outcome)
+                return
 
             current_fastest = dr['fastest_lap_time']
             new_fastest = (

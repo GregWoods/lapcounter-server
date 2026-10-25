@@ -294,13 +294,15 @@ def test_effective_laps_completed_subtracts_penalty():
     assert effective_laps_completed(10, 1) == 9
 
 
-def test_effective_laps_completed_floors_at_zero():
-    assert effective_laps_completed(1, 5) == 0
+def test_effective_laps_completed_carries_a_penalty_forward():
+    """Not floored (#86): the same rule as the live leaderboard, where a penalty charged
+    before the driver had laps to lose is still owed."""
+    assert effective_laps_completed(1, 5) == -4
 
 
 def test_effective_laps_completed_handles_none_laps():
     """laps_completed is NULL on sample data and races with no counted laps."""
-    assert effective_laps_completed(None, 1) == 0
+    assert effective_laps_completed(None, 1) == -1
 
 
 def test_effective_laps_completed_no_penalty_is_a_no_op():

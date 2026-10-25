@@ -8,7 +8,7 @@ import urllib.request
 import urllib.error
 import paho.mqtt.client as mqtt
 from lap_clock import ClockAnchors, Crossing, interval_s
-from race_manager import RaceManager
+from race_manager import CROSSING_COUNTED, RaceManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -196,38 +196,41 @@ def handle_car_timestamp(data: dict, arrival: float):
     }))
     logger.info(f"lap: lane={lane} counter={crossing.counter_ms}ms clock={crossing.clock}")
 
-    # Capture the real-lap count before processing so we can tell a counted lap from a
-    # discarded start-line crossing or a yellow-flag penalty crossing (all make on_lap
-    # return True). lap_times, not laps_completed: a penalty moves laps_completed down.
-    driver_before = race.drivers.get(lane)
-    prev_laps = len(driver_before.lap_times) if driver_before else 0
-
-    if race.on_lap(lane, crossing):
+    outcome = race.on_lap(lane, crossing)
+    if outcome:
         publish_race_state()
 
-        # Emit a context-rich event for the DB writer ONLY when a real lap was
-        # counted. This is the authoritative lap (race manager already ignores
-        # idle/non-running crossings and the discarded start crossing), so the DB
-        # writer persists it verbatim without re-deriving any race logic.
+        # Emit a context-rich event for the DB writer for every crossing the race manager
+        # acted on, saying what it made of it (#86): a counted lap, or a void crossing
+        # (the discarded start-line part-lap, a crossing after a yellow-flag grace, a
+        # timing baseline) recorded for traceability. Ignored crossings (idle, not racing,
+        # finished) produce nothing. The DB writer persists it verbatim without
+        # re-deriving any race logic.
         d = race.drivers.get(lane)
-        if d and len(d.lap_times) > prev_laps:
+        if d:
+            counted = outcome == CROSSING_COUNTED
             client.publish('driver_lap', json.dumps({
                 'race_id': race.race_id,
                 'driver_id': d.driver_id,
                 'lane': lane,
+                'outcome': outcome,
                 # The raw ordinal of this lap, before any lap penalty. Penalties are
                 # persisted separately (race_penalties) and subtracted only when results
-                # are built — laps_completed here would subtract them twice (#83).
-                'lap_number': len(d.lap_times),
-                'lap_time': d.lap_times[-1],
-                # Provenance: which clock timed this lap, where on it the crossing fell,
-                # and how the interval was derived ('counter' is exact; 'from_go' and
-                # 'anchored' went through the clock anchor). The DB writer ignores these
-                # unless they are persisted later — they are the only way to re-check a
-                # disputed lap after the meet.
+                # are built — laps_completed here would subtract them twice (#83). A void
+                # crossing is not a lap, so it has no number and no time.
+                'lap_number': len(d.lap_times) if counted else None,
+                'lap_time': d.lap_times[-1] if counted else None,
+                # Provenance: which clock the crossing was on and where on it it fell —
+                # persisted in driver_laps for every crossing (#27), the only way to
+                # re-check a disputed lap after the meet — and how the interval was derived
+                # ('counter' is exact; 'from_go' and 'anchored' went through the clock
+                # anchor), which isn't stored since it follows from consecutive rows.
                 'clock': crossing.clock,
                 'counter_ms': crossing.counter_ms,
-                'timing': d.last_lap_timing,
+                'timing': d.last_lap_timing if counted else None,
+                # The crossing as unix time, the same value the `lap` message carries.
+                # For people reading driver_laps; nothing times a lap with it.
+                'crossed_at': crossing_unix,
             }))
 
         if race.state == 'Finished':
@@ -766,6 +769,8 @@ def recover_running_race(recovery: dict) -> bool:
         {int(driver_id): times for driver_id, times in (recovery.get('laps') or {}).items()},
         time.time(),
         {int(driver_id): n for driver_id, n in (recovery.get('lap_penalties') or {}).items()},
+        ({int(driver_id): n for driver_id, n in recovery['crossings'].items()}
+         if recovery.get('crossings') is not None else None),
     )
     # The state we just rebuilt is what the API already holds (Running), or is a Finished
     # transition it must be told about. Either way, don't POST a bogus /start for it.

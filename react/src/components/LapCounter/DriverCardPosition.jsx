@@ -26,7 +26,9 @@ const showInRacePositionInfo = (position, lapsRemaining, p1LapsRemaining) => {
 
 const showEndOfRacePositionInfo = (position, lapsRemaining, lapsCompleted) => {
     //const laps = (lapsRemaining > 0) ? "-" + lapsRemaining + " laps " : lapsCompleted + " laps";
-    const laps = lapsCompleted + " laps";
+    // laps_completed is net of lap penalties and goes negative while a penalty is still
+    // owed (#86). Floored here, for display only.
+    const laps = Math.max(0, lapsCompleted) + " laps";
     return(
         <div className="lapsremaining emphasized">
             <div className="timelbl">{laps}</div>

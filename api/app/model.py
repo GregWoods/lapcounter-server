@@ -4,7 +4,7 @@ from decimal import Decimal
 import datetime as _datetime
 from datetime import date, datetime, time, timezone
 from sqlmodel import Field, SQLModel, create_engine, UniqueConstraint
-from sqlalchemy import Column, DateTime, text
+from sqlalchemy import BigInteger, Column, DateTime, text
 
 class CarManufacturer(SQLModel, table=True):
     __tablename__ = "car_manufacturers"
@@ -194,7 +194,16 @@ class DriverLap(SQLModel, table=True):
         default_factory=datetime.now,
         sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
     )
-    lap_time: Decimal = Field(default=0)
+    # NULL for a void crossing: only 'counted' rows are laps (migration 003, #86).
+    lap_time: Optional[Decimal] = Field(default=None)
+    # 'counted', 'start_line', 'yellow_flag' or 'baseline' — what lapdata made of the crossing.
+    # Anything counting laps or taking a fastest lap must filter to 'counted'.
+    outcome: str = Field(default='counted', sa_column_kwargs={"server_default": text("'counted'")})
+    # Lap-timing provenance (#27), on void crossings too. counter_ms on one clock is the
+    # crossing's exact instant; crossed_at is it as wall-clock time, for reading only.
+    clock: Optional[str] = Field(default=None)
+    counter_ms: Optional[int] = Field(default=None, sa_type=BigInteger)
+    crossed_at: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=True))
     #lap_number can be derived
 
 

@@ -10,6 +10,18 @@ logger = logging.getLogger(__name__)
 
 SUSPEND_AFTER = 12.0  # seconds before a driver is considered suspended
 
+# What on_lap() made of a crossing it acted on. Published on driver_lap and stored in
+# driver_laps.outcome, so every crossing that mattered can be traced after the meet (#86).
+# Only COUNTED is a lap; the rest are void and carry no lap time.
+CROSSING_COUNTED = 'counted'
+CROSSING_START_LINE = 'start_line'   # the discarded part-lap from a grid behind the line
+CROSSING_YELLOW_FLAG = 'yellow_flag'  # crossed after a yellow-flag grace expired
+CROSSING_BASELINE = 'baseline'       # nothing to time it from: the next lap starts here
+# ⚠️ An outcome says why a crossing did or didn't count, never what it cost. A yellow-flag
+# crossing may or may not incur a lap penalty; penalties are a separate fact (race_penalties,
+# and the driver_penalty topic in #88), not a kind of crossing (Greg, 2026-10-25).
+CROSSING_OUTCOMES = (CROSSING_COUNTED, CROSSING_START_LINE, CROSSING_YELLOW_FLAG, CROSSING_BASELINE)
+
 
 @dataclass
 class DriverState:
@@ -17,7 +29,10 @@ class DriverState:
     driver_id: int
     driver_name: str
     crossings: int = 0          # all S/F crossings including discarded start crossing
-    laps_completed: int = 0     # real completed laps
+    # Lap penalties charged so far, in laps. Carried forward (Greg, 2026-10-25): a
+    # penalty charged before the driver has laps to lose is still owed, so it is never
+    # floored away. See laps_completed.
+    penalty_laps: int = 0
     last_lap_time: float = 0.0
     best_lap_time: float = 999.999
     # The last crossing this driver made, as Layer 1 reported it — None until they
@@ -40,6 +55,16 @@ class DriverState:
     @property
     def has_started(self) -> bool:
         return self.crossings > 0
+
+    @property
+    def laps_completed(self) -> int:
+        """Net laps: counted laps less lap penalties. The one rule for it — live, on
+        recovery and in results (effective_laps_completed) — so they can't disagree (#86).
+
+        ⚠️ Deliberately NOT floored at 0: it goes negative when a penalty lands before
+        the driver has laps to lose, and that is what carries the penalty forward. The
+        leaderboard shows laps *remaining*, which simply reads above the race length."""
+        return len(self.lap_times) - self.penalty_laps
 
 
 class RaceManager:
@@ -155,12 +180,15 @@ class RaceManager:
         )
 
     def restore(self, started_at: Optional[float], laps: Dict[int, list], now: float,
-                lap_penalties: Optional[Dict[int, int]] = None):
+                lap_penalties: Optional[Dict[int, int]] = None,
+                crossings: Optional[Dict[int, int]] = None):
         """Rebuild a race that was Running when lapdata went away. Call after load_lineup().
 
-        `laps` is driver_id -> that driver's counted lap times in order, from the DB, and
+        `laps` is driver_id -> that driver's counted lap times in order, from the DB,
         `lap_penalties` driver_id -> laps already deducted live (race_penalties), which
-        driver_laps doesn't reflect. That is all the DB can give back: the clock anchors
+        driver_laps doesn't reflect, and `crossings` driver_id -> every crossing stored for
+        them, void ones included (None from an API that predates it). That is all the DB
+        can give back: the clock anchors
         and each car's last crossing were in memory only, so the next lap can't be timed.
         Hence:
 
@@ -184,13 +212,21 @@ class RaceManager:
         for driver in self.drivers.values():
             times = laps.get(driver.driver_id, [])
             driver.lap_times = [round(t, 3) for t in times]
-            driver.laps_completed = max(0, len(times) - lap_penalties.get(driver.driver_id, 0))
-            # With the grid behind the line, the discarded start-line crossing isn't in
-            # driver_laps but did happen — and for a driver still on lap 1 there's no way to
-            # tell whether it had. Assume it had: counting them as started only means a car
-            # that truly never left holds the race open until the operator ends it, where
-            # the other guess could end the race under a driver who is still racing.
-            driver.crossings = len(times) + (0 if self.count_first_crossing else 1)
+            driver.penalty_laps = lap_penalties.get(driver.driver_id, 0)
+            if crossings is not None:
+                # Void crossings are in driver_laps too (#86), the start-line one included,
+                # so whether a driver has started is a stored fact rather than a guess. A
+                # car that never left the grid comes back not started, and can't hold the
+                # race open. ⚠️ Only as good as dbwriter's record: a start-line driver_lap
+                # it missed makes a racing driver look unstarted (#77).
+                driver.crossings = max(crossings.get(driver.driver_id, 0), len(times))
+            else:
+                # An older API sends no crossing counts. With the grid behind the line the
+                # start-line crossing did happen, but for a driver still on lap 1 there's no
+                # telling whether it had. Assume it had: counting them as started only means
+                # a car that truly never left holds the race open until the operator ends
+                # it, where the other guess could end the race under a driver still racing.
+                driver.crossings = len(times) + (0 if self.count_first_crossing else 1)
             if times:
                 driver.last_lap_time = times[-1]
                 driver.best_lap_time = min(times)
@@ -229,8 +265,9 @@ class RaceManager:
         round the lap each car was), so a driver can land on the wrong side of the flag
         either way: wrongly finished, they stop counting and lose a lap; wrongly not, they
         must come back out after pulling in and gain one. Neither is safe — finishing
-        position is laps first. Only persisting each crossing's clock and counter_ms
-        (which driver_lap already carries and dbwriter drops) would fix it."""
+        position is laps first. Each crossing's clock and counter_ms are now in
+        driver_laps (#27), so recovery could fix this by timing from those instead —
+        it doesn't use them yet."""
         flag_at = None
         for driver in self.drivers.values():
             if driver.laps_completed >= self.target_laps:
@@ -365,45 +402,64 @@ class RaceManager:
             return 0.0
         return self.race_start.since_go(driver.last_crossing, self.anchors)[0]
 
+    def _apply_yellow_lap_penalty(self, driver: DriverState):
+        """GPIO-only substitute deterrent: it can't cut power, so a yellow-flag crossing
+        costs the driver laps instead — once per incident, however often they cross.
+        Points sessions only — a FastestLap lap made through a yellow flag is already
+        effectively self-penalizing, since it will essentially never be a personal best."""
+        if (self.session_type == 'FastestLap' or self.yellow_lap_penalty_laps <= 0
+                or driver.yellow_penalty_applied):
+            return
+        driver.yellow_penalty_applied = True
+        driver.penalty_laps += self.yellow_lap_penalty_laps
+        driver.penalty_notice = {'type': 'lap', 'amount': self.yellow_lap_penalty_laps}
+        self.pending_penalty_records.append({
+            'driver_id': driver.driver_id, 'penalty_type': 'lap',
+            'amount': self.yellow_lap_penalty_laps, 'reason': 'yellow_flag_grace_expired',
+        })
+        logger.info(f"Lane {driver.lane} ({driver.driver_name}) crossed after the yellow-flag "
+                    f"grace period — lap penalty applied, now {driver.laps_completed} laps")
+
     # States in which a crossing is a real lap: the cars are under power and racing.
     # Yellow is in here because its grace period keeps full power on — see yellow().
     COUNTING_STATES = ('Running', 'Yellow')
 
-    def on_lap(self, lane: int, crossing: Crossing) -> bool:
+    def on_lap(self, lane: int, crossing: Crossing) -> Optional[str]:
         """
-        Process a lap crossing. Returns True if race state was updated (triggers publish).
-        Ignores crossings while the cars aren't racing, or from lanes not in this race.
+        Process a lap crossing. Returns what it was (one of CROSSING_OUTCOMES), which
+        also means race state changed and should be published; or None if it was
+        ignored — the cars aren't racing, the lane isn't in this race, or the driver has
+        finished. The caller records the outcome as it is, rather than inferring it from
+        how lap_times changed.
         """
-        # GPIO-only substitute deterrent: it can't cut power, so a crossing after the
-        # yellow-flag grace period expired costs the driver laps instead. Points
-        # sessions only — a FastestLap lap made through a yellow flag is already
-        # effectively self-penalizing, since it will essentially never be a personal
-        # best. Gated on _paused_from_yellow_expiry (not just state=='Paused') so an
-        # immediate manual pause, unrelated to a yellow flag, is never penalized.
-        if (self.state == 'Paused' and self._paused_from_yellow_expiry
-                and self.session_type != 'FastestLap' and self.yellow_lap_penalty_laps > 0):
+        # A crossing after the yellow-flag grace period expired is void: the race is
+        # stopped and nobody should be on the move. Gated on _paused_from_yellow_expiry
+        # (not just state=='Paused') so a crossing under an immediate manual pause,
+        # unrelated to a yellow flag, is still simply ignored.
+        if self.state == 'Paused' and self._paused_from_yellow_expiry:
             driver = self.drivers.get(lane)
-            if driver is None or driver.finished or driver.yellow_penalty_applied:
-                return False
-            driver.yellow_penalty_applied = True
+            if driver is None or driver.finished:
+                return None
+            # Counts as a crossing (so with the grid behind the line, a yellow-flag
+            # crossing that was the car's first one is its start-line crossing too) but is
+            # void for everything else (Greg, 2026-10-25): an existing last_crossing is
+            # left alone, so the next lap is timed from the last counted crossing, or from
+            # lights-out if there is none, and positions still sort on that counted
+            # crossing. Only a driver with no crossing yet takes this one, as the
+            # start-line crossing does — otherwise a car that has plainly started would
+            # sort on a race time of 0.0 and could never be marked suspended.
             driver.crossings += 1
-            driver.last_crossing = crossing
-            driver.laps_completed = max(0, driver.laps_completed - self.yellow_lap_penalty_laps)
-            driver.penalty_notice = {'type': 'lap', 'amount': self.yellow_lap_penalty_laps}
-            self.pending_penalty_records.append({
-                'driver_id': driver.driver_id, 'penalty_type': 'lap',
-                'amount': self.yellow_lap_penalty_laps, 'reason': 'yellow_flag_grace_expired',
-            })
-            logger.info(f"Lane {lane} ({driver.driver_name}) crossed after the yellow-flag "
-                        f"grace period — lap penalty applied, now {driver.laps_completed} laps")
-            return True
+            if driver.last_crossing is None:
+                driver.last_crossing = crossing
+            self._apply_yellow_lap_penalty(driver)
+            return CROSSING_YELLOW_FLAG
 
         if self.state not in self.COUNTING_STATES:
-            return False
+            return None
 
         driver = self.drivers.get(lane)
         if driver is None or driver.finished:
-            return False
+            return None
 
         driver.crossings += 1
 
@@ -413,7 +469,7 @@ class RaceManager:
         if not self.count_first_crossing and driver.crossings == 1:
             driver.last_crossing = crossing  # preserves crossing order for position sort
             logger.info(f"Lane {lane}: start-line crossing discarded")
-            return True
+            return CROSSING_START_LINE
 
         # ⚠️ Lap 1 is timed from LIGHTS-OUT in every race, whatever the start grid
         # (Greg, 2026-09-20). The grid only decides which crossing *ends* lap 1: with the
@@ -427,9 +483,13 @@ class RaceManager:
         # is the interval from the previous counted crossing: a plain counter subtraction,
         # exact and anchor-free.
         #
-        # "No laps yet" is lap_times, not laps_completed: a yellow-flag lap penalty can
-        # floor laps_completed back to 0 after real laps, and the next lap must still be
-        # timed from the previous crossing, not from lights-out again.
+        # "No laps yet" is lap_times, not laps_completed: laps_completed is net of lap
+        # penalties and can be 0 or below after real laps, and the next lap must still be
+        # timed from the previous counted crossing, not from lights-out again. A yellow-flag
+        # crossing adds nothing to lap_times and never moves an existing last_crossing, so
+        # it can't change which of the first two branches is taken. A driver with no
+        # crossing at all (only after a recovery, when race_start is None) takes it as
+        # their baseline instead of the next crossing.
         if not driver.lap_times and self.race_start is not None:
             lap_time, timing = self.race_start.since_go(crossing, self.anchors)
         elif driver.last_crossing is not None:
@@ -446,12 +506,11 @@ class RaceManager:
             else:
                 logger.error(f"Lane {lane} crossed while Running with no recorded lights-out "
                              f"(resumed without a start?) — using it as the lap 1 baseline")
-            return True
+            return CROSSING_BASELINE
 
         driver.last_lap_time = lap_time
         driver.last_lap_timing = timing
         driver.last_crossing = crossing
-        driver.laps_completed += 1
         driver.lap_times.append(round(lap_time, 3))
 
         if lap_time < driver.best_lap_time:
@@ -470,7 +529,7 @@ class RaceManager:
             logger.info(f"Lane {lane} ({driver.driver_name}) finished — {driver.laps_completed} laps")
 
         self._check_race_end()
-        return True
+        return CROSSING_COUNTED
 
     def _update_session_fastest(self, driver_id: int, driver_name: str, lap_time: float):
         if driver_id not in self.session_drivers:
@@ -516,6 +575,7 @@ class RaceManager:
         driver_list = []
         for position, driver in enumerate(sorted_drivers, start=1):
             rt = race_times[driver.lane]
+            # Can exceed target_laps: a carried-forward penalty is laps still owed.
             laps_remaining = max(0, self.target_laps - driver.laps_completed)
             suspended = (
                 driver.last_crossing is not None

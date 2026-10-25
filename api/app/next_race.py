@@ -91,11 +91,15 @@ def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
 
 def effective_laps_completed(laps_completed, penalty_laps) -> int:
     """A driver's lap count for Points-session position/scoring after subtracting any
-    recorded yellow-flag lap penalties, floored at 0 (mirrors race_manager.py's own
-    floor, in case a penalty and dbwriter's own count ever disagree). Pulled out as a
-    pure function, the same way as assign_drivers_to_lanes below, so
+    recorded yellow-flag lap penalties — the same rule as race_manager.py's
+    DriverState.laps_completed, so results and the live leaderboard agree (#86).
+
+    ⚠️ Not floored at 0. Penalties carry forward: one charged before the driver had laps
+    to lose still comes off their final total, so this can go negative, and a negative
+    count must still rank below 0. Floor only where a laps-done figure is displayed.
+    Pulled out as a pure function, the same way as assign_drivers_to_lanes below, so
     build_session_results()'s scoring math is unit-testable without a database."""
-    return max(0, (laps_completed or 0) - (penalty_laps or 0))
+    return (laps_completed or 0) - (penalty_laps or 0)
 
 
 #The unit-testable logic for sorting drivers into racing and non-racing groups
@@ -192,7 +196,7 @@ def get_session_fastest_laps(dbsession, session_id: int) -> list:
                 SELECT id FROM races
                 WHERE session_id = :session_id AND state = 'Finished'
             )
-        LEFT JOIN driver_laps dl ON dl.driver_race_id = dr.id
+        LEFT JOIN driver_laps dl ON dl.driver_race_id = dr.id AND dl.outcome = 'counted'
         WHERE s.id = :session_id
         GROUP BY d.id, md.driver_name
         ORDER BY session_fastest_lap ASC NULLS LAST

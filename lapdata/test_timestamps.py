@@ -141,14 +141,12 @@ def test_a_crossing_feeds_the_clock_anchor(published):
 def test_driver_lap_carries_the_clock_counter_and_timing(published, monkeypatch):
     """The only way to re-check a disputed lap after the meet is to know which clock
     timed it and how."""
-    driver = types.SimpleNamespace(driver_id=9, laps_completed=0, lap_times=[],
-                                   last_lap_timing='')
+    driver = types.SimpleNamespace(driver_id=9, lap_times=[], last_lap_timing='')
 
     def count_a_lap(lane, crossing):
-        driver.laps_completed += 1
         driver.lap_times.append(4.5)
         driver.last_lap_timing = 'counter'
-        return True
+        return 'counted'
 
     monkeypatch.setattr(tsl.race, 'on_lap', count_a_lap)
     monkeypatch.setattr(tsl.race, 'drivers', {1: driver})
@@ -157,38 +155,42 @@ def test_driver_lap_carries_the_clock_counter_and_timing(published, monkeypatch)
     tsl.handle_car_timestamp(_crossing(1, 12_340), arrival=1012.4)
 
     lap = next(p for topic, p in published if topic == 'driver_lap')
+    assert lap['outcome'] == 'counted'
     assert lap['clock'] == CLOCK
     assert lap['counter_ms'] == 12_340
     assert lap['timing'] == 'counter'
     assert lap['lap_time'] == pytest.approx(4.5)
 
 
-def test_driver_lap_number_is_the_raw_ordinal_not_the_post_penalty_count(published, monkeypatch):
-    """A penalty takes laps off laps_completed, and race_penalties records it for results
-    to subtract. Publishing the post-penalty count as lap_number would have dbwriter store
-    an already-net count, and results subtract the penalty a second time (#83)."""
-    driver = types.SimpleNamespace(driver_id=9, laps_completed=5, lap_times=[4.5] * 5,
-                                   last_lap_timing='counter')
-    outcomes = iter(['penalty', 'lap'])
+def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkeypatch):
+    """#86: void crossings are recorded too, for traceability, but carry no lap number or
+    time. lap_number is the raw ordinal, never net of a penalty — publishing a net count
+    would have results subtract the penalty a second time (#83)."""
+    driver = types.SimpleNamespace(driver_id=9, lap_times=[4.5] * 5, last_lap_timing='counter')
+    outcomes = iter(['yellow_flag', 'counted', None])
 
     def on_lap(lane, crossing):
-        if next(outcomes) == 'penalty':
-            driver.laps_completed -= 1
-        else:
-            driver.laps_completed += 1
+        outcome = next(outcomes)
+        if outcome == 'counted':
             driver.lap_times.append(4.5)
-        return True
+        return outcome
 
     monkeypatch.setattr(tsl.race, 'on_lap', on_lap)
     monkeypatch.setattr(tsl.race, 'drivers', {1: driver})
     monkeypatch.setattr(tsl, 'publish_race_state', lambda: None)
 
-    tsl.handle_car_timestamp(_crossing(1, 20_000), arrival=1020.0)   # penalty crossing
+    tsl.handle_car_timestamp(_crossing(1, 20_000), arrival=1020.0)   # yellow-flag crossing
     tsl.handle_car_timestamp(_crossing(1, 25_000), arrival=1025.0)   # a real lap
+    tsl.handle_car_timestamp(_crossing(1, 30_000), arrival=1030.0)   # ignored
 
     laps = [p for topic, p in published if topic == 'driver_lap']
-    assert [lap['lap_number'] for lap in laps] == [6]
-    assert driver.laps_completed == 5    # net, for race_state — not what's persisted
+    assert [(lap['outcome'], lap['lap_number'], lap['lap_time'], lap['timing']) for lap in laps] == [
+        ('yellow_flag', None, None, None),
+        ('counted', 6, 4.5, 'counter'),
+    ]
+    # A void crossing still says where and when it fell, exactly as a lap does (#27).
+    assert (laps[0]['clock'], laps[0]['counter_ms']) == (CLOCK, 20_000)
+    assert laps[0]['crossed_at'] == pytest.approx(laps[1]['crossed_at'] - 5.0, abs=0.01)
 
 
 # --- layer1_clock heartbeat ---

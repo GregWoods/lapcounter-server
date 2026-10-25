@@ -8,8 +8,9 @@ Admin session form) — `count_first_crossing` is gone from `meetings` and is no
 `start_grid` in `next_race.py`, unchanged downstream of that. **`allow_jump_starts` is
 deliberately NOT part of this** — it was originally bundled into the same migration number,
 but shipped separately (it's an independent, unenforced setting; see "Jump starts (later)")
-and will get its own migration number when it's built. Step 4 (hardware day) and step 5
-(provenance persistence, open question 1) are outstanding.
+and will get its own migration number when it's built. Step 4 (hardware day) is
+outstanding. Step 5 (provenance persistence, open question 1) shipped with #27/#86 in
+migration `003-driver-laps-outcome.sql` — the post-#84 numbering, not the old 003 above.
 `docs/lap-timing-clocks.md` explains *why*; this file is *how*.
 
 **Where the implementation deviates from this plan, deliberately:**
@@ -336,7 +337,10 @@ for a later discussion. What this plan fixes in place for that work:
    method no longer waits on this: plan A is confirmed, so set `BLE_CLOCK_HEARTBEAT=throttle`.
    Do run HW-06, HW-11 and HW-12 in one pass, which is the one piece of HW-12's evidence still
    cross-run rather than simultaneous.
-5. **Provenance persistence**, if open question 1 says yes. Migration 004 and dbwriter.
+5. **Provenance persistence**, if open question 1 says yes. A migration and dbwriter.
+   ✅ Shipped (#27, with #86) as migration `003-driver-laps-outcome.sql`: `clock`, `counter_ms` and `crossed_at` on every
+   `driver_laps` row, void crossings included. `timing` is not stored: it follows from
+   consecutive rows' clocks.
 6. **Jump starts:** a separate design discussion, after capability advertising.
 
 Aim to finish steps 1–3 before the hardware day, so that day validates the final code.
@@ -417,7 +421,7 @@ Then stop `mocked-ble`, bring up `--profile mocked-gpio`, and repeat the laps ch
 
 ## Open questions for Greg
 
-1. **Persist provenance** (`clock`, `counter_ms`, `timing`) on `driver_laps`? Recommended: yes.
+1. ✅ **Settled: yes, shipped in #27.** **Persist provenance** (`clock`, `counter_ms`, `timing`) on `driver_laps`? Recommended: yes.
    It's one migration adding nullable columns, and it is the only way to re-check a disputed lap
    after the meet. Cheap now; impossible for laps already raced.
 2. **With the grid just behind the line, a car that creeps across it before lights-out.** This
