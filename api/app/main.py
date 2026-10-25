@@ -6,7 +6,7 @@ import traceback
 import uuid
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import Field, Session, SQLModel, create_engine, select
+from sqlmodel import Field, Session, SQLModel, create_engine, func, select
 from typing import Annotated, Optional
 from datetime import datetime, timezone
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
@@ -283,7 +283,8 @@ def get_running_race(dbsession: SessionDep):
 @app.get("/races/running/recovery/")
 def get_running_race_recovery(dbsession: SessionDep):
     """What lapdata needs to pick a race back up after a restart: the Running race, when
-    it started, and every counted lap per driver (from dbwriter's driver_laps). The DB is
+    it started, every counted lap per driver and how many crossings each made in all
+    (from dbwriter's driver_laps). The DB is
     the durable record; lapdata's race state is in memory only.
 
     Deliberately not limited to the active session: a Running race whose session was
@@ -304,6 +305,16 @@ def get_running_race_recovery(dbsession: SessionDep):
     laps: dict[str, list[float]] = {}
     for driver_id, lap_time in rows:
         laps.setdefault(str(driver_id), []).append(float(lap_time))
+    # Every stored crossing per driver, void ones included (#86). With the grid behind the
+    # line, the start-line crossing is what says a driver with no laps has started at all.
+    crossings: dict[str, int] = {
+        str(driver_id): n for driver_id, n in dbsession.exec(
+            select(DriverRace.driver_id, func.count(DriverLap.id))
+            .join(DriverLap, DriverLap.driver_race_id == DriverRace.id)
+            .where(DriverRace.race_id == running.id)
+            .group_by(DriverRace.driver_id)
+        ).all()
+    }
     # Lap penalties lapdata had already applied live (the GPIO yellow-flag deterrent).
     # driver_laps doesn't reflect them, so without these a restart would hand the laps back.
     lap_penalties: dict[str, int] = {}
@@ -319,6 +330,7 @@ def get_running_race_recovery(dbsession: SessionDep):
         "race_number": running.race_number,
         "started_at": running.started_at.timestamp() if running.started_at else None,
         "laps": laps,
+        "crossings": crossings,
         "lap_penalties": lap_penalties,
         "setup": setup.model_dump() if setup else None,
     }
@@ -852,11 +864,22 @@ def build_session_results(race_session, dbsession):
     for p in lap_penalties:
         lap_penalty_by_race_driver[(p.race_id, p.driver_id)] += int(p.amount)
 
+    # driver_races.laps_completed is NULL when dbwriter never wrote an aggregate (it was
+    # down, or sample data). That is "unknown", not 0 — less a penalty it would rank the
+    # driver below one who never crossed — so count their counted driver_laps instead.
+    counted_rows: dict = dict(dbsession.exec(
+        select(DriverLap.driver_race_id, func.count(DriverLap.id))
+        .join(DriverRace, DriverLap.driver_race_id == DriverRace.id)
+        .where(DriverRace.race_id.in_(race_ids), DriverLap.outcome == 'counted')
+        .group_by(DriverLap.driver_race_id)
+    ).all())
+
     positions = {}
     laps_by_race = defaultdict(dict)
     for race_id in race_ids:
         def effective_laps(dr):
-            return effective_laps_completed(dr.laps_completed, lap_penalty_by_race_driver.get((race_id, dr.driver_id), 0))
+            raw = dr.laps_completed if dr.laps_completed is not None else counted_rows.get(dr.id, 0)
+            return effective_laps_completed(raw, lap_penalty_by_race_driver.get((race_id, dr.driver_id), 0))
         sorted_drs = sorted(
             race_groups.get(race_id, []),
             key=lambda dr: (-effective_laps(dr), dr.fastest_lap_time or 999999)

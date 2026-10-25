@@ -19,6 +19,10 @@ log = logging.getLogger(__name__)
 
 _conn = None
 
+# What lapdata's race manager can make of a crossing (race_manager.CROSSING_OUTCOMES), and
+# what migration 003's CHECK constraint allows. Kept in step with both by hand.
+OUTCOMES = ('counted', 'start_line', 'yellow_flag', 'baseline')
+
 
 def get_conn():
     global _conn
@@ -55,7 +59,7 @@ def _reset_conn():
 
 def on_driver_lap(payload: dict):
     """Persist one crossing published by lapdata, as the race manager judged it. Its
-    `outcome` is 'counted' for a real lap; anything else ('start_line', 'penalty',
+    `outcome` is 'counted' for a real lap; anything else ('start_line', 'yellow_flag',
     'baseline') is a void crossing, stored for traceability with no lap time and left
     out of the driver_races aggregates (#86). We record it verbatim — no race logic is
     re-derived here."""
@@ -68,6 +72,12 @@ def on_driver_lap(payload: dict):
     counted = outcome == 'counted'
     if race_id is None or driver_id is None or (counted and lap_time is None):
         log.warning("Ignoring driver_lap with missing fields: %s", payload)
+        return
+    # Said here, not left to the CHECK constraint: a rejected INSERT only surfaces as a
+    # generic "Error persisting lap", and the crossing is lost either way.
+    if outcome not in OUTCOMES:
+        log.error("Dropping driver_lap with unknown outcome %r (lapdata newer than "
+                  "dbwriter, or a migration missing?): %s", outcome, payload)
         return
 
     try:

@@ -202,8 +202,8 @@ def handle_car_timestamp(data: dict, arrival: float):
 
         # Emit a context-rich event for the DB writer for every crossing the race manager
         # acted on, saying what it made of it (#86): a counted lap, or a void crossing
-        # (the discarded start-line part-lap, a yellow-flag penalty crossing, a timing
-        # baseline) recorded for traceability. Ignored crossings (idle, not racing,
+        # (the discarded start-line part-lap, a crossing after a yellow-flag grace, a
+        # timing baseline) recorded for traceability. Ignored crossings (idle, not racing,
         # finished) produce nothing. The DB writer persists it verbatim without
         # re-deriving any race logic.
         d = race.drivers.get(lane)
@@ -769,6 +769,8 @@ def recover_running_race(recovery: dict) -> bool:
         {int(driver_id): times for driver_id, times in (recovery.get('laps') or {}).items()},
         time.time(),
         {int(driver_id): n for driver_id, n in (recovery.get('lap_penalties') or {}).items()},
+        ({int(driver_id): n for driver_id, n in recovery['crossings'].items()}
+         if recovery.get('crossings') is not None else None),
     )
     # The state we just rebuilt is what the API already holds (Running), or is a Finished
     # transition it must be told about. Either way, don't POST a bogus /start for it.

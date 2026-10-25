@@ -1,6 +1,6 @@
 import pytest
 from lap_clock import ClockAnchors, Crossing, TIMING_ANCHORED, TIMING_COUNTER, TIMING_FROM_GO
-from race_manager import (CROSSING_BASELINE, CROSSING_COUNTED, CROSSING_PENALTY,
+from race_manager import (CROSSING_BASELINE, CROSSING_COUNTED, CROSSING_YELLOW_FLAG,
                           CROSSING_START_LINE, RaceManager)
 
 # Lights-out on lapdata's monotonic clock, and the Layer 1 clock the cars run on. The
@@ -415,7 +415,7 @@ def test_lap_penalty_fires_once_after_grace_expiry():
     race.pause(power_pct=0, from_yellow_expiry=True)
     updated = race.on_lap(1, at(10.0))
 
-    assert updated == CROSSING_PENALTY
+    assert updated == CROSSING_YELLOW_FLAG
     assert race.drivers[1].laps_completed == 0    # 1 - penalty(1)
     assert race.drivers[1].lap_times == [pytest.approx(5.0)]   # the void crossing isn't a lap
     assert race.drivers[1].penalty_notice == {'type': 'lap', 'amount': 1}
@@ -429,8 +429,38 @@ def test_lap_penalty_does_not_fire_twice_in_the_same_incident():
     race.on_lap(1, at(10.0))
 
     updated = race.on_lap(1, at(15.0))
-    assert updated is None
-    assert race.drivers[1].laps_completed == 0    # unchanged by the second crossing
+    assert updated == CROSSING_YELLOW_FLAG        # still void, and still recorded
+    assert race.drivers[1].laps_completed == 0    # but no second penalty
+    assert len(race.pending_penalty_records) == 1
+
+
+def test_a_yellow_flag_crossing_is_void_even_with_no_penalty_configured():
+    """An outcome says why a crossing didn't count, not what it cost (Greg, 2026-10-25):
+    with yellow_lap_penalty_laps at 0 (the BLE default) a crossing after the grace is
+    still void, it just costs nothing."""
+    race = new_race(count_first_crossing=True)
+    race.on_lap(1, at(5.0))
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+
+    assert race.on_lap(1, at(10.0)) == CROSSING_YELLOW_FLAG
+    driver = race.drivers[1]
+    assert driver.laps_completed == 1 and driver.penalty_laps == 0
+    assert race.pending_penalty_records == []
+    assert driver.penalty_notice is None
+
+
+def test_a_yellow_flag_first_crossing_gives_the_driver_a_race_time():
+    """Without it a car that has plainly started sorts on 0.0 and is never suspended."""
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    crossing = at(7.0)
+    race.on_lap(1, crossing)
+    driver = race.drivers[1]
+    assert driver.has_started
+    assert driver.last_crossing == crossing
+    assert race.race_time(driver) == pytest.approx(7.0)
 
 
 def test_a_lap_penalty_before_any_laps_is_carried_forward():
@@ -504,7 +534,7 @@ def test_a_penalty_as_the_first_crossing_leaves_lap_1_timed_from_lights_out(coun
     race = new_race(count_first_crossing=count_first_crossing, yellow_lap_penalty_laps=1)
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
-    assert race.on_lap(1, at(2.0)) == CROSSING_PENALTY
+    assert race.on_lap(1, at(2.0)) == CROSSING_YELLOW_FLAG
     race.resume()
 
     assert race.on_lap(1, at(9.0)) == CROSSING_COUNTED
@@ -528,7 +558,7 @@ def test_lap_penalty_resets_on_a_new_yellow_flag_incident():
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     updated = race.on_lap(1, at(15.0))
-    assert updated == CROSSING_PENALTY
+    assert updated == CROSSING_YELLOW_FLAG
     assert race.drivers[1].laps_completed == -1    # penalized again, a fresh incident
 
 
@@ -551,7 +581,9 @@ def test_lap_penalty_never_fires_for_fastest_lap_sessions():
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     updated = race.on_lap(1, at(5.0))
-    assert updated is None
+    assert updated == CROSSING_YELLOW_FLAG    # void, but never a penalty
+    assert race.drivers[1].penalty_laps == 0
+    assert race.pending_penalty_records == []
 
 
 def test_penalty_is_queued_for_the_api_and_drained_once():
@@ -732,12 +764,34 @@ def recovered_race(laps, started_at=5000.0, now=5010.0, **kwargs):
     when it restarts and the DB still says Running."""
     race = RaceManager()
     lap_penalties = kwargs.pop('lap_penalties', None)
+    crossings = kwargs.pop('crossings', None)
     race.load_lineup(
         race_id=9, race_number=3, target_laps=kwargs.pop('target_laps', 5),
         lane_assignments=make_lineup(kwargs.pop('n_drivers', 3)), **kwargs,
     )
-    race.restore(started_at, laps, now, lap_penalties)
+    race.restore(started_at, laps, now, lap_penalties, crossings)
     return race
+
+
+def test_recovery_knows_a_car_that_never_left_the_grid_from_its_stored_crossings():
+    """Grid behind the line: the start-line crossing is in driver_laps now (#86), so a car
+    with no rows at all never started and can't hold the race open."""
+    race = recovered_race({1: [5.0, 4.8]}, count_first_crossing=False, n_drivers=2,
+                          crossings={1: 3})
+    assert race.drivers[1].crossings == 3
+    assert not race.drivers[2].has_started
+
+
+def test_recovery_counts_a_start_line_crossing_with_no_laps_after_it():
+    race = recovered_race({}, count_first_crossing=False, n_drivers=2, crossings={2: 1})
+    assert race.drivers[2].has_started
+    assert not race.drivers[1].has_started
+
+
+def test_recovery_without_crossing_counts_still_assumes_the_start_line_crossing():
+    """An API that predates the crossing counts: the old, safe guess."""
+    race = recovered_race({}, count_first_crossing=False, n_drivers=2)
+    assert race.drivers[1].has_started and race.drivers[2].has_started
 
 
 def test_a_recovered_race_comes_back_paused_with_power_off():

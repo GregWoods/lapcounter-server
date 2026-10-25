@@ -337,8 +337,8 @@ for a later discussion. What this plan fixes in place for that work:
    method no longer waits on this: plan A is confirmed, so set `BLE_CLOCK_HEARTBEAT=throttle`.
    Do run HW-06, HW-11 and HW-12 in one pass, which is the one piece of HW-12's evidence still
    cross-run rather than simultaneous.
-5. **Provenance persistence**, if open question 1 says yes. Migration 004 and dbwriter.
-   ✅ Shipped (#27, with #86): `clock`, `counter_ms` and `crossed_at` on every
+5. **Provenance persistence**, if open question 1 says yes. A migration and dbwriter.
+   ✅ Shipped (#27, with #86) as migration `003-driver-laps-outcome.sql`: `clock`, `counter_ms` and `crossed_at` on every
    `driver_laps` row, void crossings included. `timing` is not stored: it follows from
    consecutive rows' clocks.
 6. **Jump starts:** a separate design discussion, after capability advertising.

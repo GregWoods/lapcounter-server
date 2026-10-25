@@ -167,7 +167,7 @@ def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkey
     time. lap_number is the raw ordinal, never net of a penalty — publishing a net count
     would have results subtract the penalty a second time (#83)."""
     driver = types.SimpleNamespace(driver_id=9, lap_times=[4.5] * 5, last_lap_timing='counter')
-    outcomes = iter(['penalty', 'counted', None])
+    outcomes = iter(['yellow_flag', 'counted', None])
 
     def on_lap(lane, crossing):
         outcome = next(outcomes)
@@ -179,13 +179,13 @@ def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkey
     monkeypatch.setattr(tsl.race, 'drivers', {1: driver})
     monkeypatch.setattr(tsl, 'publish_race_state', lambda: None)
 
-    tsl.handle_car_timestamp(_crossing(1, 20_000), arrival=1020.0)   # penalty crossing
+    tsl.handle_car_timestamp(_crossing(1, 20_000), arrival=1020.0)   # yellow-flag crossing
     tsl.handle_car_timestamp(_crossing(1, 25_000), arrival=1025.0)   # a real lap
     tsl.handle_car_timestamp(_crossing(1, 30_000), arrival=1030.0)   # ignored
 
     laps = [p for topic, p in published if topic == 'driver_lap']
     assert [(lap['outcome'], lap['lap_number'], lap['lap_time'], lap['timing']) for lap in laps] == [
-        ('penalty', None, None, None),
+        ('yellow_flag', None, None, None),
         ('counted', 6, 4.5, 'counter'),
     ]
     # A void crossing still says where and when it fell, exactly as a lap does (#27).
