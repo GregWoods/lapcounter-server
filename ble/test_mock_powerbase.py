@@ -21,7 +21,7 @@ _stub('paho')
 _stub('paho.mqtt')
 _stub(
     'paho.mqtt.client',
-    Client=lambda *a, **k: types.SimpleNamespace(publish=lambda *a, **k: None),
+    Client=lambda *a, **k: types.SimpleNamespace(publish=lambda *a, **k: None, will_set=lambda *a, **k: None),
     CallbackAPIVersion=types.SimpleNamespace(VERSION2=2),
 )
 _stub('bleak', BleakClient=object, BleakScanner=object)

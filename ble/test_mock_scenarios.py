@@ -32,7 +32,7 @@ _stub('paho')
 _stub('paho.mqtt')
 _stub(
     'paho.mqtt.client',
-    Client=lambda *a, **k: types.SimpleNamespace(publish=lambda *a, **k: None),
+    Client=lambda *a, **k: types.SimpleNamespace(publish=lambda *a, **k: None, will_set=lambda *a, **k: None),
     CallbackAPIVersion=types.SimpleNamespace(VERSION2=2),
 )
 _stub('bleak', BleakClient=object, BleakScanner=object)
@@ -68,7 +68,7 @@ def harness(monkeypatch):
     # MQTT hop — which only makes the anchor better, never the counters.
     sent = []
 
-    def record(topic, payload):
+    def record(topic, payload, **_kwargs):
         sent.append((topic, json.loads(payload), time.monotonic()))
 
     monkeypatch.setattr(ble, 'mqtt_client', types.SimpleNamespace(publish=record))
@@ -84,6 +84,13 @@ def harness(monkeypatch):
     monkeypatch.setattr(ble, '_last_seen_power_pct', None)
     monkeypatch.setattr(ble, '_bleak_client', None)
     monkeypatch.setattr(ble, '_ble_loop', None)
+    monkeypatch.setattr(ble, '_disconnected_at', None)
+    monkeypatch.setattr(ble, '_powerbase_connected', False)
+    monkeypatch.setattr(ble, '_power_hold', None)
+    monkeypatch.setattr(ble, '_pause_request_due', None)
+    # No lapdata here to beat race_state, so its silence mustn't stop the cars. The hold
+    # itself is covered in test_ble_to_timestamps.py.
+    monkeypatch.setattr(ble, 'RACE_STATE_TIMEOUT_S', float('inf'))
     monkeypatch.setattr(ble, 'device_address', None)     # exercise the scan
     monkeypatch.setattr(ble, 'reconnect_delay', 0.05)
     monkeypatch.setattr(ble, 'BleakClient', mock_bleak.FakeBleakClient)
@@ -380,6 +387,12 @@ def test_a_power_cycle_is_a_new_clock_with_no_phantom_laps(harness):
             h.powerbase.power_cycle()
 
             await eventually(lambda: h.powerbase.connection_id == 2, 'the reconnect')
+            # Any lost link stops the cars until the race is paused and resumed, so play
+            # lapdata (pausing on ble's request) and the operator (Resume).
+            await eventually(lambda: ble._power_hold is not None, 'the power hold')
+            await eventually(lambda: h.applied and h.applied[-1] == ble.CARS_STOPPED, 'the cars stopping')
+            await from_paho(ble.handle_race_state, {'state': 'Paused', 'power_pct': 0})
+            await from_paho(ble.handle_race_state, {'state': 'Running', 'power_pct': 100})
             await eventually(lambda: len(crossings_seen(h)) >= before + 9, 'laps after the power cycle')
 
     asyncio.run(scenario())

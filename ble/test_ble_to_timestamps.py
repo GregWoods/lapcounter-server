@@ -10,6 +10,7 @@ import json
 import re
 import struct
 import sys
+import time
 import types
 
 import pytest
@@ -25,7 +26,7 @@ _stub('paho')
 _stub('paho.mqtt')
 _stub(
     'paho.mqtt.client',
-    Client=lambda *a, **k: types.SimpleNamespace(publish=lambda *a, **k: None),
+    Client=lambda *a, **k: types.SimpleNamespace(publish=lambda *a, **k: None, will_set=lambda *a, **k: None),
     CallbackAPIVersion=types.SimpleNamespace(VERSION2=2),
 )
 _stub('bleak', BleakClient=object, BleakScanner=object)
@@ -559,47 +560,121 @@ def test_race_state_repeated_same_percent_does_not_resend(monkeypatch):
 OFFLINE = {'state': 'Offline', 'race_id': None, 'drivers': []}
 
 
+@pytest.fixture
+def hold(monkeypatch):
+    """A clean power-hold state, with race_control publishes captured."""
+    monkeypatch.setattr(ble, '_power_hold', None)
+    monkeypatch.setattr(ble, '_pause_request_due', None)
+    monkeypatch.setattr(ble, '_last_race_state_at', time.monotonic())
+    monkeypatch.setattr(ble, '_last_seen_power_pct', 100)
+    pauses = []
+    monkeypatch.setattr(ble, 'mqtt_client', types.SimpleNamespace(
+        publish=lambda topic, payload, retain=False: pauses.append(json.loads(payload))
+        if topic == 'race_control' else None))
+    return pauses
+
+
 @pytest.mark.parametrize('last', [100, None])
-def test_race_state_offline_stops_the_cars(monkeypatch, last):
-    """lapdata gone (its Last Will) means nothing counts laps or can flag a yellow. It
-    carries no power_pct, and read as "no race" it would mean full power."""
+def test_race_state_offline_stops_the_cars(monkeypatch, hold, last):
+    """lapdata gone (its Last Will) means nothing counts laps. It carries no power_pct,
+    and read as "no race" it would mean full power."""
     monkeypatch.setattr(ble, '_last_seen_power_pct', last)
-    monkeypatch.setattr(ble, '_lapdata_offline', False)
     sent = sent_commands(monkeypatch)
     ble.handle_race_state(OFFLINE)
     assert sent == [ble.CARS_STOPPED]
     assert ble._last_seen_power_pct == 0
 
 
-def test_race_state_offline_while_already_stopped_does_not_rewrite(monkeypatch):
+def test_race_state_offline_while_already_stopped_does_not_rewrite(monkeypatch, hold):
     monkeypatch.setattr(ble, '_last_seen_power_pct', 0)
-    monkeypatch.setattr(ble, '_lapdata_offline', False)
     sent = sent_commands(monkeypatch)
     ble.handle_race_state(OFFLINE)
     assert sent == []
 
 
 @pytest.mark.parametrize('command', ['resume', 'arm', 'start', 'yellow', 'end', 'prepare', 'pause'])
-def test_race_control_while_lapdata_offline_writes_nothing(monkeypatch, command):
-    """A page that hasn't noticed lapdata is gone must not put the cars back on track
+def test_race_control_while_held_writes_nothing(monkeypatch, hold, command):
+    """A page that hasn't noticed a link is down must not put the cars back on track
     with a Resume — nothing would count their laps."""
-    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
-    monkeypatch.setattr(ble, '_lapdata_offline', False)
     sent = sent_commands(monkeypatch)
-    ble.handle_race_state(OFFLINE)
+    ble.hold_power('test')
     sent.clear()
     ble.handle_race_control({'command': command})
     assert sent == []
 
 
-def test_lapdata_returning_restores_its_power(monkeypatch):
-    monkeypatch.setattr(ble, '_last_seen_power_pct', None)
-    monkeypatch.setattr(ble, '_lapdata_offline', False)
+@pytest.mark.parametrize('state', ['Running', 'Yellow', 'ArmedForStart'])
+def test_a_racing_state_keeps_the_hold_and_asks_lapdata_to_pause(monkeypatch, hold, state):
+    """lapdata (hung, or the broker was down) may not have heard: keep asking, and keep
+    the cars stopped, until the race says it has stopped."""
+    sent = sent_commands(monkeypatch)
+    ble.hold_power('lost the MQTT broker')
+    hold.clear()
+    ble.handle_race_state({'state': state, 'power_pct': 100})
+    assert sent == [ble.CARS_STOPPED]
+    assert hold == [{'command': 'pause', 'reason': 'lost the MQTT broker'}]
+    assert ble._power_hold is not None
+
+
+def test_the_hold_ends_when_lapdata_reports_the_race_paused(monkeypatch, hold):
+    sent = sent_commands(monkeypatch)
+    ble.hold_power('test')
+    ble.handle_race_state({'state': 'Paused', 'power_pct': 0})
+    assert ble._power_hold is None
+    assert sent == [ble.CARS_STOPPED]   # already at 0: no second write
+    ble.handle_race_control({'command': 'resume'})
+    assert sent == [ble.CARS_STOPPED, ble.TRACK_RACING]
+
+
+def test_lapdata_returning_with_no_race_restores_power(monkeypatch, hold):
     sent = sent_commands(monkeypatch)
     ble.handle_race_state(OFFLINE)
     ble.handle_race_state({'state': 'NotStarted', 'power_pct': 100})
-    ble.handle_race_control({'command': 'arm'})
-    assert sent == [ble.CARS_STOPPED, ble.TRACK_RACING, ble.TRACK_RACING]
+    assert sent == [ble.CARS_STOPPED, ble.TRACK_RACING]
+
+
+def test_silence_from_lapdata_stops_the_cars(monkeypatch, hold):
+    """No beat for RACE_STATE_TIMEOUT_S: lapdata is hung, or the broker or our link to
+    it is gone."""
+    sent = sent_commands(monkeypatch)
+    monkeypatch.setattr(ble, '_last_race_state_at', time.monotonic() - ble.RACE_STATE_TIMEOUT_S - 1)
+    ble.check_race_state_timeout()
+    assert sent == [ble.CARS_STOPPED]
+    assert hold and hold[0]['command'] == 'pause'
+
+
+def test_beats_keep_the_cars_running(monkeypatch, hold):
+    sent = sent_commands(monkeypatch)
+    ble.handle_race_state({'state': 'Running', 'power_pct': 100})
+    ble.check_race_state_timeout()
+    assert sent == [] and ble._power_hold is None
+
+
+def test_losing_the_broker_stops_the_cars(monkeypatch, hold):
+    sent = sent_commands(monkeypatch)
+    ble.on_mqtt_disconnect(None, None, None, None, None)
+    assert sent == [ble.CARS_STOPPED]
+
+
+def test_a_powerbase_reconnect_waits_a_rotation_before_asking_to_pause(monkeypatch, hold):
+    """Stamps of crossings made while the link was down arrive over one Slot rotation.
+    They're real laps, and void if the race is already Paused."""
+    sent_commands(monkeypatch)
+    ble.hold_power('the powerbase link was down', pause_after_s=ble.POWERBASE_ROTATION_S, write=False)
+    ble.handle_race_state({'state': 'Running', 'power_pct': 100})
+    assert hold == []
+    monkeypatch.setattr(ble, '_pause_request_due', time.monotonic() - 0.1)
+    ble.check_race_state_timeout()
+    assert hold == [{'command': 'pause', 'reason': 'the powerbase link was down'}]
+
+
+def test_layer1_status_reports_both_links(monkeypatch):
+    monkeypatch.setattr(ble, '_powerbase_connected', True)
+    assert json.loads(ble._layer1_status())['powerbase_connected'] is True
+    will = json.loads(ble._layer1_status(online=False))
+    assert will['online'] is False and will['powerbase_connected'] is False
+    monkeypatch.setattr(ble, '_powerbase_connected', False)
+    assert json.loads(ble._layer1_status())['powerbase_connected'] is False
 
 
 def test_race_state_missing_power_pct_defaults_to_full(monkeypatch):

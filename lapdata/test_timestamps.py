@@ -502,3 +502,57 @@ def test_clean_shutdown_publishes_offline_before_disconnecting(publish_calls):
     assert topic == 'race_state' and kwargs.get('retain') is True
     assert payload['state'] == 'Offline' and payload['race_id'] is None
     assert last[0] == 'disconnect'
+
+
+# --- Any connection loss stops the race (Greg, 2026-10-25) ---
+
+@pytest.fixture
+def staged_race(monkeypatch, publish_calls):
+    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
+    tsl.race.race_id = 5
+    return publish_calls
+
+
+@pytest.mark.parametrize('state', ['Running', 'Yellow'])
+def test_a_lost_layer1_pauses_a_racing_race(staged_race, state):
+    tsl.race.state = state
+    tsl.handle_layer1_status({'layer1': 'ble', 'online': False, 'capabilities': []})
+    assert tsl.race.state == 'Paused' and tsl.race.power_pct == 0
+    assert staged_race[-1][1]['state'] == 'Paused'
+
+
+def test_a_lost_layer1_during_the_start_lights_aborts_the_start(staged_race):
+    """A Paused race has no lights-out to resume from, so the operator re-arms."""
+    tsl.race.state = 'ArmedForStart'
+    tsl.race.start_lights = 3
+    tsl.handle_layer1_status({'layer1': 'ble', 'online': False})
+    assert tsl.race.state == 'NotStarted' and tsl.race.start_lights == 0
+
+
+@pytest.mark.parametrize('state', ['NotStarted', 'Finished', 'Paused'])
+def test_a_pause_leaves_a_race_that_isnt_racing_alone(staged_race, state):
+    """BLE keeps asking for a pause while it holds the cars; a staged or finished race
+    must survive that."""
+    tsl.race.state = state
+    tsl.handle_race_control({'command': 'pause', 'reason': 'lost the MQTT broker'}, 0.0)
+    assert tsl.race.state == state
+    assert staged_race == []
+
+
+def test_a_powerbase_link_drop_alone_does_not_pause(staged_race):
+    """Its crossings arrive on reconnect and must count; BLE asks for the pause after."""
+    tsl.race.state = 'Running'
+    tsl.handle_layer1_status({'layer1': 'ble', 'online': True, 'powerbase_connected': False})
+    assert tsl.race.state == 'Running'
+
+
+def test_a_layer1_that_says_nothing_about_online_is_online(staged_race):
+    tsl.race.state = 'Running'
+    tsl.handle_layer1_status({'layer1': 'gpio', 'capabilities': ['lap_timing']})
+    assert tsl.race.state == 'Running'
+
+
+def test_lapdata_losing_the_broker_pauses_the_race(staged_race):
+    tsl.race.state = 'Running'
+    tsl.on_disconnect(None, None, None, None, None)
+    assert tsl.race.state == 'Paused'
