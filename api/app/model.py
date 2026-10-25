@@ -83,7 +83,7 @@ class Meeting(SQLModel, table=True):
     ended_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    # Unguessable id for guest-facing URLs (/m/<public_id>/...); see migration 007.
+    # Unguessable id for guest-facing URLs (/m/<public_id>/...).
     public_id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
         sa_column_kwargs={"unique": True, "server_default": text("gen_random_uuid()")},

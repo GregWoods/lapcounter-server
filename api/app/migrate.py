@@ -26,7 +26,7 @@ from sqlmodel import create_engine
 MIGRATION_FILE = re.compile(r'^(\d{3})-[a-z0-9-]+\.sql$')
 # Any constant will do; it only has to be the same for every concurrent runner.
 ADVISORY_LOCK_ID = 840_084
-CONNECT_TIMEOUT_S = 60
+CONNECT_TIMEOUT_S = 120
 
 
 class Migration(NamedTuple):
