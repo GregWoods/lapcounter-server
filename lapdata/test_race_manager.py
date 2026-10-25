@@ -1,3 +1,6 @@
+import time
+import uuid
+
 import pytest
 from lap_clock import ClockAnchors, Crossing, TIMING_ANCHORED, TIMING_COUNTER, TIMING_FROM_GO
 from race_manager import (CROSSING_BASELINE, CROSSING_COUNTED, CROSSING_YELLOW_FLAG,
@@ -591,13 +594,34 @@ def test_penalty_is_queued_with_the_crossing_that_incurred_it():
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     crossing = at(5.0)
+    before = time.time()
     race.on_lap(1, crossing)
 
-    assert race.pending_penalty_records == [{
+    [record] = race.pending_penalty_records
+    penalty_id = record.pop('penalty_id')
+    issued_at = record.pop('issued_at')
+    assert record == {
         'driver_id': 1, 'penalty_type': 'lap', 'amount': 1,
         'reason': 'yellow_flag_grace_expired',
         'clock': crossing.clock, 'counter_ms': crossing.counter_ms,
-    }]
+    }
+    assert uuid.UUID(penalty_id).version == 4
+    assert before <= issued_at <= time.time()
+
+
+def test_every_penalty_gets_its_own_id():
+    """#94: penalty_id is race_penalties' dedup key, so two genuine penalties — two
+    drivers, or one driver in two yellow-flag incidents — must never share one."""
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    for incident in range(2):
+        race.yellow()
+        race.pause(power_pct=0, from_yellow_expiry=True)
+        race.on_lap(1, at(10.0 + incident * 10))
+        race.on_lap(2, at(10.5 + incident * 10))
+        race.resume()
+
+    ids = [record['penalty_id'] for record in race.pending_penalty_records]
+    assert len(ids) == 4 and len(set(ids)) == 4
 
 
 def test_penalty_notice_clears_on_resume():

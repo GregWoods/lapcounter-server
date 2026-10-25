@@ -1,5 +1,6 @@
 import math
 import time
+import uuid
 import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict
@@ -425,13 +426,26 @@ class RaceManager:
         driver.yellow_penalty_applied = True
         driver.penalty_laps += self.yellow_lap_penalty_laps
         driver.penalty_notice = {'type': 'lap', 'amount': self.yellow_lap_penalty_laps}
-        self.pending_penalty_records.append({
-            'driver_id': driver.driver_id, 'penalty_type': 'lap',
-            'amount': self.yellow_lap_penalty_laps, 'reason': 'yellow_flag_grace_expired',
-            'clock': crossing.clock, 'counter_ms': crossing.counter_ms,
-        })
+        self._record_penalty(driver, 'lap', self.yellow_lap_penalty_laps,
+                             'yellow_flag_grace_expired', crossing)
         logger.info(f"Lane {driver.lane} ({driver.driver_name}) crossed after the yellow-flag "
                     f"grace period — lap penalty applied, now {driver.laps_completed} laps")
+
+    def _record_penalty(self, driver: DriverState, penalty_type: str, amount,
+                        reason: str, crossing: Optional[Crossing] = None):
+        """Queue a just-applied penalty for publishing as `driver_penalty`. Whatever
+        triggered it, it gets its identity here, once (#94): `penalty_id` is the
+        race_penalties dedup key, so a redelivery is dropped rather than charged twice,
+        and `issued_at` is when it was given. Both are minted now and travel in the
+        record, so republishing it can never mint new ones. `crossing` names the crossing
+        that incurred it, if any (a marshal's penalty would have none)."""
+        self.pending_penalty_records.append({
+            'penalty_id': str(uuid.uuid4()), 'issued_at': time.time(),
+            'driver_id': driver.driver_id, 'penalty_type': penalty_type,
+            'amount': amount, 'reason': reason,
+            'clock': crossing.clock if crossing else None,
+            'counter_ms': crossing.counter_ms if crossing else None,
+        })
 
     # States in which a crossing is a real lap: the cars are under power and racing.
     # Yellow is in here because its grace period keeps full power on — see yellow().
