@@ -1,6 +1,7 @@
 import pytest
 from lap_clock import ClockAnchors, Crossing, TIMING_ANCHORED, TIMING_COUNTER, TIMING_FROM_GO
-from race_manager import RaceManager
+from race_manager import (CROSSING_BASELINE, CROSSING_COUNTED, CROSSING_PENALTY,
+                          CROSSING_START_LINE, RaceManager)
 
 # Lights-out on lapdata's monotonic clock, and the Layer 1 clock the cars run on. The
 # anchor is set up so counter 0 lands exactly on GO, which makes at(t) below read as
@@ -69,7 +70,7 @@ def test_no_race_loaded_publishes_null_identities():
 
 def test_discarded_first_crossing_not_counted_as_lap():
     race = new_race(count_first_crossing=False)
-    race.on_lap(1, at(0.5))
+    assert race.on_lap(1, at(0.5)) == CROSSING_START_LINE
     driver = race.drivers[1]
     assert driver.laps_completed == 0
     assert driver.crossings == 1
@@ -89,7 +90,7 @@ def test_discarded_first_crossing_still_sets_last_crossing():
 
 def test_count_first_crossing_true_counts_lap_one():
     race = new_race(count_first_crossing=True)
-    race.on_lap(1, at(5.0))
+    assert race.on_lap(1, at(5.0)) == CROSSING_COUNTED
     driver = race.drivers[1]
     assert driver.laps_completed == 1
     assert driver.last_lap_time == pytest.approx(5.0)
@@ -275,7 +276,7 @@ def test_a_crossing_with_no_recorded_lights_out_does_not_fabricate_a_lap():
     race.resume()
     assert race.state == 'Running' and race.race_start is None
 
-    assert race.on_lap(1, at(5.0)) is True
+    assert race.on_lap(1, at(5.0)) == CROSSING_BASELINE
     assert race.drivers[1].laps_completed == 0
     assert race.race_fastest_lap == 999.999
 
@@ -289,14 +290,14 @@ def test_on_lap_ignored_when_not_running():
     race = new_race(count_first_crossing=True)
     race.pause()
     updated = race.on_lap(1, at(5.0))
-    assert updated is False
+    assert updated is None
     assert race.drivers[1].laps_completed == 0
 
 
 def test_on_lap_ignored_for_unknown_lane():
     race = new_race(count_first_crossing=True, n_drivers=2)
     updated = race.on_lap(5, at(5.0))
-    assert updated is False
+    assert updated is None
 
 
 def test_on_lap_ignored_once_driver_finished():
@@ -304,7 +305,7 @@ def test_on_lap_ignored_once_driver_finished():
     race.on_lap(1, at(5.0))
     assert race.drivers[1].finished is True
     updated = race.on_lap(1, at(10.0))
-    assert updated is False
+    assert updated is None
     assert race.drivers[1].laps_completed == 1
 
 
@@ -330,7 +331,7 @@ def test_laps_are_counted_during_yellow():
     race = new_race(count_first_crossing=True)
     race.yellow()
     updated = race.on_lap(1, at(5.0))
-    assert updated is True
+    assert updated == CROSSING_COUNTED
     assert race.drivers[1].laps_completed == 1
     assert race.drivers[1].last_lap_time == pytest.approx(5.0)
 
@@ -341,7 +342,7 @@ def test_laps_not_counted_once_paused():
     race.yellow()
     race.pause()
     updated = race.on_lap(1, at(5.0))
-    assert updated is False
+    assert updated is None
     assert race.drivers[1].laps_completed == 0
 
 
@@ -414,8 +415,9 @@ def test_lap_penalty_fires_once_after_grace_expiry():
     race.pause(power_pct=0, from_yellow_expiry=True)
     updated = race.on_lap(1, at(10.0))
 
-    assert updated is True
+    assert updated == CROSSING_PENALTY
     assert race.drivers[1].laps_completed == 0    # 1 - penalty(1)
+    assert race.drivers[1].lap_times == [pytest.approx(5.0)]   # the void crossing isn't a lap
     assert race.drivers[1].penalty_notice == {'type': 'lap', 'amount': 1}
 
 
@@ -427,21 +429,46 @@ def test_lap_penalty_does_not_fire_twice_in_the_same_incident():
     race.on_lap(1, at(10.0))
 
     updated = race.on_lap(1, at(15.0))
-    assert updated is False
+    assert updated is None
     assert race.drivers[1].laps_completed == 0    # unchanged by the second crossing
 
 
-def test_lap_penalty_floors_at_zero_laps():
-    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=5)
+def test_a_lap_penalty_before_any_laps_is_carried_forward():
+    """⚠️ Not floored at 0 (Greg, 2026-10-25): the penalty is still owed, and the
+    leaderboard shows it as laps remaining above the race length."""
+    race = new_race(target_laps=3, count_first_crossing=True, yellow_lap_penalty_laps=5)
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     race.on_lap(1, at(5.0))
-    assert race.drivers[1].laps_completed == 0
+    assert race.drivers[1].laps_completed == -5
+    by_lane = {d['lane']: d for d in race.to_dict()['drivers']}
+    assert by_lane[1]['laps_remaining'] == 8
 
 
-def test_a_lap_after_a_penalty_to_zero_is_not_timed_from_lights_out_again():
-    """The penalty floors laps_completed to 0, but the driver has already done a real
-    lap 1 — the next lap is a plain interval from the previous crossing (#83)."""
+def test_a_carried_forward_penalty_is_driven_off_before_the_driver_finishes():
+    """A driver finishes on the net target, so a penalty charged at 0 laps costs a real
+    lap at the end — the floor used to void it, and the leaderboard then showed a win
+    that results took away (#86)."""
+    race = new_race(target_laps=3, count_first_crossing=True, n_drivers=1,
+                    yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(2.0))        # penalty crossing, nothing to take yet
+    race.resume()
+    for t in (7.0, 12.0, 17.0):
+        race.on_lap(1, at(t))
+    driver = race.drivers[1]
+    assert len(driver.lap_times) == 3 and driver.laps_completed == 2
+    assert not driver.finished
+
+    race.on_lap(1, at(22.0))
+    assert driver.laps_completed == 3 and driver.finished
+
+
+def test_the_lap_after_a_penalty_crossing_is_timed_from_the_last_counted_crossing():
+    """A penalty crossing is void for timing too (Greg, 2026-10-25): the next lap runs
+    from the last counted crossing, across the penalty crossing — a lap of at least two
+    trips round the track, so it can never take fastest lap."""
     race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
     race.on_lap(1, at(5.0))        # lap 1, from lights-out
     race.yellow()
@@ -453,9 +480,38 @@ def test_a_lap_after_a_penalty_to_zero_is_not_timed_from_lights_out_again():
     race.on_lap(1, at(16.0))
     driver = race.drivers[1]
     assert driver.last_lap_timing == TIMING_COUNTER
-    assert driver.last_lap_time == pytest.approx(6.0)   # from the penalty crossing, not 16.0
+    assert driver.last_lap_time == pytest.approx(11.0)   # from 5.0, not the penalty crossing
     assert driver.laps_completed == 1
     assert len(driver.lap_times) == 2
+
+
+def test_a_penalty_crossing_does_not_move_the_drivers_position_crossing():
+    race = new_race(count_first_crossing=True, yellow_lap_penalty_laps=1)
+    counted = at(5.0)
+    race.on_lap(1, counted)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    race.on_lap(1, at(10.0))
+    assert race.drivers[1].last_crossing == counted
+
+
+@pytest.mark.parametrize('count_first_crossing', [True, False])
+def test_a_penalty_as_the_first_crossing_leaves_lap_1_timed_from_lights_out(count_first_crossing):
+    """Greg, 2026-10-25: if the penalty crossing was the driver's first, their first
+    counted lap is timed from lights-out. With the grid behind the line the penalty
+    crossing was also the start-line part-lap, so the next crossing ends lap 1 — it must
+    not be discarded as a second start-line crossing."""
+    race = new_race(count_first_crossing=count_first_crossing, yellow_lap_penalty_laps=1)
+    race.yellow()
+    race.pause(power_pct=0, from_yellow_expiry=True)
+    assert race.on_lap(1, at(2.0)) == CROSSING_PENALTY
+    race.resume()
+
+    assert race.on_lap(1, at(9.0)) == CROSSING_COUNTED
+    driver = race.drivers[1]
+    assert driver.last_lap_timing == TIMING_FROM_GO
+    assert driver.last_lap_time == pytest.approx(9.0)
+    assert driver.laps_completed == 0     # 1 counted - 1 penalty
 
 
 def test_lap_penalty_resets_on_a_new_yellow_flag_incident():
@@ -463,17 +519,17 @@ def test_lap_penalty_resets_on_a_new_yellow_flag_incident():
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     race.on_lap(1, at(5.0))
-    assert race.drivers[1].laps_completed == 0
+    assert race.drivers[1].laps_completed == -1    # carried forward
 
     race.resume()
     race.on_lap(1, at(10.0))   # a real lap
-    assert race.drivers[1].laps_completed == 1
+    assert race.drivers[1].laps_completed == 0
 
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     updated = race.on_lap(1, at(15.0))
-    assert updated is True
-    assert race.drivers[1].laps_completed == 0    # penalized again, a fresh incident
+    assert updated == CROSSING_PENALTY
+    assert race.drivers[1].laps_completed == -1    # penalized again, a fresh incident
 
 
 def test_lap_penalty_never_fires_for_a_manual_pause():
@@ -483,7 +539,7 @@ def test_lap_penalty_never_fires_for_a_manual_pause():
     race.on_lap(1, at(5.0))
     race.pause()   # immediate manual pause, not from a yellow-grace expiry
     updated = race.on_lap(1, at(10.0))
-    assert updated is False
+    assert updated is None
     assert race.drivers[1].laps_completed == 1
 
 
@@ -495,7 +551,7 @@ def test_lap_penalty_never_fires_for_fastest_lap_sessions():
     race.yellow()
     race.pause(power_pct=0, from_yellow_expiry=True)
     updated = race.on_lap(1, at(5.0))
-    assert updated is False
+    assert updated is None
 
 
 def test_penalty_is_queued_for_the_api_and_drained_once():
@@ -714,6 +770,21 @@ def test_recovery_keeps_lap_penalties_already_applied():
     race = recovered_race({1: [5.0, 4.8, 4.9], 2: [5.2]}, lap_penalties={1: 1})
     assert race.drivers[1].laps_completed == 2
     assert race.drivers[1].lap_times == [5.0, 4.8, 4.9]
+
+
+def test_recovery_agrees_with_the_live_count_when_a_penalty_came_before_any_laps():
+    """The case the old floor got wrong: live voided the penalty, recovery charged it."""
+    live = new_race(target_laps=5, count_first_crossing=True, n_drivers=1,
+                    yellow_lap_penalty_laps=1)
+    live.yellow()
+    live.pause(power_pct=0, from_yellow_expiry=True)
+    live.on_lap(1, at(2.0))
+    live.resume()
+    for t in (7.0, 12.0, 17.0):
+        live.on_lap(1, at(t))
+
+    race = recovered_race({1: live.drivers[1].lap_times}, lap_penalties={1: 1}, n_drivers=1)
+    assert race.drivers[1].laps_completed == live.drivers[1].laps_completed == 2
 
 
 def test_recovery_marks_drivers_who_took_the_chequered_flag_below_target():

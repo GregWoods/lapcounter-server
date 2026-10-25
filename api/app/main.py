@@ -298,7 +298,7 @@ def get_running_race_recovery(dbsession: SessionDep):
     rows = dbsession.exec(
         select(DriverRace.driver_id, DriverLap.lap_time)
         .join(DriverLap, DriverLap.driver_race_id == DriverRace.id)
-        .where(DriverRace.race_id == running.id)
+        .where(DriverRace.race_id == running.id, DriverLap.outcome == 'counted')
         .order_by(DriverLap.id)
     ).all()
     laps: dict[str, list[float]] = {}
@@ -791,7 +791,8 @@ def build_session_results(race_session, dbsession):
     if race_session.session_type == 'FastestLap':
         all_dr_ids = [dr.id for dr in all_driver_races]
         all_laps = dbsession.exec(
-            select(DriverLap).where(DriverLap.driver_race_id.in_(all_dr_ids))
+            select(DriverLap).where(DriverLap.driver_race_id.in_(all_dr_ids),
+                                    DriverLap.outcome == 'counted')
         ).all()
 
         best_lap_per_dr: dict = {}
