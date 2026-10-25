@@ -133,11 +133,44 @@ def on_driver_lap(payload: dict):
         _reset_conn()
 
 
+def on_driver_penalty(payload: dict):
+    """Persist a penalty lapdata's race manager already applied live (#88), so
+    build_session_results() can fold it into final standings. race_penalties is the one
+    penalty record: the void crossing that incurred it is in driver_laps, but nothing
+    reads penalties from there. The crossing's clock/counter_ms are published for
+    traceability and not stored (yet)."""
+    race_id = payload.get('race_id')
+    driver_id = payload.get('driver_id')
+    penalty_type = payload.get('penalty_type')
+    amount = payload.get('amount')
+    reason = payload.get('reason')
+    if None in (race_id, driver_id, penalty_type, amount, reason):
+        log.warning("Ignoring driver_penalty with missing fields: %s", payload)
+        return
+
+    try:
+        conn = get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO race_penalties (race_id, driver_id, penalty_type, amount, reason, "
+                "created_at) VALUES (%s, %s, %s, %s, %s, NOW())",
+                (race_id, driver_id, penalty_type, amount, reason)
+            )
+        conn.commit()
+        log.info("Race %s driver %s: %s penalty of %s (%s) recorded",
+                 race_id, driver_id, penalty_type, amount, reason)
+    except Exception as e:
+        log.error("Error persisting penalty: %s", e)
+        _reset_conn()
+
+
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
         if msg.topic == 'driver_lap':
             on_driver_lap(payload)
+        elif msg.topic == 'driver_penalty':
+            on_driver_penalty(payload)
     except json.JSONDecodeError:
         log.warning("Could not parse MQTT message: %s", msg.payload)
     except Exception as e:
@@ -147,7 +180,8 @@ def on_message(client, userdata, msg):
 def on_connect(client, userdata, flags, reason_code, properties):
     log.info("Connected to MQTT broker (rc=%s)", reason_code)
     client.subscribe('driver_lap')
-    log.info("Subscribed to 'driver_lap'")
+    client.subscribe('driver_penalty')
+    log.info("Subscribed to 'driver_lap' and 'driver_penalty'")
 
 
 def main():

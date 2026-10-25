@@ -557,18 +557,6 @@ def finish_race(race_id: int, dbsession: SessionDep):
     return {"ok": True}
 
 
-@app.post("/races/{race_id}/drivers/{driver_id}/penalty")
-def add_race_penalty(race_id: int, driver_id: int, penalty: RacePenaltyCreate, dbsession: SessionDep):
-    """Records a penalty lapdata's race manager already applied live (currently only a
-    yellow-flag lap penalty) so it survives past the race and build_session_results()
-    can fold it into final standings. Fire-and-forget from lapdata, same pattern as
-    /races/{id}/start and /finish."""
-    row = RacePenalty(race_id=race_id, driver_id=driver_id, **penalty.model_dump())
-    dbsession.add(row)
-    dbsession.commit()
-    return {"ok": True}
-
-
 @app.get("/drivers/nextrace/")
 def get_drivers_for_next_race(dbsession: SessionDep):
     active_session = get_active_session(dbsession)

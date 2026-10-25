@@ -114,9 +114,9 @@ class RaceManager:
         # opposed to an immediate manual pause — since only that case is eligible for
         # the lap penalty above.
         self._paused_from_yellow_expiry: bool = False
-        # Plain dicts describing a penalty just applied, drained and POSTed to the API
-        # by timestamps_to_lapdata's publish_race_state() — kept out of this pure/DB-free
-        # class the same way race.start()/finish() POSTs are handled one layer up.
+        # Plain dicts describing a penalty just applied, drained and published as
+        # `driver_penalty` by timestamps_to_lapdata's publish_pending_penalties() (#88) —
+        # kept out of this pure, I/O-free class.
         self.pending_penalty_records: list = []
         self.drivers: Dict[int, DriverState] = {}  # keyed by lane number
         self.session_type: str = 'Points'
@@ -402,11 +402,15 @@ class RaceManager:
             return 0.0
         return self.race_start.since_go(driver.last_crossing, self.anchors)[0]
 
-    def _apply_yellow_lap_penalty(self, driver: DriverState):
+    def _apply_yellow_lap_penalty(self, driver: DriverState, crossing: Crossing):
         """GPIO-only substitute deterrent: it can't cut power, so a yellow-flag crossing
         costs the driver laps instead — once per incident, however often they cross.
         Points sessions only — a FastestLap lap made through a yellow flag is already
-        effectively self-penalizing, since it will essentially never be a personal best."""
+        effectively self-penalizing, since it will essentially never be a personal best.
+
+        The record names the crossing that incurred it (clock + counter_ms, the same pair
+        its driver_laps row carries), for traceability only: the penalty is its own fact
+        and is never re-derived from the void crossing (#88)."""
         if (self.session_type == 'FastestLap' or self.yellow_lap_penalty_laps <= 0
                 or driver.yellow_penalty_applied):
             return
@@ -416,6 +420,7 @@ class RaceManager:
         self.pending_penalty_records.append({
             'driver_id': driver.driver_id, 'penalty_type': 'lap',
             'amount': self.yellow_lap_penalty_laps, 'reason': 'yellow_flag_grace_expired',
+            'clock': crossing.clock, 'counter_ms': crossing.counter_ms,
         })
         logger.info(f"Lane {driver.lane} ({driver.driver_name}) crossed after the yellow-flag "
                     f"grace period — lap penalty applied, now {driver.laps_completed} laps")
@@ -451,7 +456,7 @@ class RaceManager:
             driver.crossings += 1
             if driver.last_crossing is None:
                 driver.last_crossing = crossing
-            self._apply_yellow_lap_penalty(driver)
+            self._apply_yellow_lap_penalty(driver, crossing)
             return CROSSING_YELLOW_FLAG
 
         if self.state not in self.COUNTING_STATES:

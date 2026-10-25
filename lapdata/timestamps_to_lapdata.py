@@ -233,6 +233,9 @@ def handle_car_timestamp(data: dict, arrival: float):
                 'crossed_at': crossing_unix,
             }))
 
+        # After the driver_lap, so the void crossing a penalty names is recorded first.
+        publish_pending_penalties()
+
         if race.state == 'Finished':
             logger.info("Race finished — waiting for next race_control start")
 
@@ -650,6 +653,18 @@ def _post_api(path: str, json_body: dict | None = None):
     threading.Thread(target=_do, daemon=True).start()
 
 
+def publish_pending_penalties():
+    """Publish each penalty race_manager applied since the last call as its own
+    `driver_penalty` event (#88), currently only a yellow-flag lap penalty. dbwriter
+    writes it to race_penalties, the one penalty record; the leaderboard will announce it
+    (#89). Its own topic, not a crossing outcome: a void crossing may cost 0 or more laps,
+    and a future penalty (a jump start, an operator's) may have no crossing at all."""
+    for record in race.pending_penalty_records:
+        client.publish('driver_penalty', json.dumps({'race_id': race.race_id, **record}))
+        logger.info(f"driver_penalty: race={race.race_id} {record}")
+    race.pending_penalty_records = []
+
+
 def publish_race_state():
     global _last_posted_state
     state_dict = race.to_dict()
@@ -658,13 +673,6 @@ def publish_race_state():
     state_dict['api_reachable'] = _api_reachable
     state_dict['capabilities'] = _layer1_capabilities
     client.publish('race_state', json.dumps(state_dict))
-
-    # Persist any penalty race_manager applied since the last publish (currently only a
-    # yellow-flag lap penalty) — kept out of race_manager.py, which is pure/DB-free, the
-    # same way /start and /finish are POSTed from here rather than from RaceManager.
-    for record in race.pending_penalty_records:
-        _post_api(f"/races/{race.race_id}/drivers/{record['driver_id']}/penalty", record)
-    race.pending_penalty_records = []
 
     # Persist race-lifecycle transitions via the API (race Running/Finished, session
     # InProgress, and the automatic session-end). Starting the next race/session stays
