@@ -55,8 +55,11 @@ api/
 │   ├── responsemodel.py  # Response-only models: DriverWithLane, NextRaceSetup
 │   ├── next_race.py      # Lane assignment algorithm + SQL query for driver data
 │   ├── settings.py       # Pydantic Settings (reads env vars)
-│   ├── sampledata.py     # Drop/create tables + seed sample data script
+│   ├── migrate.py        # The only schema builder: applies ../database/migrations/ (the `migrate` service)
+│   ├── sampledata.py     # Loads optional demo data onto a migrated database
 │   ├── test_next_race.py # pytest tests for assign_drivers_to_lanes()
+│   ├── test_migrate.py   # pytest tests for the migration planner (no DB)
+│   ├── test_schema_matches_model.py # model.py vs a migrated scratch DB (skipped without SCHEMA_TEST_DATABASE_URL)
 │   ├── requirements.txt  # Pinned dependencies (installed in Docker build)
 │   └── media/cars/       # Car images served as static files at /media/cars/
 ├── Dockerfile.dev        # Dev image: `fastapi dev` with hot reload
@@ -163,13 +166,17 @@ Factory methods:
 - `lane_assignments: list[DriverWithLane]` — always 6 entries (one per lane), some may be blank
 - `other_drivers: list[DriverWithLane]` — drivers not racing, sorted by completed_races
 
+## Schema (`migrate.py`)
+
+The API builds no tables — not at startup, not anywhere (#84). `migrate.py` is the only schema builder: it applies `database/migrations/NNN-*.sql` in order, records each with its checksum in `schema_migrations`, and refuses an edited applied migration, an out-of-order one, or a database built by the old `schema.sql`/`create_all` builders. The `migrate` compose service runs it on every stack start, and this container waits for it. See the top-level CLAUDE.md "Database". In dev, `database/` is mounted read-only beside `app/`; the prod image copies `database/migrations/` in via the named build context in `build-and-push-api.ps1`.
+
 ## Seeding Data (`sampledata.py`)
 
-Run directly to drop all tables, recreate them from SQLModel metadata, and insert sample data:
+Run directly to insert sample data into an already-migrated database:
 ```
 python sampledata.py
 ```
-Requires env vars to be set (use `setenv.ps1` or run inside Docker container). The row data itself is **not** duplicated here — it creates the schema, then executes `database/sampledata.sql` verbatim as one script (via a raw DBAPI/psycopg2 connection, since that file's FastestLap-session generator is a `DO $$ ... $$` PL/pgSQL block whose embedded semicolons rule out naive statement-splitting). That file also fixes up every table's id sequence itself, at the end. Locating it works both from a full repo checkout (this file is two levels below the repo root) and inside the api Docker container, where `compose.dev.yaml` mounts `database/` read-only alongside `app/` for exactly this — see `_find_repo_file()`.
+Requires env vars to be set (use `setenv.ps1` or run inside Docker container). The row data itself is **not** duplicated here — it executes `database/sampledata.sql` verbatim as one script (via a raw DBAPI/psycopg2 connection, since that file's FastestLap-session generator is a `DO $$ ... $$` PL/pgSQL block whose embedded semicolons rule out naive statement-splitting). That file also fixes up every table's id sequence itself, at the end. It finds the file beside the migrations folder (`migrations_folder()` in `migrate.py`), which works from a full repo checkout and inside the api container.
 
 It finishes with `add_race_queue()`, the one thing that can't be plain SQL: it generates session 2's upcoming races through the same `build_session_schedule()`/`save_session_schedule()` path as `POST /sessions/{id}/regenerate-races`. Without it a fresh database has an InProgress session with **no** queue, so `/races/pending/` 404s and NextRace looks like the session has ended. `database/sampledata.sql` cannot do this (the schedule is balanced in Python), so the plain `psql < database/sampledata.sql` path still needs the regenerate call.
 

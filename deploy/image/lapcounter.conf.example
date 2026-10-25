@@ -27,7 +27,7 @@ DB_PASSWORD=lap
 
 # --- Sample data --------------------------------------------------------------
 # yes = seed drivers/meetings/sessions so the UI has something to show.
-# no  = empty database.
+# no  = no meetings or drivers (the lanes and car catalog are always there).
 SEED_SAMPLE_DATA=yes
 
 

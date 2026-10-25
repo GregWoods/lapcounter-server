@@ -426,7 +426,11 @@ class RaceManager:
         # onto ours, which is what layer1_clock (the heartbeat) exists for. Lap 2 onwards
         # is the interval from the previous counted crossing: a plain counter subtraction,
         # exact and anchor-free.
-        if driver.laps_completed == 0 and self.race_start is not None:
+        #
+        # "No laps yet" is lap_times, not laps_completed: a yellow-flag lap penalty can
+        # floor laps_completed back to 0 after real laps, and the next lap must still be
+        # timed from the previous crossing, not from lights-out again.
+        if not driver.lap_times and self.race_start is not None:
             lap_time, timing = self.race_start.since_go(crossing, self.anchors)
         elif driver.last_crossing is not None:
             lap_time, timing = interval_s(driver.last_crossing, crossing, self.anchors)

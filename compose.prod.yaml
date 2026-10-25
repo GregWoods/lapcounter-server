@@ -90,6 +90,26 @@ services:
     volumes:
       - car_images:/usr/src/app/media/cars
     restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+
+  # The only thing that builds the schema (#84); see deploy/compose.race.yaml.
+  migrate:
+    container_name: migrate
+    image: gregkwoods/lapcounter-server-api:latest
+    pull_policy: never
+    command: ["python", "/usr/src/app/migrate.py"]
+    environment:
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_HOST=database
+      - DB_PORT=5432
+    depends_on:
+      - database
+    restart: "no"
 
 
   database:

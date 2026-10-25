@@ -1,8 +1,6 @@
 -- Mandatory reference data: the car catalog (manufacturers, categories, models,
--- tyres, chip hardware/firmware) and the 6 physical track lanes.
---
--- Loaded by python init_db.py (or psql -f database/reference.sql) on a fresh
--- database. Idempotent: every row uses ON CONFLICT DO NOTHING.
+-- tyres, chip hardware/firmware) and the 6 physical track lanes. A migration, so every
+-- database is usable as soon as migrate.py has run. Never edit once applied (#84).
 INSERT INTO car_manufacturers (id, name) VALUES (1, 'Scalextric') ON CONFLICT (id) DO NOTHING;
 INSERT INTO car_manufacturers (id, name) VALUES (2, 'Policar') ON CONFLICT (id) DO NOTHING;
 

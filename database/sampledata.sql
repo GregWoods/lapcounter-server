@@ -2,7 +2,8 @@
 -- finished races and their laps. Load on top of an initialized schema for
 -- development/demo only - NOT required for the system to run.
 --
--- Loaded by python sampledata.py (or psql -f database/sampledata.sql).
+-- Loaded by python sampledata.py (or psql -f database/sampledata.sql), onto a database
+-- the migrate service has already built (#84).
 INSERT INTO cars (id, name, car_model_id, tyre_id, magnet, modifications_notes, weight_added, chip_hardware_id, chip_firmware_id, picture, rfid) 
     VALUES (1, 'Porsche Red/Black', 1, 1, false, '', 20.0, 1, 1, 'GT_Porsche_White.jpg', '')
     ON CONFLICT (id) DO NOTHING;
@@ -60,10 +61,13 @@ INSERT INTO drivers (id, first_name, last_name, mobile_number, picture, rfid, si
     VALUES (13, 'Olivia', '', '', '', '', false) ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO meetings (id, name, date, venue)
-    VALUES (1, 'Junior Championship', '2024-06-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
-INSERT INTO meetings (id, name, date, venue)
-    VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage') ON CONFLICT (id) DO NOTHING;
+-- The two past meetings are ended, so meeting 3 (with session 2 in progress) is the
+-- active one: get_active_meeting() picks the earliest unended meeting. Until #84 this
+-- came from a one-off backfill in a migration, so a fresh build had meeting 1 active.
+INSERT INTO meetings (id, name, date, venue, ended_at)
+    VALUES (1, 'Junior Championship', '2024-06-01', 'Village Hall', '2024-06-01 18:00+00') ON CONFLICT (id) DO NOTHING;
+INSERT INTO meetings (id, name, date, venue, ended_at)
+    VALUES (2, 'Garage Raceway', '2024-08-01', 'My Garage', '2024-08-01 18:00+00') ON CONFLICT (id) DO NOTHING;
 INSERT INTO meetings (id, name, date, venue)
     VALUES (3, 'Village Hall Grand Prix', '2030-01-01', 'Village Hall') ON CONFLICT (id) DO NOTHING;
 INSERT INTO meetings (id, name, date, venue)

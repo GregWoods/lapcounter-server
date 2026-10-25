@@ -196,10 +196,11 @@ def handle_car_timestamp(data: dict, arrival: float):
     }))
     logger.info(f"lap: lane={lane} counter={crossing.counter_ms}ms clock={crossing.clock}")
 
-    # Capture lap count before processing so we can tell a real counted lap from a
-    # discarded start-line crossing (both make on_lap return True).
+    # Capture the real-lap count before processing so we can tell a counted lap from a
+    # discarded start-line crossing or a yellow-flag penalty crossing (all make on_lap
+    # return True). lap_times, not laps_completed: a penalty moves laps_completed down.
     driver_before = race.drivers.get(lane)
-    prev_laps = driver_before.laps_completed if driver_before else 0
+    prev_laps = len(driver_before.lap_times) if driver_before else 0
 
     if race.on_lap(lane, crossing):
         publish_race_state()
@@ -209,12 +210,15 @@ def handle_car_timestamp(data: dict, arrival: float):
         # idle/non-running crossings and the discarded start crossing), so the DB
         # writer persists it verbatim without re-deriving any race logic.
         d = race.drivers.get(lane)
-        if d and d.laps_completed > prev_laps:
+        if d and len(d.lap_times) > prev_laps:
             client.publish('driver_lap', json.dumps({
                 'race_id': race.race_id,
                 'driver_id': d.driver_id,
                 'lane': lane,
-                'lap_number': d.laps_completed,
+                # The raw ordinal of this lap, before any lap penalty. Penalties are
+                # persisted separately (race_penalties) and subtracted only when results
+                # are built — laps_completed here would subtract them twice (#83).
+                'lap_number': len(d.lap_times),
                 'lap_time': d.lap_times[-1],
                 # Provenance: which clock timed this lap, where on it the crossing fell,
                 # and how the interval was derived ('counter' is exact; 'from_go' and
