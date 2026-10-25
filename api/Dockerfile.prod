@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.12.8-bookworm
 #FROM --platform=$BUILDPLATFORM python:3.12.8-bookworm
 
@@ -16,6 +17,9 @@ COPY ./app/requirements.txt /usr/src/app/requirements.txt
 
 RUN pip install -r requirements.txt
 COPY ./app/. /usr/src/app/
+# The schema, for the migrate service (`python migrate.py`, #84). Comes from the named
+# build context `database` (see build-and-push-api.ps1); migrate.py looks for it beside app/.
+COPY --from=database migrations /usr/src/database/migrations
 
 CMD ["fastapi", "run", "/usr/src/app/main.py"]
 

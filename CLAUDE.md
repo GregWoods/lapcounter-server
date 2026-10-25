@@ -225,8 +225,8 @@ The throttle-driven features above (fuel, a general per-car power vector, thrott
 
 1. `scp -o ControlMaster=no -o ControlPath=none -o BatchMode=yes <file> 10.0.1.10:/root/lapcounter-server/<same path>` (the `-o` overrides are needed because Windows OpenSSH can't multiplex).
 2. Compare `sha256sum` local vs remote.
-3. New file in `database/migrations/`? Copying doesn't apply it — run it with `docker exec -i database psql -U lap -d lapcounter_server` on the LXC.
-4. Touched anything under `lapdata/`? Restart it there (`docker compose -f compose.dev.yaml restart lapdata`); it doesn't hot-reload. `api` and `react` do.
+3. New file in `database/migrations/`? Copying doesn't apply it — run `docker start -a migrate` on the LXC (see "Changing the schema"). Deleted or renamed a file? Remove the old one on the LXC too; its checkout is on `main` and isn't synced by git.
+4. Touched anything under `lapdata/`, `dbwriter/` or `ble/`? Restart that container there (`docker restart lapdata`, etc.); none of them hot-reload. `api` and `react` do. ⚠️ The LXC has the old **`docker-compose`** (1.29), not the `docker compose` plugin, so compose commands there are `docker-compose -f compose.dev.yaml ...`.
 
 The app is viewed at http://10.0.1.10:8088. The local Docker Desktop stack is not used.
 
@@ -264,7 +264,7 @@ docker compose -f compose.dev.yaml up --build
 cd api && ./.venv/Scripts/activate
 cd app && fastapi dev main.py
 ```
-Requires PostgreSQL running on localhost:5432 (the Docker `database` container works).
+Requires PostgreSQL running on localhost:5432 (the Docker `database` container works), already migrated — the API builds no tables itself, so run `python migrate.py` (same env vars) first if the stack's `migrate` service hasn't.
 
 ### Run Python tests
 A root `pytest.ini` sets `testpaths = api/app, lapdata, ble`, so one command runs every
@@ -313,7 +313,8 @@ Builds multi-platform images (amd64, arm/v7, arm64) and pushes to DockerHub (`gr
 - `api/app/responsemodel.py` - Pydantic response models (`DriverWithLane`, `NextRaceSetup`)
 - `api/app/next_race.py` - Lane assignment algorithm + helpers for pending race persistence
 - `api/app/settings.py` - Pydantic Settings (env vars from docker-compose)
-- `api/app/sampledata.py` - Script to drop/recreate all tables and seed sample data (run directly inside the container)
+- `api/app/migrate.py` - The only schema builder: applies `database/migrations/` (run by the `migrate` compose service)
+- `api/app/sampledata.py` - Loads optional demo data onto a migrated database (run directly inside the container)
 
 ## Key Frontend Files
 
@@ -350,29 +351,24 @@ This function is deliberately DB-free for testability. The SQL query in `get_dri
 
 PostgreSQL with SQLModel ORM (no relationships defined yet, uses raw SQL for complex queries).
 - Dev credentials: user=`lap`, password=`lap`, db=`lapcounter_server`, port=5432
-- Schema lives in `database/schema.sql` — kept in sync with `api/app/model.py`
-- Sample data in `database/sampledata.sql`
+- **The schema is `database/migrations/`, and nothing else builds it** (#84). `api/app/migrate.py` applies every `NNN-*.sql` file not yet recorded in `schema_migrations`, in order, each in its own transaction, under an advisory lock. It runs as the one-shot **`migrate`** compose service on every stack start; `api` and `dbwriter` `depends_on` it with `service_completed_successfully` (dbwriter too, because it writes to Postgres directly). A failed migration stops the stack coming up — `docker logs migrate` is the first place to look when `api` won't start.
+- ⚠️ **There used to be three builders, and they drifted**: `schema.sql`, `init_db.py`'s `create_all`, and a `create_all` in the API's own startup that quietly built any missing table on every start. A `create_all`-built `driver_laps.created_at` had no DB default, so dbwriter's raw INSERT failed and **every lap was lost** while the leaderboard looked normal. Don't reintroduce `create_all`, or a hand-run schema file, anywhere.
+- `model.py` describes the tables for the ORM only. `api/app/test_schema_matches_model.py` checks it against a migrated **scratch** database (skipped unless `SCHEMA_TEST_DATABASE_URL` is set; the api image has no pytest, so `pip install pytest` in the container first).
+- `001-baseline.sql` is the whole schema as of #84; `002-reference-data.sql` is the lanes and car catalog, so every database is usable straight away. Sample data is separate and optional: `database/sampledata.sql`.
 - Key tables: `drivers`, `meetings`, `meeting_drivers`, `sessions`, `races`, `driver_races`, `driver_laps`, `lanes`, `cars`, `race_withdrawals`, `session_drivers`, `race_penalties`
 
+### Changing the schema
+
+Add a new numbered file to `database/migrations/` (`003-...`, `004-...`) and update `model.py` to match; `migrate` applies it on the next stack start (on the LXC: `docker-compose -f compose.dev.yaml up -d`, or `docker start -a migrate`). ⚠️ **Never edit a migration that has been applied** — its checksum is recorded, and a mismatch fails `migrate`. A migration numbered below one already applied fails too. Keeping `model.py` in step matters: SQLModel names every mapped column explicitly in its SELECTs, so one missing column takes out *all* of that table's endpoints with `UndefinedColumn`.
+
 ### Rebuild the database
+There's no real data anywhere yet, so a rebuild is the normal way to start over:
 ```
-docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
-docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
+docker exec database psql -U lap -d lapcounter_server -c "DROP SCHEMA public CASCADE" -c "CREATE SCHEMA public"
+docker-compose -f compose.dev.yaml up -d      # migrate rebuilds it (stop lapdata/dbwriter/api first if they hold locks)
+docker exec api python sampledata.py          # optional demo data, plus session 2's race queue
 ```
-Alternatively, run `python sampledata.py` inside the `api` container (drops all tables, recreates from `model.py`, then executes `database/sampledata.sql` itself — see #33 below — before generating session 2's race queue).
-
-### Upgrading a database that holds real data
-
-Both rebuild paths above **DROP everything**, so neither is how you add a column to the
-race Pi's live meeting data. Numbered, re-runnable scripts in `database/migrations/` do
-that instead:
-```
-docker exec -i database psql -U lap -d lapcounter_server < database/migrations/001-races-started-at.sql
-```
-Add one whenever `model.py` gains a column, and keep `schema.sql` in step for fresh
-builds. This matters more than it looks: SQLModel names every mapped column explicitly in
-its SELECTs, so one missing column takes out *all* of that table's endpoints with
-`UndefinedColumn` — not just the feature that added it.
+`sampledata.py` runs `database/sampledata.sql` and then generates session 2's queue in Python (see #33 below); loading the `.sql` alone with `psql` leaves no queue. A database built by the old builders (tables but no `schema_migrations`) is refused by `migrate` with these same instructions.
 
 ### Key schema notes
 - `meeting_cars.lane` — nullable INT, unique per `(meeting_id, lane)`. Source of truth for car-to-lane assignment when building a race lineup.
@@ -382,8 +378,8 @@ its SELECTs, so one missing column takes out *all* of that table's endpoints wit
 - **A session owns an ordered queue of `NotStarted` races.** The whole session is pre-populated when it starts (`POST /sessions/start-next`) so every active driver is scheduled for exactly `races_per_driver` balanced races. The earliest queued race (by `race_number`) is the *next/current* race; the rest are the lookahead the NextRace page previews. (This replaces the old "at most one `NotStarted` race" rule.) Reads never create races; generation happens only on `start-next` and `regenerate-races`. A `NotStarted` race never outlives a `Finished` session — `finish_session` / auto-end delete the queue.
 - `MeetingDriver.driver_name` is the computed display name (usually `first_name`, but includes last initial when two drivers share a first name). Always use `driver_name` in the UI, not `Driver.first_name`.
 - **`DriverRace.laps_completed` / `last_lap_time` / `fastest_lap_time` are populated by dbwriter on each counted lap, but can't be trusted as complete** — they're NULL on sample data and on races with no counted laps, and a `driver_lap` message missed while dbwriter was down is never recovered. For per-driver lap time analysis, always use `DriverLap` records joined through `driver_race_id`. `build_session_results()` already does this for FastestLap sessions. ⚠️ `laps_completed` here is **raw** — counted laps with no lap penalty deducted, the same as the `driver_laps` row count — whereas `race_state.drivers[].laps_completed` is net. The net figure is `laps_completed − race_penalties` (`effective_laps_completed()`), computed only in `build_session_results()`; the recovery endpoint does the same from `driver_laps`. Same name, two meanings — don't mix them (#83).
-- `race_withdrawals` `(race_id, driver_id)` — one row per operator removal (NextRace ×). Deleted when the driver is re-added or when a `NotStarted` race is discarded (`remove_pending_races`), so only withdrawals on `Finished` races count as skips. **Schema drop order:** it (and `session_drivers`) must be dropped **before** `races`/`sessions`/`drivers` in `schema.sql` or the `DROP TABLE`s fail on the FK dependency.
-- `race_penalties` `(race_id, driver_id, penalty_type, amount, reason, created_at)` — a penalty `race_manager.py` already applied live (currently only `penalty_type='lap'`, the yellow-flag substitute on GPIO), persisted via `POST /races/{id}/drivers/{id}/penalty` so `build_session_results()` can fold it into final Points-session positions instead of only affecting the live `race_state` the leaderboard shows mid-race. Same drop-order rule as `race_withdrawals`.
+- `race_withdrawals` `(race_id, driver_id)` — one row per operator removal (NextRace ×). Deleted when the driver is re-added or when a `NotStarted` race is discarded (`remove_pending_races`), so only withdrawals on `Finished` races count as skips.
+- `race_penalties` `(race_id, driver_id, penalty_type, amount, reason, created_at)` — a penalty `race_manager.py` already applied live (currently only `penalty_type='lap'`, the yellow-flag substitute on GPIO), persisted via `POST /races/{id}/drivers/{id}/penalty` so `build_session_results()` can fold it into final Points-session positions instead of only affecting the live `race_state` the leaderboard shows mid-race.
 - `session_drivers` `(session_id, driver_id, disqualified)` — per-session, per-driver state; currently just the `disqualified` flag. See "Sit-out tracking & disqualification".
 - `races.started_at` — the lights-out ("go go go") instant, nullable. Race timing has always been derived from this moment, not the first car crossing (`race_manager.py`'s `start()` sets `race_start_time`; lap 1 is timed from it) — this column just persists what lapdata already computed. Set via `POST /races/{race_id}/start`'s optional `started_at` body field, which lapdata populates from `race.race_start_time` (a precise in-process timestamp) rather than letting the API stamp its own `NOW()`, since that POST is fire-and-forget from a background thread and would be measurably later than the real go instant.
 

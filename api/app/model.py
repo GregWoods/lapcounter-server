@@ -79,8 +79,10 @@ class Meeting(SQLModel, table=True):
     date: date
     venue: Optional[str]
     # Set when the operator ends the meeting. An unended meeting stays active whatever its
-    # date says; see get_active_meeting().
-    ended_at: Optional[datetime] = Field(default=None)
+    # date says; see get_active_meeting(). TIMESTAMPTZ in the schema, so tz-aware here.
+    ended_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     # Unguessable id for guest-facing URLs (/m/<public_id>/...); see migration 007.
     public_id: uuid.UUID = Field(
         default_factory=uuid.uuid4,
@@ -132,8 +134,7 @@ class Race(SQLModel, table=True):
     state: str          # 'NotStarted', 'Running', 'Finished'
     # Lights-out instant, from lapdata's race_start_time. Written tz-aware (UTC), so it
     # needs an explicit sa_column: a bare `Optional[datetime]` maps to TIMESTAMP WITHOUT
-    # TIME ZONE, and a DB built by sampledata.py's create_all would then silently drop
-    # the offset that schema.sql's TIMESTAMPTZ preserves.
+    # TIME ZONE, which doesn't match the schema's TIMESTAMPTZ.
     started_at: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
@@ -187,7 +188,12 @@ class DriverLap(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     driver_race_id: Optional[int] = Field(default=None, foreign_key="driver_races.id")
     #Used only for sorting, not for calculations
-    created_at: datetime = Field(default=datetime.now)
+    # The schema gives this a DB default (dbwriter inserts raw SQL); server_default says
+    # so here too. A table built from this model once had none, and lost every lap (#84).
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        sa_column_kwargs={"server_default": text("CURRENT_TIMESTAMP")},
+    )
     lap_time: Decimal = Field(default=0)
     #lap_number can be derived
 

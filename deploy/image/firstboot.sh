@@ -7,7 +7,7 @@
 #   1. reads /boot/firmware/lapcounter.conf (editable from Windows/macOS)
 #   2. configures WiFi as a CLIENT of the puck, with a static address
 #   3. loads the pre-baked Docker images (no internet required)
-#   4. starts the stack and seeds the database
+#   4. starts the stack (which builds the schema itself) and loads sample data
 #
 # Idempotent: a sentinel file stops it re-running. Safe to re-arm by deleting
 # /var/lib/lapcounter/firstboot-done and rebooting.
@@ -110,18 +110,18 @@ systemctl enable --now docker || true
 ( cd "$STACK" && docker compose up -d ) || echo "!! compose up failed"
 
 # ---------------------------------------------------------------- 6. seed
-# The API creates no tables at startup, so a fresh volume needs the schema.
-if [ "$SEED_SAMPLE_DATA" = "yes" ] && [ -f "$STACK/database/schema.sql" ]; then
-    echo "--> waiting for postgres"
-    for _ in $(seq 1 60); do
-        docker exec database pg_isready -U lap >/dev/null 2>&1 && break
-        sleep 2
-    done
-    if docker exec database psql -U lap -d lapcounter_server -c '\dt' 2>/dev/null | grep -q drivers; then
-        echo "--> database already populated; skipping seed"
+# The schema and reference data are not this script's job: the stack's one-shot migrate
+# service builds them on every start (#84). All that's optional is the sample data, and
+# it can only go in once migrate has finished.
+echo "--> waiting for migrate"
+MIGRATE_EXIT=$(docker wait migrate 2>/dev/null || echo missing)
+if [ "$MIGRATE_EXIT" != "0" ]; then
+    echo "!! migrate did not succeed (exit $MIGRATE_EXIT) - the app will not start; see: docker logs migrate"
+elif [ "$SEED_SAMPLE_DATA" = "yes" ]; then
+    if [ "$(docker exec database psql -U lap -d lapcounter_server -Atc 'SELECT count(*) FROM meetings')" != "0" ]; then
+        echo "--> database already has meetings; skipping sample data"
     else
-        echo "--> seeding schema + sample data"
-        docker exec -i database psql -U lap -d lapcounter_server < "$STACK/database/schema.sql"
+        echo "--> loading sample data"
         docker exec -i database psql -U lap -d lapcounter_server < "$STACK/database/sampledata.sql"
     fi
 fi

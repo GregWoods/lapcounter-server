@@ -139,9 +139,10 @@ Consequences to handle:
 ### Config
 
 `sessions.safety_car_power` — nullable INT, percent. `None` = the Safety Car button is
-hidden. Sits next to `yellow_grace_seconds` in the Admin session form. Needs a migration
-(`004-...`, after the unimplemented 003) and `schema.sql` kept in step — remember that a
-missing column takes out *all* of that table's endpoints, not just this feature.
+hidden. Sits next to `yellow_grace_seconds` in the Admin session form. Needs a new
+numbered migration after the last one in `database/migrations/`, with `model.py` kept in
+step — remember that a missing column takes out *all* of that table's endpoints, not just
+this feature. (Migrations are the only schema builder since #84; see CLAUDE.md "Database".)
 
 Cleared by the operator only: "Resume Race" from `SafetyCar`, same as from `Paused`. No
 auto-resume.

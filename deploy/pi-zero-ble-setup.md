@@ -141,15 +141,15 @@ ssh greg@192.168.8.170 "timeout 300 docker load -i /tmp/ble.tar; rm -f /tmp/ble.
 ```bash
 cd /opt/lapcounter
 docker compose up -d mosquitto database api lapdata dbwriter react
-# pg_isready says "ready" DURING first-run initdb, before lapcounter_server exists, so a
-# seed straight after it fails. Wait until the real database answers:
-until docker exec database psql -U lap -d lapcounter_server -c 'select 1' >/dev/null 2>&1; do sleep 3; done
-docker exec -i database psql -U lap -d lapcounter_server < database/schema.sql
+# api and dbwriter pull in the one-shot migrate service, which builds the schema and the
+# reference data (#84). Wait for it, then (optionally) load the sample data:
+[ "$(docker wait migrate)" = 0 ] || docker logs migrate
 docker exec -i database psql -U lap -d lapcounter_server < database/sampledata.sql
 ```
 
-A fresh `schema.sql` already has every migration's columns, so `database/migrations/` isn't
-needed here. With six containers running, ~219 MB of the 424 MB stays available.
+Nothing builds the schema except `migrate`, so there's no `schema.sql` step; `migrate`
+retries until the database accepts connections, which covers first-run initdb. With six
+containers running, ~219 MB of the 424 MB stays available.
 
 ## 11. Bluetooth: unblock it
 

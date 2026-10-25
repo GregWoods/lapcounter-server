@@ -1,5 +1,4 @@
 import os
-from contextlib import asynccontextmanager
 import subprocess
 import time as time_module
 import logging
@@ -45,16 +44,10 @@ def get_session():
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Create any missing tables on startup so a fresh database never 500s with
-    UndefinedTable. Idempotent. Mandatory reference data (catalog + lanes) is
-    loaded separately by init_db.py; demo data by sampledata.py."""
-    SQLModel.metadata.create_all(engine)
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+# No create_all here, deliberately: migrate.py (the `migrate` compose service, which this
+# container waits for) is the only thing that builds the schema. A create_all-built table
+# differs from the migrated one — it lost every lap once (#84).
+app = FastAPI()
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

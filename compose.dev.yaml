@@ -123,6 +123,30 @@ services:
       - VITE_ADMIN_PIN=1234
 
 
+  # The ONLY thing that builds the schema (#84): applies any new database/migrations/
+  # files, then exits. Runs on every `up`; api and dbwriter wait for it to succeed, so a
+  # failed migration stops the stack rather than letting it run on the wrong schema.
+  # Its logs are the place to look if api won't start: docker logs migrate
+  migrate:
+    container_name: migrate
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    command: ["python", "migrate.py"]
+    environment:
+      - DB_DATABASE=lapcounter_server
+      - DB_USER=lap
+      - DB_PASSWORD=lap
+      - DB_HOST=database
+      - DB_PORT=5432
+    volumes:
+      - ./api/app:/usr/src/app
+      - ./database:/usr/src/database:ro
+    depends_on:
+      - database
+    restart: "no"
+
+
   api:
     container_name: api
     cap_add:
@@ -140,11 +164,13 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./api/app:/usr/src/app
-      # Read-only: lets sampledata.py execute database/sampledata.sql directly instead
-      # of duplicating its data in Python (see sampledata.py's _find_repo_file()).
+      # Read-only: the migrations, and database/sampledata.sql for sampledata.py.
       - ./database:/usr/src/database:ro
     ports:
       - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 
   dbwriter:
@@ -159,9 +185,13 @@ services:
     build: ./dbwriter
     volumes:
       - ./dbwriter:/app
+    # dbwriter writes to Postgres directly, not through the API, so it waits for the
+    # schema itself.
     depends_on:
-      - mosquitto
-      - database
+      mosquitto:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 

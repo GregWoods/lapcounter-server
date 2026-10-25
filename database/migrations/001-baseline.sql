@@ -1,24 +1,14 @@
-DROP TABLE IF EXISTS app_settings;
-DROP TABLE IF EXISTS race_penalties;
-DROP TABLE IF EXISTS race_withdrawals;
-DROP TABLE IF EXISTS session_drivers;
-DROP TABLE IF EXISTS driver_laps;
-DROP TABLE IF EXISTS driver_races;
-DROP TABLE IF EXISTS lanes;
-DROP TABLE IF EXISTS races;
-DROP TABLE IF EXISTS sessions;
-DROP TABLE IF EXISTS meeting_cars;
-DROP TABLE IF EXISTS meeting_drivers;
-DROP TABLE IF EXISTS meetings;
-DROP TABLE IF EXISTS drivers;
-DROP TABLE IF EXISTS cars;
-DROP TABLE IF EXISTS car_models;
-DROP TABLE IF EXISTS car_categories;
-DROP TABLE IF EXISTS chip_firmwares;
-DROP TABLE IF EXISTS chip_hardwares;
-DROP TABLE IF EXISTS car_tyres;
-DROP TABLE IF EXISTS car_manufacturers;
-
+-- Baseline schema (#84). Squashes the old schema.sql and migrations 001-009, which were
+-- dropped along with them: there was no real data anywhere to carry forward.
+--
+-- Applied by api/app/migrate.py, the only thing that builds the schema. Never edit this
+-- file once applied — change the schema by adding 003-..., 004-... after it.
+--
+-- Differences from the old schema.sql, all deliberate:
+--   cars.name is VARCHAR(255), not CHAR(255) (which padded every name with spaces);
+--   columns model.py has always required are NOT NULL here too (cars.magnet,
+--   cars.weight_added, meetings.date, sessions.session_type/end_condition/scoring_method,
+--   races.state, driver_laps.lap_time, driver_laps.created_at).
 
 CREATE TABLE car_manufacturers (
     id SERIAL PRIMARY KEY,
@@ -47,7 +37,6 @@ CREATE TABLE car_tyres (
     size VARCHAR(255)
 );
 
-
 CREATE TABLE chip_hardwares (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL
@@ -61,18 +50,17 @@ CREATE TABLE chip_firmwares (
 --My cars, as they are configured for racing.
 CREATE TABLE cars (
     id SERIAL PRIMARY KEY,
-    name CHAR(255) NOT NULL, -- defaults to car_model.name, but can be overridden in the UI
+    name VARCHAR(255) NOT NULL, -- defaults to car_model.name, but can be overridden in the UI
     car_model_id INT REFERENCES car_models(id),
     tyre_id INT REFERENCES car_tyres(id),
-    magnet BOOLEAN,
-    weight_added DECIMAL,
+    magnet BOOLEAN NOT NULL,
+    weight_added DECIMAL NOT NULL,
     modifications_notes TEXT,
     chip_hardware_id INT REFERENCES chip_hardwares(id),
     chip_firmware_id INT REFERENCES chip_firmwares(id),
     picture VARCHAR(255), -- Filename of car pic. No path or url
     rfid VARCHAR(255)
 );
-
 
 CREATE TABLE drivers (
     id SERIAL PRIMARY KEY,
@@ -84,14 +72,13 @@ CREATE TABLE drivers (
     sit_out_next_race BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-
 CREATE TABLE meetings (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    date DATE,
+    date DATE NOT NULL,
     venue VARCHAR(255),
-    ended_at TIMESTAMPTZ,
-    public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE
+    ended_at TIMESTAMPTZ,   -- set when the operator ends the meeting; see get_active_meeting()
+    public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE   -- unguessable id for guest-facing URLs
 );
 
 CREATE TABLE meeting_drivers (
@@ -112,8 +99,8 @@ CREATE TABLE meeting_cars (
 CREATE TABLE sessions (
     id SERIAL PRIMARY KEY,
     meeting_id INT REFERENCES meetings(id),
-    session_type VARCHAR(255) CHECK (session_type IN ('Points', 'FastestLap', 'Championship')),
-    end_condition VARCHAR(255) CHECK (end_condition IN ('Laps', 'Time')),
+    session_type VARCHAR(255) NOT NULL CHECK (session_type IN ('Points', 'FastestLap', 'Championship')),
+    end_condition VARCHAR(255) NOT NULL CHECK (end_condition IN ('Laps', 'Time')),
     end_condition_info INT,
     races_per_driver INT NULL,
     max_sit_outs INT NULL,   -- skips before a driver is offered for disqualification (NULL = no limit)
@@ -123,19 +110,18 @@ CREATE TABLE sessions (
     yellow_lap_penalty_laps INT NOT NULL DEFAULT 0,       -- laps deducted for crossing after grace expiry (GPIO-only substitute; Points sessions only)
     min_lap_time DOUBLE PRECISION NOT NULL DEFAULT 3,   -- seconds; crossings closer than this are dropped as phantom triggers
     start_grid VARCHAR(20) NOT NULL DEFAULT 'BehindLine' CHECK (start_grid IN ('InFrontOfLine', 'BehindLine')),  -- which crossing ends lap 1; see CLAUDE.md "Discarded first crossing"
-    scoring_method VARCHAR(255) CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
+    scoring_method VARCHAR(255) NOT NULL CHECK (scoring_method IN ('LapPoints', 'PositionPoints', 'FastestLap')),
     scoring_points TEXT,
     start_time TIME NULL,
     end_time TIME NULL,
     state VARCHAR(20) NOT NULL DEFAULT 'NotStarted' CHECK (state IN ('NotStarted', 'InProgress', 'Finished'))
 );
 
-
 CREATE TABLE races (
     id SERIAL PRIMARY KEY,
     session_id INT REFERENCES sessions(id),
     race_number INT,
-    state VARCHAR(255) CHECK (state IN ('NotStarted', 'Running', 'Finished')),
+    state VARCHAR(255) NOT NULL CHECK (state IN ('NotStarted', 'Running', 'Finished')),
     -- The lights-out ("go go go") instant, as lapdata's race manager recorded it
     -- (race_start_time) — not when this API call happened to be processed, since
     -- the POST that sets it is fire-and-forget from a background thread.
@@ -157,7 +143,7 @@ CREATE TABLE driver_races (
     race_id INT REFERENCES races(id),
     car_id INT REFERENCES cars(id),
     lane INT NOT NULL DEFAULT 0,    -- 1 to 6
-    laps_completed INT,
+    laps_completed INT,             -- raw: counted laps, no lap penalty deducted (#83)
     last_lap_time DECIMAL(10,3),
     fastest_lap_time DECIMAL(10,3),
     UNIQUE (driver_id, race_id)
@@ -166,9 +152,9 @@ CREATE TABLE driver_races (
 CREATE TABLE driver_laps (
     id SERIAL PRIMARY KEY,
     driver_race_id INT REFERENCES driver_races(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- not used for lap times, just for sorting
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,     -- not used for lap times, just for sorting
     -- lap_number can be derived
-    lap_time DECIMAL(10,3)
+    lap_time DECIMAL(10,3) NOT NULL
 );
 
 -- An operator withdrawal of a driver from a race (the NextRace "×" button). A withdrawal

@@ -234,7 +234,7 @@ Against that, the porting cost is real:
 
 - `dbwriter/main.py` uses **psycopg2 with raw SQL** — a direct rewrite.
 - `next_race.py` uses raw SQL that needs auditing for Postgres-only syntax.
-- `database/schema.sql` is Postgres DDL (`SERIAL`, etc.).
+- `database/migrations/` is Postgres DDL (`SERIAL`, etc.).
 - `api` and `dbwriter` both write, so SQLite needs WAL mode and busy-timeout
   handling.
 - It would also remove the `psycopg2-binary` armv7 build problem (see below).

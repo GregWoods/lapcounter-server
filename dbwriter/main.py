@@ -86,7 +86,9 @@ def on_driver_lap(payload: dict):
                 return
 
             cur.execute(
-                "INSERT INTO driver_laps (driver_race_id, lap_time) VALUES (%s, %s)",
+                # created_at explicitly, so this doesn't depend on the table having a DB
+                # default — a create_all-built schema once had none and lost every lap (#84).
+                "INSERT INTO driver_laps (driver_race_id, lap_time, created_at) VALUES (%s, %s, NOW())",
                 (dr['id'], lap_time)
             )
 
