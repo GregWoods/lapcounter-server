@@ -24,13 +24,6 @@ const LapCounter = () => {
 
     const [race, setRace] = useState(defaultRace);
 
-    const [stats, setStats] = useLocalStorageState('stats', {defaultValue: {
-        fastestLapToday: '99.999',
-        fastestLapTodayUpdatedOn: Date()
-    }});
-    const statsRef = useRef();
-    statsRef.current = stats;
-
     const lapsPerRace = race.RaceType?.details.laps ?? 0;
 
     const carMediaBase = CAR_MEDIA_URL;
@@ -38,11 +31,10 @@ const LapCounter = () => {
     // Build a car image URL from a picture filename (from the pending race lineup),
     // falling back to the generic image when no car is assigned.
     const carImageUrl = (picture) => picture ? `${carMediaBase}/${picture}` : defaultCarImg;
+    // Six hidden lane slots. Every card, staged lineup included, is filled from race_state:
+    // lapdata publishes a NotStarted race's lineup with its positions, so React orders nothing.
     const initialDrivers = getInitialDrivers(lapsPerRace, defaultCarImg);
     const [drivers, setDrivers] = useState([...initialDrivers]);
-    // The MQTT handler is registered once, so it reads drivers through a ref.
-    const driversRef = useRef();
-    driversRef.current = drivers;
 
     const [raceId, setRaceId] = useState(null);
     const raceIdRef = useRef();
@@ -65,76 +57,31 @@ const LapCounter = () => {
         if (setup.session_type) setSessionType(setup.session_type);
     };
 
-    // Apply a race setup (from the loader / a race's /setup) to the viewmodel:
-    // identity + a *staged* lane lineup. Driver cards are rebuilt
-    // from a fresh base so no lap times / laps-remaining bleed across from a previous
-    // race — live lap data only ever comes from race_state. `targetLaps` (from the
-    // race_state) seeds "Laps Remaining" with the full race distance before any laps
-    // are run; it falls back to the local race config when unknown.
-    const applyRaceSetup = (setup, targetLaps) => {
-        if (!setup?.lane_assignments) return;
-        // Positions are the fly-in slots, so number only the lanes that have a driver,
-        // 1..N in lane order — the same order lapdata gives a NotStarted race. Empty
-        // lanes stay as placeholders but are marked out of the lineup and never shown.
-        let slot = 0;
-        setDrivers(
-            getInitialDrivers(targetLaps ?? lapsPerRace, defaultCarImg).map(driver => {
-                const a = setup.lane_assignments.find(
-                    a => a.lane_number === driver.number && a.id !== 0
-                );
-                return a
-                    ? { ...driver, name: a.driver_name, driverId: a.id, carImgUrl: carImageUrl(a.car_picture), inLineup: true, position: ++slot }
-                    : { ...driver, inLineup: false, position: null, hasStartedRacing: false };
-            })
-        );
-        applyRaceIdentity(setup);
-    };
-
-    // Stage a freshly-loaded race onto the get-ready preview: clean lineup (above)
-    // plus reset race-phase UI. Used when lapdata stages a new race — e.g. "Next
-    // Race" on /racecontrol — so /currentrace immediately shows the new lineup
-    // instead of leaving the finished leaderboard on screen.
-    const stageRace = (setup, targetLaps) => {
-        applyRaceSetup(setup, targetLaps);
-        setRacePhase('getready');
-        setPreviewDriverCards(true);
-        setStartLightsShown(false);
-        setLightsOut(false);
-        setStartLights(0);
-        setRace(r => ({ ...r, hasStarted: false, paused: false, underStartersOrders: false }));
-    };
-
     // When a race_state arrives for a race other than the one we're showing, fetch that
     // race's own setup for what race_state doesn't carry: the session labels in the
-    // header. A NotStarted state means lapdata just staged a new race, so reset to the
-    // clean get-ready preview. Any other state only takes the identity: the cards, car
-    // pictures included, come from race_state, and rebuilding them would hide a race in
-    // progress or a Finished one until the next message.
+    // header. Only the identity is taken: the cards, car pictures included, come from
+    // race_state.
     //
     // ⚠️ The race race_state names, never /races/current/: after a session's last race the
     // DB has no current race at all, and between races its current race is the next one
-    // queued while the Finished one is still on screen. Each race+state (or staged lineup,
-    // for a NotStarted lineup edit) is fetched once, or the 2s heartbeat (#76) repeats it.
+    // queued while the Finished one is still on screen. Each race is fetched once, or the
+    // 2s heartbeat (#76) repeats it.
     const resyncAttemptRef = useRef(null);
-    const resyncCurrentRace = (incomingState, targetLaps, incomingRaceId, lineup = '') => {
-        const attempt = `${incomingRaceId}:${incomingState}:${lineup}`;
-        if (resyncInFlightRef.current || resyncAttemptRef.current === attempt) return;
+    const resyncCurrentRace = (incomingRaceId) => {
+        if (resyncInFlightRef.current || resyncAttemptRef.current === incomingRaceId) return;
         resyncInFlightRef.current = true;
-        resyncAttemptRef.current = attempt;
+        resyncAttemptRef.current = incomingRaceId;
         fetch(`${API_URL}/races/${incomingRaceId}/setup`)
             .then(r => r.ok ? r.json() : null)
-            .then(setup => {
-                if (!setup) return;
-                if (incomingState === 'NotStarted') stageRace(setup, targetLaps);
-                else applyRaceIdentity(setup);
-            })
+            .then(setup => { if (setup) applyRaceIdentity(setup); })
             .catch(() => {})
             .finally(() => { resyncInFlightRef.current = false; });
     };
 
-    // Seed identity + lineup from the current race on page load
+    // Seed the header from the current race on page load; the cards wait for race_state
+    // (retained, so it arrives as soon as MQTT connects).
     useEffect(() => {
-        applyRaceSetup(pendingRace);
+        if (pendingRace) applyRaceIdentity(pendingRace);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // No need to ask lapdata for the current state on load: race_state is retained and
@@ -158,34 +105,10 @@ const LapCounter = () => {
     const [apiReachable, setApiReachable] = useState(true);
     const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);
 
-    const storeFastestLapToday = (lapTime) => {
-        setStats({...statsRef.current,
-            fastestLapToday: lapTime,
-            fastestLapTodayUpdatedOn: Date()
-        });
-    }
-
-    const resetExpiredFastestLapToday = () => {
-        const fastestLapTodayUpdatedOnDate = new Date(statsRef.current.fastestLapTodayUpdatedOn).getTime();
-        const now = new Date();
-        const twentyFourhoursAgo = now.setDate(now.getDate() - 1);
-        const fastestLapToday = statsRef.current.fastestLapToday;
-
-        if (fastestLapToday === '' || fastestLapToday === null || fastestLapTodayUpdatedOnDate < twentyFourhoursAgo) {
-            resetFastestLapToday();
-        }
-    }
-
-    const resetFastestLapToday = () => {
-        storeFastestLapToday("99.999");
-    }
-
-    resetExpiredFastestLapToday();
-
     // Primary display update: map race_state from LapData onto the drivers viewmodel
     const processRaceStateMsg = (raceState) => {
         noteLapdataRaceState(raceState);
-        const { state, race_fastest_lap } = raceState;
+        const { state } = raceState;
         // lapdata's Last Will: says nothing about the race, so leave the last real state
         // on screen behind the offline modal rather than treating it as a new race.
         if (state === 'Offline') return;
@@ -205,7 +128,7 @@ const LapCounter = () => {
         // by the time race_id resynced a message later the state had already moved past
         // ArmedForStart, so it never got a second chance to fire.
         if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
-            resyncCurrentRace(raceState.state, raceState.target_laps, raceState.race_id);
+            resyncCurrentRace(raceState.race_id);
         }
 
         if (raceState.race_number) {
@@ -235,19 +158,20 @@ const LapCounter = () => {
         else setRacePhase('live');
         if (state === 'NotStarted') setPreviewDriverCards(true);
         else if (state === 'Running' || state === 'Finished') setPreviewDriverCards(false);
-        // A start aborted during the lights (a lost connection) comes back NotStarted.
+        // A newly staged race, or a start aborted during the lights (a lost connection):
+        // nothing is lit, started or paused, so the get-ready preview replaces whatever
+        // the last race left on screen.
         if (state === 'NotStarted') {
             setStartLightsShown(false);
             setLightsOut(false);
-            setRace(r => (r.underStartersOrders ? { ...r, underStartersOrders: false } : r));
+            setStartLights(0);
+            setRace(r => (r.hasStarted || r.paused || r.underStartersOrders
+                ? { ...r, hasStarted: false, paused: false, underStartersOrders: false }
+                : r));
         }
 
         // Race/session state persistence is owned by lapdata (server-side), so the
         // display no longer POSTs transitions — it is purely a viewer now.
-
-        if (race_fastest_lap && race_fastest_lap < Number(statsRef.current.fastestLapToday)) {
-            storeFastestLapToday(race_fastest_lap.toFixed(3));
-        }
 
         // FastestLap sessions: pass raw state to FastestLapCounter; skip driver-card update
         if (raceState.session_type === 'FastestLap') {
@@ -271,15 +195,8 @@ const LapCounter = () => {
         const p1Driver = raceDrivers.find(d => d.position === 1);
         const p1LapsRemaining = p1Driver?.laps_remaining ?? 0;
 
-        // Same race, but NextRace changed who is in it (lapdata re-staged after a
-        // reload_lineup). Re-stage it from the setup; the cards below still take
-        // positions and car pictures from race_state straight away.
-        if (state === 'NotStarted') {
-            const shown = driversRef.current.filter(d => d?.inLineup).map(d => `${d.number}:${d.driverId}`).sort().join();
-            const staged = raceDrivers.map(d => `${d.lane}:${d.driver_id}`).sort().join();
-            if (shown !== staged) resyncCurrentRace(state, raceState.target_laps, raceState.race_id, staged);
-        }
-
+        // Every card comes from lapdata's lineup, a staged one included, so a NextRace
+        // edit (lapdata re-stages on reload_lineup) shows up here with no refetch.
         setDrivers(currentDrivers =>
             currentDrivers.map(driver => {
                 if (!driver) return null;

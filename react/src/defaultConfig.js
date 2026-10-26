@@ -52,14 +52,10 @@ export const getDriverDataDefault = (lapsPerRace) => {
     }
 };
 
+// One hidden slot per lane, filled from race_state (which also gives each its position).
 export const getInitialDrivers = (lapsPerRace, defaultCarImg) => {
     const driverDataDefault = getDriverDataDefault(lapsPerRace);
-    return [
-        {...driverDataDefault, number: 1, name: 'Driver A', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 1},
-        {...driverDataDefault, number: 2, name: 'Driver B', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 2},
-        {...driverDataDefault, number: 3, name: 'Driver C', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 3},
-        {...driverDataDefault, number: 4, name: 'Driver D', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 4},
-        {...driverDataDefault, number: 5, name: 'Driver E', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 5},
-        {...driverDataDefault, number: 6, name: 'Driver F', carImgUrl: defaultCarImg, hasStartedRacing: true, position: 6}
-    ];
+    return [1, 2, 3, 4, 5, 6].map(number =>
+        ({...driverDataDefault, number, name: '', carImgUrl: defaultCarImg, inLineup: false})
+    );
 };
