@@ -199,7 +199,7 @@ const Sessions = () => {
                     <div className="admin-modal" onClick={e => e.stopPropagation()}>
                         <p className="admin-modal-title">End this session?</p>
                         <p className="admin-modal-body">
-                            The session will be marked Finished. If there is a next session queued, it will become In Progress.
+                            The session will be marked Finished, and its races not yet run will be removed. The next session starts from Race Control (Next Session).
                         </p>
                         {endingError && <p className="admin-error">{endingError}</p>}
                         <div className="admin-modal-actions">
