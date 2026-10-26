@@ -368,7 +368,7 @@ PostgreSQL with SQLModel ORM (no relationships defined yet, uses raw SQL for com
 - ⚠️ **There used to be three builders, and they drifted**: `schema.sql`, `init_db.py`'s `create_all`, and a `create_all` in the API's own startup that quietly built any missing table on every start. A `create_all`-built `driver_laps.created_at` had no DB default, so dbwriter's raw INSERT failed and **every lap was lost** while the leaderboard looked normal. Don't reintroduce `create_all`, or a hand-run schema file, anywhere.
 - `model.py` describes the tables for the ORM only. `api/app/test_schema_matches_model.py` checks it against a migrated **scratch** database (skipped unless `SCHEMA_TEST_DATABASE_URL` is set; the api image has no pytest, so `pip install pytest` in the container first).
 - `001-baseline.sql` is the whole schema as of #84; `002-reference-data.sql` is the lanes and car catalog, so every database is usable straight away. Sample data is separate and optional: `database/sampledata.sql`.
-- Key tables: `drivers`, `meetings`, `meeting_drivers`, `sessions`, `races`, `driver_races`, `driver_laps`, `lanes`, `cars`, `race_withdrawals`, `session_drivers`, `race_penalties`
+- Key tables: `drivers`, `meetings`, `meeting_drivers`, `sessions`, `races`, `driver_races`, `driver_laps`, `lanes`, `cars`, `race_withdrawals`, `session_drivers`, `session_cars`, `race_penalties`
 
 ### Changing the schema
 
@@ -384,7 +384,8 @@ docker exec api python sampledata.py          # optional demo data, plus session
 `sampledata.py` runs `database/sampledata.sql` and then generates session 2's queue in Python (see #33 below); loading the `.sql` alone with `psql` leaves no queue. A database built by the old builders (tables but no `schema_migrations`) is refused by `migrate` with these same instructions.
 
 ### Key schema notes
-- `meeting_cars.lane` — nullable INT, unique per `(meeting_id, lane)`. Source of truth for car-to-lane assignment when building a race lineup.
+- `session_cars` `(session_id, lane, car_id)` — the operator's car on each lane (digital ID) for a session (#111, migration 009). A car change is per session, made between races: RaceControl's **Edit Cars** (`GET /sessions/active/cars`, `PUT /sessions/active/lanes/{n}/car`) and NextRace's car picker (`PATCH /races/pending/lanes/{n}`) both go through `set_session_lane_car()`, which writes this row and every **queued** race's `driver_races.car_id` on that lane; Finished and Running races keep the car they were raced with. Then `reload_lineup`, so lapdata re-stages a staged race. Lineups are built through `_lane_to_car_map()`: `session_cars`, else the meeting's last finished race, else `meeting_cars`.
+- `meeting_cars.lane` — nullable INT, unique per `(meeting_id, lane)`. The meeting-wide default car-to-lane assignment, the last fallback when building a race lineup.
 - `driver_races` stores both `car_id` and `lane` independently — they can diverge if a car is swapped mid-meeting. `lane` drives the fairness algorithm; `car_id` is the historical record.
 - `lanes` is a static lookup table (lane_number 1–6, color, enabled flag). Not a physical constraint.
 - `RaceSession` model maps to the `sessions` table (should eventually be renamed `race_sessions`).
