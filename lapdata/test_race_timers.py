@@ -76,7 +76,6 @@ def lapdata(monkeypatch):
     published = []
     monkeypatch.setattr(tsl, 'client', types.SimpleNamespace(
         publish=lambda topic, payload, **k: published.append(json.loads(payload))))
-    monkeypatch.setattr(tsl, '_post_api', lambda *a, **k: None)
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: PENDING)
     monkeypatch.setattr(tsl, 'pending_race_cache', None)
     monkeypatch.setattr(tsl, '_light_timers', [])
@@ -272,26 +271,74 @@ def test_restart_mid_race_recovers_the_running_race_paused(lapdata, monkeypatch)
     assert lapdata.published[-1]['state'] == 'Paused'
 
 
-def test_recovering_a_race_does_not_post_a_second_start(lapdata, monkeypatch):
-    posts = []
-    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: posts.append(path))
-    monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
-    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
-    with tsl._race_lock:
-        tsl.recover_running_race(RECOVERY)
-    assert posts == []
-
-
-def test_a_recovered_race_that_is_over_posts_its_finish(lapdata, monkeypatch):
-    """The whole point: the finish that never happened is what auto-ends the session."""
-    posts = []
-    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: posts.append(path))
+def test_a_recovered_race_that_is_over_is_published_finished(lapdata, monkeypatch):
+    """The whole point: the finish that never happened is what auto-ends the session. The
+    API's race_state subscriber persists it from this message (#79)."""
     monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
     expired = {**RECOVERY, 'started_at': time.time() - 600,
                'setup': {**PENDING, 'session_type': 'FastestLap', 'race_duration_seconds': 60}}
     with tsl._race_lock:
         tsl.recover_running_race(expired)
-    assert posts == ['/races/1/finish']
+    assert (lapdata.published[-1]['race_id'], lapdata.published[-1]['state']) == (1, 'Finished')
+
+
+# --- end naming a stuck race (RaceControl's End Race for a race lapdata isn't running) ---
+
+@pytest.fixture
+def idle_on_race_2(lapdata, monkeypatch):
+    """lapdata has the queue head (race 2) staged; the DB still holds race 1 Running."""
+    staged = tsl.RaceManager()
+    staged.load_lineup(2, 2, 20, PENDING['lane_assignments'])
+    monkeypatch.setattr(tsl, 'race', staged)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: RECOVERY)
+    return lapdata
+
+
+def test_end_for_a_stuck_race_loads_and_finishes_it(idle_on_race_2):
+    control('end', race_id=1)
+    last = idle_on_race_2.published[-1]
+    assert (last['race_id'], last['state']) == (1, 'Finished')
+    assert last['drivers'][0]['laps_completed'] == 2
+
+
+def test_end_for_a_stuck_race_with_no_lineup_still_finishes_it(idle_on_race_2, monkeypatch):
+    """Only the race id matters to the subscriber that persists it."""
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: {**RECOVERY, 'setup': None})
+    control('end', race_id=1)
+    last = idle_on_race_2.published[-1]
+    assert (last['race_id'], last['state'], last['drivers']) == (1, 'Finished', [])
+
+
+def test_end_for_a_stuck_race_the_db_no_longer_has_running_still_finishes_it(idle_on_race_2, monkeypatch):
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
+    control('end', race_id=1)
+    assert (idle_on_race_2.published[-1]['race_id'], idle_on_race_2.published[-1]['state']) == (1, 'Finished')
+
+
+def test_end_for_a_stuck_race_waits_for_the_api(idle_on_race_2, monkeypatch):
+    def unreachable():
+        tsl._api_reachable = False
+        return None
+
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', unreachable)
+    control('end', race_id=1)
+    assert (tsl.race.race_id, tsl.race.state) == (2, 'NotStarted')
+
+
+@pytest.mark.parametrize('command', [None, 'yellow', 'pause'])
+def test_end_for_another_race_never_ends_ours_under_way(lapdata, monkeypatch, command):
+    monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: {**RECOVERY, 'race_id': 7})
+    if command:
+        control(command)
+    control('end', race_id=7)
+    assert lapdata.race.race_id == 1
+    assert lapdata.race.state != 'Finished'
+
+
+def test_end_naming_our_own_race_ends_it(lapdata):
+    control('end', race_id=1)
+    assert lapdata.race.state == 'Finished'
 
 
 def test_api_down_at_startup_is_retried_not_forgotten(lapdata, monkeypatch):
@@ -350,7 +397,6 @@ def test_a_recovery_server_error_does_not_mark_the_api_unreachable(lapdata, monk
 
 def test_recovery_passes_lap_penalties_to_the_race(lapdata, monkeypatch):
     monkeypatch.setattr(tsl, 'race', tsl.RaceManager())
-    monkeypatch.setattr(tsl, '_post_api', lambda path, body=None: None)
     with tsl._race_lock:
         tsl.recover_running_race({**RECOVERY, 'lap_penalties': {'1': 1}})
     assert tsl.race.drivers[1].laps_completed == 1

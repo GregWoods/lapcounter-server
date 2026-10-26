@@ -12,4 +12,7 @@ class Settings(BaseSettings):
     DB_USER: str
     DB_PASSWORD: str
     DB_PORT: int
+    # The broker the race_state subscriber reads (#79).
+    MQTT_HOSTNAME: str = "mosquitto"
+    MQTT_PORT: int = 1883
     model_config = SettingsConfigDict(env_file=".env")

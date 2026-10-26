@@ -4,6 +4,7 @@ import time as time_module
 import logging
 import traceback
 import uuid
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Field, Session, SQLModel, create_engine, func, select
@@ -18,6 +19,8 @@ from responsemodel import RaceSessionWithState, RaceSessionSummary
 from next_race import _build_race_setup, get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup, effective_laps_completed
 from points import calculate_race_points
 import app_settings
+import race_lifecycle
+import race_state_subscriber
 
 settings = Settings()
 
@@ -44,10 +47,21 @@ def get_session():
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # The race lifecycle (Running, Finished, session auto-end) is persisted from lapdata's
+    # race_state, not POSTed by lapdata (#79). See race_lifecycle.py.
+    client = race_state_subscriber.start(engine, settings.MQTT_HOSTNAME, settings.MQTT_PORT)
+    try:
+        yield
+    finally:
+        race_state_subscriber.stop(client)
+
+
 # No create_all here, deliberately: migrate.py (the `migrate` compose service, which this
 # container waits for) is the only thing that builds the schema. A create_all-built table
 # differs from the migrated one — it lost every lap once (#84).
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -511,49 +525,22 @@ def start_race(
     race_id: int, dbsession: SessionDep,
     started_at: Optional[float] = Body(default=None, embed=True),
 ):
-    """started_at is the lights-out unix timestamp from lapdata's authoritative
-    race_start_time — more precise than server time here, since this is a
-    fire-and-forget POST from a background thread, not called at the go instant."""
-    race = dbsession.get(Race, race_id)
-    if not race:
+    """Manual repair only: nothing in the system calls this any more. The race lifecycle
+    follows lapdata's race_state through the API's own subscriber (#79). Monotonic, like
+    the subscriber: only a NotStarted race is started. started_at is lights-out, unix
+    seconds."""
+    if not race_lifecycle.start_race(dbsession, race_id, started_at):
         raise HTTPException(status_code=404, detail="Race not found")
-    race.state = 'Running'
-    if started_at is not None:
-        race.started_at = datetime.fromtimestamp(started_at, tz=timezone.utc)
-    dbsession.add(race)
-    session = dbsession.get(RaceSession, race.session_id)
-    if session and session.state == 'NotStarted':
-        session.state = 'InProgress'
-        dbsession.add(session)
-    dbsession.commit()
     return {"ok": True}
 
 
 @app.post("/races/{race_id}/finish")
 def finish_race(race_id: int, dbsession: SessionDep):
-    race = dbsession.get(Race, race_id)
-    if not race:
+    """Manual repair only, as for /start: finishes the race and runs the session
+    auto-end. RaceControl closes a stuck race through lapdata (race_control `end` with a
+    race_id) instead."""
+    if not race_lifecycle.finish_race(dbsession, race_id):
         raise HTTPException(status_code=404, detail="Race not found")
-    race.state = 'Finished'
-    dbsession.add(race)
-    dbsession.commit()
-    session = dbsession.get(RaceSession, race.session_id)
-    if session and session.races_per_driver:
-        target = session.races_per_driver
-        if target:
-            all_drivers = get_drivers_for_next_race_sql(dbsession, race_session_id=session.id)
-            eligible = [d for d in all_drivers
-                        if not d.sit_out_next_race and not d.disqualified and d.completed_races < target]
-            if not eligible:
-                # Auto-end the session (ending is automatic). Starting the NEXT
-                # session is a manual operator action from /racecontrol — it begins
-                # when the first race of that session is started — so we do NOT
-                # promote it here.
-                session.state = 'Finished'
-                dbsession.add(session)
-                dbsession.commit()
-                # No NotStarted race may outlive a Finished session.
-                remove_pending_races(dbsession, session.id)
     return {"ok": True}
 
 

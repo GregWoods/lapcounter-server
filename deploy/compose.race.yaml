@@ -139,6 +139,8 @@ services:
       - DB_PASSWORD=lap
       - DB_HOST=database
       - DB_PORT=5432
+      # The race_state subscriber that persists the race lifecycle (#79).
+      - MQTT_HOSTNAME=mosquitto
     volumes:
       - car_images:/usr/src/app/media/cars
     restart: unless-stopped

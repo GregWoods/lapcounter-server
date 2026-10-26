@@ -54,6 +54,9 @@ api/
 │   ├── model.py          # SQLModel table definitions (15 models)
 │   ├── responsemodel.py  # Response-only models: DriverWithLane, NextRaceSetup
 │   ├── next_race.py      # Lane assignment algorithm + SQL query for driver data
+│   ├── race_lifecycle.py # Race start/finish + session auto-end; reconciles the DB with race_state (#79)
+│   ├── race_state_subscriber.py # MQTT client (started in lifespan) feeding race_lifecycle.reconcile()
+│   ├── test_race_lifecycle.py   # pytest tests for plan_reconcile() (no DB)
 │   ├── settings.py       # Pydantic Settings (reads env vars)
 │   ├── migrate.py        # The only schema builder: applies ../database/migrations/ (the `migrate` service)
 │   ├── sampledata.py     # Loads optional demo data onto a migrated database
@@ -83,6 +86,7 @@ All required — set by `compose.dev.yaml` in Docker, or `setenv.ps1` locally. R
 | `DB_USER` | `lap` | PostgreSQL user |
 | `DB_PASSWORD` | `lap` | PostgreSQL password |
 | `DB_PORT` | `5432` | PostgreSQL port |
+| `MQTT_HOSTNAME` | `mosquitto` (Docker) / `localhost` | Broker for the `race_state` subscriber (optional, defaults to `mosquitto`; `MQTT_PORT` defaults to 1883) |
 
 ## Database Models (`model.py`)
 
