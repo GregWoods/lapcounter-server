@@ -185,6 +185,9 @@ class SessionDriver(SQLModel, table=True):
     session_id: Optional[int] = Field(default=None, foreign_key="sessions.id", primary_key=True)
     driver_id: Optional[int] = Field(default=None, foreign_key="drivers.id", primary_key=True)
     disqualified: bool = Field(default=False)
+    # Fastest Lap sessions: lapdata's ranking, from the last Finished race_state (migration
+    # 007, #112). NULL = no counted lap yet.
+    position: Optional[int] = Field(default=None)
 
 
 class DriverLap(SQLModel, table=True):

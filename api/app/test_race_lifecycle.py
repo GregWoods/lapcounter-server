@@ -1,7 +1,7 @@
 """plan_reconcile(): how one race_state message changes the DB (#79). DB-free."""
 import pytest
 
-from race_lifecycle import plan_reconcile, plan_results
+from race_lifecycle import plan_reconcile, plan_results, plan_session_positions
 
 GO = 1749123456.789
 
@@ -104,3 +104,35 @@ def test_a_driver_who_never_started_is_dns():
 @pytest.mark.parametrize('state', ['ArmedForStart', 'Running', 'Yellow', 'Paused', 'NotStarted', 'Offline'])
 def test_only_a_finished_race_has_results(state):
     assert plan_results({**msg(state), 'drivers': [driver(1, 1, 30.1)]}) is None
+
+
+# --- Fastest Lap session ranking: stored as lapdata published it (#112) ---
+
+def fastest_lap_msg(state='Finished'):
+    """Driver 3 is ahead of driver 2 on an equal time: lapdata's tie-break, not ours.
+    Driver 7 is on the bench, so has no place in this race."""
+    return {**msg(state), 'session_type': 'FastestLap', 'session_drivers': [
+        {'driver_id': 3, 'session_fastest_lap': 4.5, 'position': 1, 'in_current_race': True, 'race_position': 2},
+        {'driver_id': 2, 'session_fastest_lap': 4.5, 'position': 2, 'in_current_race': True, 'race_position': 1},
+        {'driver_id': 4, 'session_fastest_lap': None, 'position': None, 'in_current_race': True, 'race_position': None},
+        {'driver_id': 7, 'session_fastest_lap': None, 'position': None, 'in_current_race': False, 'race_position': None},
+    ]}
+
+
+def test_a_finished_fastest_lap_race_stores_each_drivers_place_in_that_race():
+    """The per-race medals: driver 2 won this race though driver 3 leads the session.
+    Driver 4 raced without a counted lap; the bench driver has no row in this race."""
+    assert plan_results(fastest_lap_msg()) == {3: (2, None), 2: (1, None), 4: (None, None)}
+
+
+def test_a_finished_fastest_lap_race_carries_the_session_ranking_as_published():
+    assert plan_session_positions(fastest_lap_msg()) == {3: 1, 2: 2, 4: None, 7: None}
+
+
+@pytest.mark.parametrize('state', ['ArmedForStart', 'Running', 'Yellow', 'Paused', 'NotStarted', 'Offline'])
+def test_only_a_finished_race_stores_the_session_ranking(state):
+    assert plan_session_positions(fastest_lap_msg(state)) is None
+
+
+def test_a_points_race_has_no_session_ranking():
+    assert plan_session_positions({**msg('Finished'), 'drivers': [driver(1, 1, 30.1)]}) is None

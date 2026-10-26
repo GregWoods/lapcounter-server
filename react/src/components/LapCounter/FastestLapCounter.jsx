@@ -95,37 +95,29 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
     const prevSlotRef = useRef({});      // driver_id -> previous visible slot index
     const elevatedUntilRef = useRef({}); // driver_id -> timestamp the upward animation ends
 
+    // Already ranked, in order, with each driver's position: lapdata's (#112), or before
+    // any race_state the API's copy of what lapdata last stored. Nothing is sorted here.
     const sessionDrivers = raceState?.session_drivers ?? pendingRace?.session_drivers ?? [];
-
-    const anyHasTime = sessionDrivers.some(d => d.session_fastest_lap != null);
-    const sortedDrivers = [...sessionDrivers].sort((a, b) => {
-        if (!anyHasTime) return a.driver_name.localeCompare(b.driver_name);
-        if (a.session_fastest_lap == null && b.session_fastest_lap == null)
-            return a.driver_name.localeCompare(b.driver_name);
-        if (a.session_fastest_lap == null) return 1;
-        if (b.session_fastest_lap == null) return -1;
-        return a.session_fastest_lap - b.session_fastest_lap;
-    });
 
     // Name column width: fixed across all bars so every tile is identical
     const longestNameLen = sessionDrivers.reduce((m, d) => Math.max(m, d.driver_name.length), 6);
     const nameColWidth = `${Math.max(10, longestNameLen * 1.7)}rem`;
 
-    // Filter to the visible window, keeping each driver's true leaderboard position.
-    const includeSet = computeVisibleSet(sortedDrivers, MAX_VISIBLE);
-    const visible = sortedDrivers
-        .map((driver, i) => ({ driver, position: i + 1 }))
+    // Filter to the visible window, keeping each driver's row in the full leaderboard.
+    const includeSet = computeVisibleSet(sessionDrivers, MAX_VISIBLE);
+    const visible = sessionDrivers
+        .map((driver, i) => ({ driver, row: i }))
         .filter((_, i) => includeSet.has(i));
 
     // Lay out visible rows top-to-bottom, inserting a break wherever the leaderboard
-    // skips positions. Track a running y-cursor so breaks add real vertical space.
+    // skips rows. Track a running y-cursor so breaks add real vertical space.
     let cursor = 0;
     const placed = [];
     const breaks = [];
     visible.forEach((entry, idx) => {
         const prev = visible[idx - 1];
-        if (prev && entry.position - prev.position > 1) {
-            breaks.push({ key: `brk-${prev.position}-${entry.position}`, top: cursor });
+        if (prev && entry.row - prev.row > 1) {
+            breaks.push({ key: `brk-${prev.row}-${entry.row}`, top: cursor });
             cursor += BREAK_GAP_REM;
         }
         placed.push({ ...entry, top: cursor, slot: idx });
@@ -152,11 +144,7 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
         return driver.in_current_race ? Z_RACING : Z_IDLE;
     };
 
-    const fastestSessionLap = sessionDrivers
-        .map(d => d.session_fastest_lap)
-        .filter(t => t != null)
-        .reduce((best, t) => (best == null || t < best ? t : best), null);
-
+    const fastestSessionLap = raceState?.session_fastest_lap ?? null;
     const fastestRaceLap = raceState?.race_fastest_lap ?? null;
     const isFinished = raceState?.state === 'Finished';
 
@@ -206,7 +194,7 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
                             ⋯
                         </div>
                     ))}
-                    {placed.map(({ driver, position, top }) => {
+                    {placed.map(({ driver, top }) => {
                         const colorClass = driver.in_current_race
                             ? `driver${driver.lane}`
                             : 'flc-inactive';
@@ -223,9 +211,7 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
                                 }}
                             >
                                 <div className="flc-pos">
-                                    {anyHasTime && driver.session_fastest_lap != null
-                                        ? position
-                                        : '–'}
+                                    {driver.position ?? '–'}
                                 </div>
                                 <div className="flc-car">
                                     {driver.in_current_race && (

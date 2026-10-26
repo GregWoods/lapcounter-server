@@ -855,6 +855,95 @@ def test_fastest_lap_merge_preserves_better_in_memory_best_over_db_value():
     assert race.session_drivers[1]['session_fastest_lap'] == pytest.approx(3.0)
 
 
+def test_fastest_lap_session_is_ranked_by_personal_best():
+    """lapdata publishes the positions and the session's best (#112); displays and results
+    take them as sent rather than sorting for themselves."""
+    prior = [{'driver_id': 9, 'driver_name': 'Bench', 'session_fastest_lap': 4.5,
+              'session_fastest_lap_at': 50.0}]
+    race = new_race(count_first_crossing=True, session_type='FastestLap', n_drivers=2,
+                    session_drivers=prior)
+    race.on_lap(1, at(5.0), crossed_at=100.0)
+    race.on_lap(2, at(4.0), crossed_at=101.0)
+
+    state = race.to_dict()
+    ranked = [(d['driver_name'], d['position']) for d in state['session_drivers']]
+    assert ranked == [('Driver2', 1), ('Bench', 2), ('Driver1', 3)]
+    assert state['session_fastest_lap'] == 4.0
+
+
+def test_an_exact_fastest_lap_tie_goes_to_whoever_set_it_first():
+    """Real at BLE's 10 ms resolution. Driver2 is in the lower lane and has the lower id,
+    so neither of those can be what puts Driver3 ahead."""
+    race = new_race(count_first_crossing=True, session_type='FastestLap', n_drivers=3)
+    race.on_lap(3, at(4.5), crossed_at=100.0)
+    race.on_lap(2, at(4.5), crossed_at=100.2)
+
+    ranked = [(d['driver_name'], d['position']) for d in race.to_dict()['session_drivers']]
+    assert ranked[:2] == [('Driver3', 1), ('Driver2', 2)]
+
+
+def test_equalling_your_own_best_later_does_not_lose_a_tie():
+    race = new_race(count_first_crossing=True, session_type='FastestLap', n_drivers=2)
+    race.on_lap(1, at(4.0), crossed_at=100.0)
+    race.on_lap(2, at(4.0), crossed_at=101.0)
+    race.on_lap(1, at(8.0), crossed_at=104.0)   # Driver1 equals their 4.0 again
+
+    assert race.session_drivers[1]['session_fastest_lap_at'] == 100.0
+    assert race.to_dict()['session_drivers'][0]['driver_name'] == 'Driver1'
+
+
+def test_a_tie_with_a_best_from_an_earlier_race_goes_to_the_earlier_one():
+    """The API's session bests carry when they were set (driver_laps.crossed_at), on the
+    same unix scale as a live crossing, so the tie-break holds across races and restarts."""
+    prior = [{'driver_id': 9, 'driver_name': 'Bench', 'session_fastest_lap': 4.0,
+              'session_fastest_lap_at': 50.0}]
+    race = new_race(count_first_crossing=True, session_type='FastestLap', n_drivers=1,
+                    session_drivers=prior)
+    race.on_lap(1, at(4.0), crossed_at=100.0)
+
+    assert [d['driver_name'] for d in race.to_dict()['session_drivers']] == ['Bench', 'Driver1']
+
+
+def test_a_driver_with_no_counted_lap_is_unranked_and_listed_last():
+    race = new_race(count_first_crossing=False, session_type='FastestLap', n_drivers=3)
+    race.on_lap(3, at(0.5))                      # start-line part-lap: not a lap
+    race.on_lap(3, at(5.0), crossed_at=100.0)    # Driver3's lap 1
+
+    state = race.to_dict()
+    ranked = [(d['driver_name'], d['position']) for d in state['session_drivers']]
+    assert ranked == [('Driver3', 1), ('Driver1', None), ('Driver2', None)]
+
+
+def test_each_race_is_ranked_on_its_own_best_laps():
+    """The per-race medals on Results. Bench's better session best is from another race,
+    so it neither ranks here nor moves anyone's place in this one."""
+    prior = [{'driver_id': 9, 'driver_name': 'Bench', 'session_fastest_lap': 3.0,
+              'session_fastest_lap_at': 50.0}]
+    race = new_race(count_first_crossing=True, session_type='FastestLap', n_drivers=3,
+                    session_drivers=prior)
+    race.on_lap(1, at(5.0), crossed_at=100.0)
+    race.on_lap(2, at(4.0), crossed_at=101.0)
+
+    by_name = {d['driver_name']: d['race_position'] for d in race.to_dict()['session_drivers']}
+    assert by_name == {'Driver2': 1, 'Driver1': 2, 'Bench': None, 'Driver3': None}
+
+
+def test_an_exact_tie_within_a_race_goes_to_whoever_set_it_first():
+    race = new_race(count_first_crossing=True, session_type='FastestLap', n_drivers=3)
+    race.on_lap(3, at(4.5), crossed_at=100.0)
+    race.on_lap(2, at(4.5), crossed_at=100.2)
+    race.on_lap(2, at(9.0), crossed_at=104.7)   # Driver2 equals their 4.5 again: no help
+
+    by_name = {d['driver_name']: d['race_position'] for d in race.to_dict()['session_drivers']}
+    assert (by_name['Driver3'], by_name['Driver2']) == (1, 2)
+
+
+def test_no_laps_at_all_publishes_no_session_best():
+    state = new_race(session_type='FastestLap', n_drivers=2).to_dict()
+    assert state['session_fastest_lap'] is None
+    assert all(d['position'] is None for d in state['session_drivers'])
+
+
 # --- Recovery after a lapdata restart ---
 
 def recovered_race(laps, started_at=5000.0, now=5010.0, **kwargs):

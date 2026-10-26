@@ -805,6 +805,18 @@ def build_session_results(race_session, dbsession):
             if best is not None:
                 best_lap_by_race[dr.race_id][dr.driver_id] = best
 
+        # The ranking is lapdata's, as stored from the last Finished race_state (#112), tie-break
+        # included. The lap times below are for display only; nothing is ranked on them here.
+        stored_positions = {
+            sd.driver_id: sd.position for sd in dbsession.exec(
+                select(SessionDriver).where(SessionDriver.session_id == race_session.id)
+            ).all()
+        }
+        race_positions_by_driver: dict = defaultdict(dict)
+        for dr in all_driver_races:
+            if dr.position is not None:
+                race_positions_by_driver[dr.driver_id][str(dr.race_id)] = dr.position
+
         driver_rows = []
         for did, name in meeting_driver_names.items():
             laptimes_map = {str(race_id): best_lap_by_race.get(race_id, {}).get(did) for race_id in race_ids}
@@ -814,14 +826,17 @@ def build_session_results(race_session, dbsession):
             summary = avg_lap if scoring_method == 'AverageFastestLap' else best_lap
             driver_rows.append({
                 "driver_id": did, "driver_name": name,
+                "position": stored_positions.get(did),
                 "lap_times": laptimes_map,
+                # Each race's place on its best laps, as lapdata ranked it: the medals.
+                "race_positions": race_positions_by_driver.get(did, {}),
                 "best_lap": best_lap,
                 "avg_best_lap": avg_lap,
                 "total_lap_time": summary,
                 "races_entered": len(valid_times),
             })
 
-        driver_rows.sort(key=lambda d: (d["total_lap_time"] is None, d["total_lap_time"] or 0))
+        driver_rows.sort(key=lambda d: (d["position"] is None, d["position"] or 0, d["driver_name"]))
 
         return {
             "session_id": race_session.id,
