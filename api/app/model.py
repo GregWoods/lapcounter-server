@@ -208,7 +208,8 @@ class DriverLap(SQLModel, table=True):
     )
     # NULL for a void crossing: only 'counted' rows are laps (migration 003, #86).
     lap_time: Optional[Decimal] = Field(default=None)
-    # 'counted', 'start_line', 'yellow_flag' or 'baseline' — what lapdata made of the crossing.
+    # 'counted', 'start_line', 'yellow_flag', 'baseline' or 'too_short' (migration 008) —
+    # what lapdata made of the crossing.
     # Anything counting laps or taking a fastest lap must filter to 'counted'.
     outcome: str = Field(default='counted', sa_column_kwargs={"server_default": text("'counted'")})
     # Lap-timing provenance (#27), on void crossings too. counter_ms on one clock is the

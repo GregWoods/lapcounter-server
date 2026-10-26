@@ -20,8 +20,8 @@ log = logging.getLogger(__name__)
 _conn = None
 
 # What lapdata's race manager can make of a crossing (race_manager.CROSSING_OUTCOMES), and
-# what migration 003's CHECK constraint allows. Kept in step with both by hand.
-OUTCOMES = ('counted', 'start_line', 'yellow_flag', 'baseline')
+# what migration 008's CHECK constraint allows. Kept in step with both by hand.
+OUTCOMES = ('counted', 'start_line', 'yellow_flag', 'baseline', 'too_short')
 
 
 def get_conn():
@@ -66,7 +66,7 @@ DB_UNAVAILABLE = (psycopg2.OperationalError, psycopg2.InterfaceError)
 def on_driver_lap(payload: dict):
     """Persist one crossing published by lapdata, as the race manager judged it. Its
     `outcome` is 'counted' for a real lap; anything else ('start_line', 'yellow_flag',
-    'baseline') is a void crossing, stored for traceability with no lap time and left
+    'baseline', 'too_short') is a void crossing, stored for traceability with no lap time and left
     out of the driver_races aggregates (#86). We record it verbatim — no race logic is
     re-derived here.
 
