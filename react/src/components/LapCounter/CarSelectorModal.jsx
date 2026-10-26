@@ -21,11 +21,19 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, onCarSelected }) => 
             );
     }, [carImgListUrl]);
 
+    // Escape and a click outside close it too, so it can always be dismissed.
+    useEffect(() => {
+        if (!showMe) return;
+        const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [showMe, onClose]);
+
 
     if (cars && showMe) {
         return (
             <>
-            <div className="fullscreenblur"></div>
+            <div className="fullscreenblur" onClick={onClose}></div>
             <div className="carselectormodal">
                 <div className="carcontainer">
                     {cars.map((car, idx) => {
@@ -34,7 +42,7 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, onCarSelected }) => 
                 </div>
 
                 <div className="carselectorbuttons">
-                    <button onClick={onClose}>Done</button>
+                    <button onClick={onClose}>Cancel</button>
                 </div>
             </div>
             </>
