@@ -16,8 +16,8 @@ from pydantic import BaseModel
 from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState, RaceSessionSummary
-from next_race import _build_race_setup, get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup, effective_laps_completed
-from points import calculate_race_points
+from next_race import _build_race_setup, get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup
+from points import session_points_rows
 import app_settings
 import race_lifecycle
 import race_state_subscriber
@@ -782,10 +782,6 @@ def build_session_results(race_session, dbsession):
     ).all()
     meeting_driver_names = {md.driver_id: md.driver_name for md in md_rows}
 
-    race_groups = defaultdict(list)
-    for dr in all_driver_races:
-        race_groups[dr.race_id].append(dr)
-
     scoring_method = race_session.scoring_method
     races_out = [{"race_id": r.id, "race_number": r.race_number or (i + 1)} for i, r in enumerate(races)]
 
@@ -837,65 +833,12 @@ def build_session_results(race_session, dbsession):
             "sessions": sessions_list,
         }
 
-    # Points / position scoring path
-    scoring_points_json = race_session.scoring_points
-
-    # Yellow-flag lap penalties (GPIO-only substitute for a real power cut) are recorded
-    # separately in race_penalties rather than in driver_races.laps_completed, since
-    # that column is dbwriter's own aggregate from driver_lap messages, whose lap_number
-    # is the raw ordinal before any penalty (#83). This is the one place the penalty is
-    # subtracted. Fold them in here so a penalized driver's final position/points
-    # reflect it, not just the live race_state lapdata published mid-race.
-    lap_penalties = dbsession.exec(
-        select(RacePenalty).where(RacePenalty.race_id.in_(race_ids), RacePenalty.penalty_type == 'lap')
-    ).all()
-    lap_penalty_by_race_driver: dict = defaultdict(int)
-    for p in lap_penalties:
-        lap_penalty_by_race_driver[(p.race_id, p.driver_id)] += int(p.amount)
-
-    # driver_races.laps_completed is NULL when dbwriter never wrote an aggregate (it was
-    # down, or sample data). That is "unknown", not 0 — less a penalty it would rank the
-    # driver below one who never crossed — so count their counted driver_laps instead.
-    counted_rows: dict = dict(dbsession.exec(
-        select(DriverLap.driver_race_id, func.count(DriverLap.id))
-        .join(DriverRace, DriverLap.driver_race_id == DriverRace.id)
-        .where(DriverRace.race_id.in_(race_ids), DriverLap.outcome == 'counted')
-        .group_by(DriverLap.driver_race_id)
-    ).all())
-
-    positions = {}
-    laps_by_race = defaultdict(dict)
-    for race_id in race_ids:
-        def effective_laps(dr):
-            raw = dr.laps_completed if dr.laps_completed is not None else counted_rows.get(dr.id, 0)
-            return effective_laps_completed(raw, lap_penalty_by_race_driver.get((race_id, dr.driver_id), 0))
-        sorted_drs = sorted(
-            race_groups.get(race_id, []),
-            key=lambda dr: (-effective_laps(dr), dr.fastest_lap_time or 999999)
-        )
-        positions[race_id] = {dr.driver_id: i + 1 for i, dr in enumerate(sorted_drs)}
-        for dr in race_groups.get(race_id, []):
-            laps_by_race[race_id][dr.driver_id] = effective_laps(dr)
-
-    driver_rows = []
-    for did, name in meeting_driver_names.items():
-        pos_map = {str(race_id): positions.get(race_id, {}).get(did) for race_id in race_ids}
-        pts_map = {
-            str(race_id): calculate_race_points(
-                scoring_method, scoring_points_json,
-                positions.get(race_id, {}).get(did),
-                laps_by_race.get(race_id, {}).get(did),
-            )
-            for race_id in race_ids
-        }
-        races_entered = sum(1 for p in pos_map.values() if p is not None)
-        driver_rows.append({
-            "driver_id": did, "driver_name": name,
-            "positions": pos_map, "points": pts_map,
-            "total_points": sum(pts_map.values()), "races_entered": races_entered,
-        })
-
-    driver_rows.sort(key=lambda d: (-d["total_points"], d["races_entered"]))
+    # Points / position scoring path: positions are lapdata's, as stored from the Finished
+    # race_state (#81). Lap penalties are already in them, so none are subtracted here.
+    driver_rows = session_points_rows(
+        race_ids, [dr for dr in all_driver_races if dr.race_id in race_ids],
+        meeting_driver_names, scoring_method, race_session.scoring_points,
+    )
 
     return {
         "session_id": race_session.id,

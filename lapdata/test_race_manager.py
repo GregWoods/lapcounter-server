@@ -691,6 +691,61 @@ def test_to_dict_sorted_by_laps_then_started_then_race_time_but_output_sorted_by
     assert [d['lane'] for d in state['drivers']] == [1, 2, 3]
 
 
+def positions(race):
+    return {d['lane']: d['position'] for d in race.to_dict()['drivers']}
+
+
+def test_a_tie_on_laps_is_split_by_race_time():
+    race = new_race(target_laps=5, count_first_crossing=True, n_drivers=2)
+    race.on_lap(1, at(5.0))
+    race.on_lap(2, at(4.8))
+    race.on_lap(1, at(10.2))
+    race.on_lap(2, at(10.1))   # two laps each; lane 2 got there first
+    assert positions(race) == {1: 2, 2: 1}
+
+
+def test_an_exact_race_time_tie_is_split_by_fastest_lap():
+    """Real at BLE's 10 ms resolution (#24)."""
+    race = new_race(target_laps=5, count_first_crossing=True, n_drivers=2)
+    race.on_lap(1, at(5.0))
+    race.on_lap(2, at(4.5))
+    race.on_lap(1, at(10.0))   # laps 5.0, 5.0
+    race.on_lap(2, at(10.0))   # laps 4.5, 5.5: the faster single lap
+    assert positions(race) == {1: 2, 2: 1}
+
+
+def test_a_complete_tie_falls_back_to_lane_order():
+    race = new_race(target_laps=5, count_first_crossing=True, n_drivers=2)
+    race.on_lap(2, at(5.0))
+    race.on_lap(1, at(5.0))
+    assert positions(race) == {1: 1, 2: 2}
+
+
+def test_a_driver_who_never_started_is_behind_a_penalised_starter():
+    """The penalty takes lane 1 to -1 net laps, below lane 2's 0 — but lane 2 never crossed."""
+    race = new_race(target_laps=5, count_first_crossing=True, n_drivers=2,
+                    yellow_lap_penalty_laps=2)
+    race.on_lap(1, at(5.0))
+    race.yellow()
+    race.pause(from_yellow_expiry=True)
+    race.on_lap(1, at(10.0))
+    assert race.drivers[1].laps_completed == -1
+    assert positions(race) == {1: 1, 2: 2}
+
+
+def test_a_penalised_driver_drops_behind_on_net_laps():
+    race = new_race(target_laps=10, count_first_crossing=True, n_drivers=2,
+                    yellow_lap_penalty_laps=1)
+    race.on_lap(1, at(5.0))
+    race.on_lap(2, at(5.5))
+    race.on_lap(1, at(10.0))
+    race.on_lap(2, at(11.0))   # two laps each, lane 1 ahead on time
+    race.yellow()
+    race.pause(from_yellow_expiry=True)
+    race.on_lap(1, at(15.0))   # costs lane 1 a lap
+    assert positions(race) == {1: 2, 2: 1}
+
+
 def test_to_dict_standard_fields():
     race = new_race(target_laps=5, count_first_crossing=True, n_drivers=1)
     race.on_lap(1, at(4.321))

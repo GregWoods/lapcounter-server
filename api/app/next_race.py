@@ -89,19 +89,6 @@ def get_drivers_for_next_race_sql(dbsession, race_session_id: int):
         raise HTTPException(status_code=500, detail=error_detail)
 
 
-def effective_laps_completed(laps_completed, penalty_laps) -> int:
-    """A driver's lap count for Points-session position/scoring after subtracting any
-    recorded yellow-flag lap penalties — the same rule as race_manager.py's
-    DriverState.laps_completed, so results and the live leaderboard agree (#86).
-
-    ⚠️ Not floored at 0. Penalties carry forward: one charged before the driver had laps
-    to lose still comes off their final total, so this can go negative, and a negative
-    count must still rank below 0. Floor only where a laps-done figure is displayed.
-    Pulled out as a pure function, the same way as assign_drivers_to_lanes below, so
-    build_session_results()'s scoring math is unit-testable without a database."""
-    return (laps_completed or 0) - (penalty_laps or 0)
-
-
 #The unit-testable logic for sorting drivers into racing and non-racing groups
 #  No dependencies on the database or the api routing magic
 def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]):

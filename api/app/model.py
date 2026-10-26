@@ -157,6 +157,10 @@ class DriverRace(SQLModel, table=True):
     laps_completed: Optional[int]
     last_lap_time: Optional[Decimal] = Field(default=None)
     fastest_lap_time: Optional[Decimal] = Field(default=None)
+    # The result lapdata published in the Finished race_state (migration 006, #81). NULL
+    # for a driver who never started (DNS). Results read these; nothing re-ranks.
+    position: Optional[int] = Field(default=None)
+    race_time: Optional[Decimal] = Field(default=None)
 
 
 # Records an operator withdrawal of a driver from a race (the NextRace "×" button).

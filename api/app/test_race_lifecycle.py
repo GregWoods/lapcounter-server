@@ -1,7 +1,7 @@
 """plan_reconcile(): how one race_state message changes the DB (#79). DB-free."""
 import pytest
 
-from race_lifecycle import plan_reconcile
+from race_lifecycle import plan_reconcile, plan_results
 
 GO = 1749123456.789
 
@@ -80,3 +80,27 @@ def test_nothing_is_inferred_from_an_idle_empty_or_offline_state(race_state):
 
 def test_a_different_race_finished_does_not_finish_the_running_one():
     assert plan_reconcile(msg('Finished', race_id=6), 'Running', [5, 6]) == [('finish', 6)]
+
+
+# --- Results: stored as lapdata published them (#81) ---
+
+def driver(driver_id, position, race_time, has_started=True):
+    return {'driver_id': driver_id, 'position': position, 'total_race_time': race_time,
+            'has_started': has_started}
+
+
+def test_a_finished_race_carries_lapdatas_positions_as_published():
+    """Not re-ranked: lane 2 is ahead of lane 1 with the slower race time because lapdata
+    said so (on laps, say), and that is what gets stored."""
+    state = {**msg('Finished'), 'drivers': [driver(1, 2, 30.1), driver(2, 1, 41.5)]}
+    assert plan_results(state) == {1: (2, 30.1), 2: (1, 41.5)}
+
+
+def test_a_driver_who_never_started_is_dns():
+    state = {**msg('Finished'), 'drivers': [driver(1, 1, 30.1), driver(2, 2, 0.0, has_started=False)]}
+    assert plan_results(state) == {1: (1, 30.1), 2: (None, None)}
+
+
+@pytest.mark.parametrize('state', ['ArmedForStart', 'Running', 'Yellow', 'Paused', 'NotStarted', 'Offline'])
+def test_only_a_finished_race_has_results(state):
+    assert plan_results({**msg(state), 'drivers': [driver(1, 1, 30.1)]}) is None

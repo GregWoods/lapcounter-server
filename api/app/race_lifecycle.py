@@ -16,14 +16,20 @@ plan_reconcile() is the decision and is DB-free, so it is unit-tested on its own
   of those before its startup recovery has run.
 - **Ordering.** The old race is finished (with its session auto-end check) before the
   new one is started.
+
+A Finished race_state also carries each driver's final position and race time, which
+are stored in driver_races as published (#81, plan_results()). ⚠️ A race finished by
+inference (a different race under way) never had its Finished message reach us, so it
+has no results.
 """
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 from sqlmodel import Session, select
 
-from model import Race, RaceSession
+from model import DriverRace, Race, RaceSession
 from next_race import get_drivers_for_next_race_sql, remove_pending_races
 
 logger = logging.getLogger('uvicorn.error')
@@ -66,6 +72,23 @@ def plan_reconcile(race_state: dict, msg_race_db_state: Optional[str],
     return actions
 
 
+def plan_results(race_state: dict) -> Optional[dict]:
+    """Each driver's result from a Finished race_state, as driver_id -> (position,
+    race_time), or None if the message isn't a finished race.
+
+    lapdata is the one authority on finishing position (#81), so these are copied as
+    published, never re-ranked. A driver who never crossed the line is DNS: no position
+    and no race time, so they score nothing."""
+    if race_state.get('state') != 'Finished' or race_state.get('race_id') is None:
+        return None
+    return {
+        d['driver_id']: ((d.get('position'), d.get('total_race_time'))
+                         if d.get('has_started') else (None, None))
+        for d in race_state.get('drivers') or []
+        if d.get('driver_id') is not None
+    }
+
+
 def reconcile(dbsession: Session, race_state: dict) -> list[tuple]:
     """Bring the DB into line with one race_state. Returns the actions it applied."""
     race_id = race_state.get('race_id')
@@ -79,7 +102,32 @@ def reconcile(dbsession: Session, race_state: dict) -> list[tuple]:
         else:
             start_race(dbsession, action[1], action[2])
             logger.info(f"race_state: race {action[1]} started")
+    # Results too are level, not edge: any Finished race_state for a race the DB holds
+    # Finished fills in whatever differs, so a result missed on the finishing beat is
+    # stored on the next one. Lifecycle stays monotonic; only results are rewritten.
+    results = plan_results(race_state)
+    if results is not None and race is not None and race.state == 'Finished':
+        if store_results(dbsession, race_id, results):
+            logger.info(f"race_state: race {race_id} results stored")
     return actions
+
+
+def store_results(dbsession: Session, race_id: int, results: dict) -> bool:
+    """Write lapdata's positions and race times to driver_races, touching only rows that
+    differ (the heartbeat repeats Finished every 2s). Returns True if anything changed."""
+    changed = False
+    for dr in dbsession.exec(select(DriverRace).where(DriverRace.race_id == race_id)).all():
+        if dr.driver_id not in results:
+            continue
+        position, race_time = results[dr.driver_id]
+        race_time = Decimal(str(race_time)).quantize(Decimal('0.001')) if race_time is not None else None
+        if dr.position != position or dr.race_time != race_time:
+            dr.position, dr.race_time = position, race_time
+            dbsession.add(dr)
+            changed = True
+    if changed:
+        dbsession.commit()
+    return changed
 
 
 def start_race(dbsession: Session, race_id: int, started_at: Optional[float]) -> bool:
