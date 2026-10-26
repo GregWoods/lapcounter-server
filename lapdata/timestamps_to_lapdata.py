@@ -541,6 +541,18 @@ def _load_pending(pending: dict, target_laps: int | None = None):
     )
 
 
+def _unload_if_queue_empty():
+    """After a /races/pending/ read came back empty: if the API answered (a 404, nothing
+    queued) rather than being unreachable, a staged race that hasn't started no longer
+    exists — its session was ended, which deletes the queue — so stop broadcasting it.
+    A race under way or Finished is left alone: the last race of a session stays on
+    screen."""
+    if _api_reachable and race.state == 'NotStarted' and race.race_id is not None:
+        logger.info(f"Staged race {race.race_id} is no longer queued; unloading it")
+        race.unload()
+        publish_race_state()
+
+
 def handle_race_control(data: dict, arrival: float):
     """Process a race_control command from any client (browser, button box, etc.).
 
@@ -651,8 +663,10 @@ def handle_race_control(data: dict, arrival: float):
             logger.info(f"Staged race {fresh.get('race_id')} on prepare (requested {race_id})")
         else:
             # No queued race (e.g. session just ended / not started yet). Nothing to
-            # stage — the operator starts the next session before the next race exists.
+            # stage — the operator starts the next session before the next race exists —
+            # and a race still staged from an ended session must go.
             logger.info("prepare: no queued race to stage (start a session first)")
+            _unload_if_queue_empty()
 
     elif command == 'status':
         # No longer needed to get the state — race_state is retained and heartbeated
@@ -661,15 +675,17 @@ def handle_race_control(data: dict, arrival: float):
         publish_race_state()
 
     elif command == 'reload_lineup':
-        # NextRace edited the queued lineup through the API (added/removed a driver,
-        # toggled a lane, swapped a car). Re-stage it so race_state — and every display
-        # built from it — matches. Only while the staged race hasn't started: once it
-        # is armed the lineup is fixed, and mid-race the queue head is the *next* race,
-        # which must not replace the one running.
+        # The queue changed through the API: NextRace edited the lineup (added/removed a
+        # driver, toggled a lane, swapped a car), or a session was ended, which deletes
+        # its queue. Re-stage it so race_state — and every display built from it —
+        # matches. Only while the staged race hasn't started: once it is armed the lineup
+        # is fixed, and mid-race the queue head is the *next* race, which must not
+        # replace the one running.
         if race.state != 'NotStarted':
             return
         fresh = fetch_pending_race()
         if not fresh:
+            _unload_if_queue_empty()
             return
         if race.race_id is not None and fresh.get('race_id') != race.race_id:
             logger.info(f"reload_lineup ignored: queue head is race {fresh.get('race_id')}, "
