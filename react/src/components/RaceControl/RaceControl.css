@@ -178,6 +178,133 @@
     padding: 0.8em;
 }
 
+/* Quieter than Reload Lineup: it sits above the main buttons on every screen. */
+.rc-btn--editcars {
+    font-size: 0.95em;
+    padding: 0.6em;
+}
+
+/* ── Edit Cars (full screen, inherits .rc-page's em sizing) ──────── */
+
+.rc-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: #15171a;
+    display: flex;
+    flex-direction: column;
+    padding: 0.9em;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.rc-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.6em;
+}
+
+.rc-modal-header h2 {
+    flex: 1;
+    margin: 0;
+    font-size: 1.3em;
+    text-align: center;
+}
+
+.rc-modal-icon,
+.rc-modal-icon-spacer {
+    width: 2.4em;
+    height: 2.4em;
+    flex-shrink: 0;
+}
+
+.rc-modal-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2c3138;
+    border: none;
+    border-radius: 0.5em;
+    color: #f0f0f0;
+    cursor: pointer;
+}
+
+.rc-modal-icon svg { width: 1.4em; height: 1.4em; }
+
+.rc-modal-hint {
+    color: #8a93a0;
+    margin: 0 0 0.8em;
+    text-align: center;
+    font-size: 0.9em;
+}
+
+.rc-modal-error {
+    background: #3a160a;
+    color: #ffb08a;
+    border-radius: 0.5em;
+    padding: 0.6em;
+    margin-bottom: 0.8em;
+    text-align: center;
+}
+
+.rc-lanecars {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(15em, 100%), 1fr));
+    align-content: start;
+    gap: 0.6em;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.rc-lanecar {
+    display: grid;
+    grid-template-columns: 2.2em 7em 1fr;
+    align-items: center;
+    gap: 0.6em;
+    padding: 0.4em;
+    background: #1e2228;
+    border: 0.15em solid var(--lane-color);
+    border-radius: 0.6em;
+    color: #f0f0f0;
+    font-size: 1em;
+    text-align: left;
+    cursor: pointer;
+}
+
+.rc-lanecar--disabled { opacity: 0.45; }
+
+.rc-lanecar-lane {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.2em;
+    border-radius: 0.4em;
+    background: var(--lane-color);
+    color: #111;
+    font-weight: 800;
+    font-size: 1.1em;
+}
+
+.rc-lanecar img {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 0.4em;
+}
+
+.rc-lanecar-driver {
+    font-size: 1.15em;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .rc-connecting {
     text-align: center;
     color: #8a93a0;

@@ -6,6 +6,7 @@ import { House, Flag, Pause, Play } from 'lucide-react';
 import MqttSubscriber from '../MqttSubscriber';
 import useLapdataAlive from '../hooks/useLapdataAlive.js';
 import ChequeredFlagIcon from '../ChequeredFlagIcon';
+import EditCarsModal from './EditCarsModal';
 import { API_URL, MQTT_URL } from '../../endpoints.js';
 
 
@@ -40,6 +41,7 @@ export default function RaceControl() {
         runningRaceId: null, runningRaceNumber: null,
     });
     const clientRef = useRef(null);
+    const [editingCars, setEditingCars] = useState(false);
 
     // Pull session / next-race details the MQTT race_state doesn't carry. Pending and
     // regen-status are read-only (races are pre-populated when a session starts); a 404
@@ -217,6 +219,9 @@ export default function RaceControl() {
     // whatever is next as usual.
     const endOrphanedRace = () => publish('end', { race_id: orphanedRaceId });
 
+    // Stable, since EditCarsModal re-binds its Escape handler whenever it changes.
+    const closeEditCars = useCallback(() => setEditingCars(false), []);
+
     // "Next Session": begin the next NotStarted session and pre-populate its queue.
     const nextSession = async () => { await apiPost('/sessions/start-next'); await loadInfo(); };
 
@@ -321,6 +326,13 @@ export default function RaceControl() {
 
 
             <section className="rc-actions">
+                {/* Any time there's a session to race: a change only reaches queued races. */}
+                {(info.sessionInProgress || info.nextSessionAvailable) && (
+                    <button className="rc-btn rc-btn--ghost rc-btn--editcars" onClick={() => setEditingCars(true)}>
+                        Edit Cars
+                    </button>
+                )}
+
                 {state === 'Connecting' && <p className="rc-connecting">Connecting…</p>}
 
                 {live && (
@@ -409,6 +421,12 @@ export default function RaceControl() {
                     )
                 )}
             </section>
+
+            {/* The staged race's cars changed under lapdata: it re-stages it (only while
+                that race is NotStarted and still the queue head). */}
+            {editingCars && (
+                <EditCarsModal onClose={closeEditCars} onChanged={() => publish('reload_lineup')} />
+            )}
         </div>
     );
 }
