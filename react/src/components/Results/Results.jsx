@@ -70,7 +70,7 @@ function ResultsTable({ drivers, races, scrollRef, startIndex = 0 }) {
                                 const pts = d.points?.[key];
                                 return (
                                     <td key={r.race_id} className={`position-cell ${posClass(pos)}`}>
-                                        {pos == null ? '–' : pts}
+                                        {pos != null ? pts : d.dns?.includes(key) ? 'DNS' : '–'}
                                     </td>
                                 );
                             })}

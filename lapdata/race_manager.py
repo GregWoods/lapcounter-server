@@ -62,8 +62,9 @@ class DriverState:
 
     @property
     def laps_completed(self) -> int:
-        """Net laps: counted laps less lap penalties. The one rule for it — live, on
-        recovery and in results (effective_laps_completed) — so they can't disagree (#86).
+        """Net laps: counted laps less lap penalties. The one rule for it, live and on
+        recovery, so they can't disagree (#86); results store the positions ranked on it
+        rather than recounting (#81).
 
         ⚠️ Deliberately NOT floored at 0: it goes negative when a penalty lands before
         the driver has laps to lose, and that is what carries the penalty forward. The
@@ -606,9 +607,18 @@ class RaceManager:
         race_times = {d.lane: self.race_time(d) for d in self.drivers.values()}
         latest_race_time = max(race_times.values(), default=0.0)
 
+        # The finishing-position rule, and its only implementation (#81): results store
+        # the positions published here rather than re-ranking.
+        # 1. A driver who never crossed is behind everyone who did, whatever the lap
+        #    count — a penalty can take a starter's net laps below a non-starter's 0.
+        # 2. Net laps (after penalties), most first.
+        # 3. Race time — lights-out to the last counted crossing — least first.
+        # 4. An exact race-time tie (real at BLE's 10 ms): fastest lap, least first.
+        # 5. Still identical: lane order (Greg, 2026-10-25).
         sorted_drivers = sorted(
             self.drivers.values(),
-            key=lambda d: (-d.laps_completed, not d.has_started, race_times[d.lane]),
+            key=lambda d: (not d.has_started, -d.laps_completed, race_times[d.lane],
+                           d.best_lap_time, d.lane),
         )
 
         driver_list = []
