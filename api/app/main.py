@@ -281,6 +281,20 @@ def get_current_race(dbsession: SessionDep):
     raise HTTPException(status_code=404, detail="No current race — no session in progress")
 
 
+@app.get("/races/{race_id}/setup")
+def get_race_setup(race_id: int, dbsession: SessionDep):
+    """The setup (lineup, car pictures, session labels) of one race, whatever its state —
+    the same payload /races/current/ sends. /currentrace reads it for the race lapdata's
+    race_state names, so a Finished race keeps its car pictures after its session has
+    ended and there is no current race any more. 404 if there is no such race or it has
+    no lineup."""
+    race = dbsession.get(Race, race_id)
+    setup = _build_race_setup(dbsession, race) if race else None
+    if not setup:
+        raise HTTPException(status_code=404, detail="Race not found or has no lineup")
+    return setup
+
+
 @app.get("/races/running/")
 def get_running_race(dbsession: SessionDep):
     """Just the id and number of the race marked Running, or 404. RaceControl polls this on

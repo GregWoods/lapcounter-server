@@ -43,6 +43,12 @@
     overflow: visible;
 }
 
+/* Empty placeholder — mirrors flc-car */
+.flc-ch-car {
+    width: 7.5rem;
+    flex-shrink: 0;
+}
+
 /* Empty placeholder — mirrors flc-name width to keep subsequent columns aligned */
 .flc-ch-name {
     width: var(--name-col-width, 10rem);
@@ -110,6 +116,23 @@
     font-weight: bold;
     text-align: center;
     flex-shrink: 0;
+}
+
+/* The car this driver has in the current race. Kept for drivers not in it too (empty),
+   so every column after it lines up. */
+.flc-car {
+    width: 7.5rem;
+    height: 4.2rem;
+    flex-shrink: 0;
+    border-radius: 0.4rem;
+    overflow: hidden;
+}
+
+.flc-car img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 /* Driver name — width synced to longest name via CSS variable */

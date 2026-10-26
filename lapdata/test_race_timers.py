@@ -77,6 +77,7 @@ def lapdata(monkeypatch):
     monkeypatch.setattr(tsl, 'client', types.SimpleNamespace(
         publish=lambda topic, payload, **k: published.append(json.loads(payload))))
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: PENDING)
+    monkeypatch.setattr(tsl, 'fetch_race_setup', lambda race_id: PENDING)
     monkeypatch.setattr(tsl, 'pending_race_cache', None)
     monkeypatch.setattr(tsl, '_light_timers', [])
     monkeypatch.setattr(tsl, '_end_timer', None)
@@ -334,6 +335,32 @@ def test_end_for_another_race_never_ends_ours_under_way(lapdata, monkeypatch, co
     control('end', race_id=7)
     assert lapdata.race.race_id == 1
     assert lapdata.race.state != 'Finished'
+
+
+# --- reload_lineup on a race under way: a car swap from /currentrace ---
+
+@pytest.mark.parametrize('command', [None, 'end'])
+def test_reload_lineup_takes_a_swapped_car_for_our_race(lapdata, monkeypatch, command):
+    """The API owns the lineup; lapdata re-reads its own race (not the queue head) and
+    takes only the car. Finished too: the results stay on screen."""
+    fetched = []
+    swapped = {'race_id': 1, 'lane_assignments': [{**PENDING['lane_assignments'][0], 'car_picture': 'spare.jpg'}]}
+    monkeypatch.setattr(tsl, 'fetch_race_setup', lambda race_id: fetched.append(race_id) or swapped)
+    if command:
+        control(command)
+    state = lapdata.race.state
+
+    control('reload_lineup')
+    assert fetched == [1]
+    assert lapdata.race.state == state
+    assert lapdata.published[-1]['drivers'][0]['car_picture'] == 'spare.jpg'
+
+
+def test_reload_lineup_with_no_car_change_republishes_nothing(lapdata, monkeypatch):
+    monkeypatch.setattr(tsl, 'fetch_race_setup', lambda race_id: PENDING)
+    published = len(lapdata.published)
+    control('reload_lineup')
+    assert len(lapdata.published) == published
 
 
 def test_end_naming_our_own_race_ends_it(lapdata):

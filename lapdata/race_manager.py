@@ -29,6 +29,9 @@ class DriverState:
     lane: int
     driver_id: int
     driver_name: str
+    # The car's picture filename, from the lineup. Display only: published so a screen can
+    # show the car for any race lapdata holds, with or without a current race in the DB.
+    car_picture: str = ''
     crossings: int = 0          # all S/F crossings including discarded start crossing
     # Lap penalties charged so far, in laps. Carried forward (Greg, 2026-10-25): a
     # penalty charged before the driver has laps to lose is still owed, so it is never
@@ -170,6 +173,7 @@ class RaceManager:
                 lane=lane,
                 driver_id=a['id'],
                 driver_name=a['driver_name'],
+                car_picture=a.get('car_picture') or '',
             )
 
         if session_type == 'FastestLap':
@@ -282,6 +286,19 @@ class RaceManager:
             times = laps.get(driver.driver_id, [])
             if times and sum(times) > flag_at:
                 driver.finished = True
+
+    def update_car_pictures(self, lane_assignments: list) -> bool:
+        """Take the car pictures from a re-read lineup, and nothing else — for a car swapped
+        on a race already under way, where the lineup itself is fixed. Matched on lane and
+        driver, so a lineup for some other race changes nothing. Returns whether any did."""
+        changed = False
+        for a in lane_assignments:
+            driver = self.drivers.get(a.get('lane_number'))
+            picture = a.get('car_picture') or ''
+            if driver and driver.driver_id == a.get('id') and driver.car_picture != picture:
+                driver.car_picture = picture
+                changed = True
+        return changed
 
     def _merge_session_drivers(self, lane_assignments: list, session_drivers: list):
         """Merge API session driver list into in-memory session_drivers.
@@ -614,6 +631,7 @@ class RaceManager:
                 'lane': driver.lane,
                 'driver_id': driver.driver_id,
                 'driver_name': driver.driver_name,
+                'car_picture': driver.car_picture,
                 'laps_completed': driver.laps_completed,
                 'laps_remaining': laps_remaining,
                 'last_lap': round(driver.last_lap_time, 3),
@@ -672,6 +690,8 @@ class RaceManager:
                 ),
                 'in_current_race': in_current_race,
                 'lane': lane,
+                # A car belongs to a race, so only a driver in this one has one to show.
+                'car_picture': driver.car_picture if driver else None,
                 'current_race_laps': current_race_laps,
             })
 

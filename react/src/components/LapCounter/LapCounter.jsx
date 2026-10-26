@@ -65,8 +65,17 @@ const LapCounter = () => {
     const mqttClientRef = useRef(null);
     const resyncInFlightRef = useRef(false);
 
-    // Apply a race setup (from the loader / /races/current/) to the viewmodel:
-    // identity (id, number, type) + a *staged* lane lineup. Driver cards are rebuilt
+    // A race's identity: id, number, session labels, type.
+    const applyRaceIdentity = (setup) => {
+        if (setup.race_id) setRaceId(setup.race_id);
+        if (setup.race_number != null) setRaceNumber(setup.race_number);
+        if (setup.session_number != null) setSessionNumber(setup.session_number);
+        if (setup.session_races_total != null) setSessionRacesTotal(setup.session_races_total);
+        if (setup.session_type) setSessionType(setup.session_type);
+    };
+
+    // Apply a race setup (from the loader / a race's /setup) to the viewmodel:
+    // identity + a *staged* lane lineup. Driver cards are rebuilt
     // from a fresh base so no lap times / laps-remaining bleed across from a previous
     // race — live lap data only ever comes from race_state. `targetLaps` (from the
     // race_state) seeds "Laps Remaining" with the full race distance before any laps
@@ -87,11 +96,7 @@ const LapCounter = () => {
                     : { ...driver, inLineup: false, position: null, hasStartedRacing: false };
             })
         );
-        if (setup.race_id) setRaceId(setup.race_id);
-        if (setup.race_number != null) setRaceNumber(setup.race_number);
-        if (setup.session_number != null) setSessionNumber(setup.session_number);
-        if (setup.session_races_total != null) setSessionRacesTotal(setup.session_races_total);
-        if (setup.session_type) setSessionType(setup.session_type);
+        applyRaceIdentity(setup);
     };
 
     // Stage a freshly-loaded race onto the get-ready preview: clean lineup (above)
@@ -108,30 +113,29 @@ const LapCounter = () => {
         setRace(r => ({ ...r, hasStarted: false, paused: false, underStartersOrders: false }));
     };
 
-    // The DB is authoritative for which race is current. When a race_state arrives
-    // for a race other than the one we're showing, re-fetch /races/current/ to decide
-    // whether to adopt it (newly staged) or ignore it (stale lapdata broadcast).
-    // A NotStarted state means lapdata just staged a new race, so reset to the clean
-    // get-ready preview; otherwise overlay identity/lineup onto the live view.
+    // When a race_state arrives for a race other than the one we're showing, fetch that
+    // race's own setup for what race_state doesn't carry: the session labels in the
+    // header. A NotStarted state means lapdata just staged a new race, so reset to the
+    // clean get-ready preview. Any other state only takes the identity: the cards, car
+    // pictures included, come from race_state, and rebuilding them would hide a race in
+    // progress or a Finished one until the next message.
     //
-    // ⚠️ Only a setup for the race race_state names is applied, and each race+state (or
-    // staged lineup, for a NotStarted lineup edit) is tried once. A Finished race stays
-    // on screen while the DB's current race is already the next one queued; applying that
-    // one rebuilt every card hidden, and the next message brought them back, so with the
-    // 2s heartbeat (#76) the leaderboard flew in again every beat.
+    // ⚠️ The race race_state names, never /races/current/: after a session's last race the
+    // DB has no current race at all, and between races its current race is the next one
+    // queued while the Finished one is still on screen. Each race+state (or staged lineup,
+    // for a NotStarted lineup edit) is fetched once, or the 2s heartbeat (#76) repeats it.
     const resyncAttemptRef = useRef(null);
     const resyncCurrentRace = (incomingState, targetLaps, incomingRaceId, lineup = '') => {
         const attempt = `${incomingRaceId}:${incomingState}:${lineup}`;
         if (resyncInFlightRef.current || resyncAttemptRef.current === attempt) return;
         resyncInFlightRef.current = true;
         resyncAttemptRef.current = attempt;
-        fetch(`${API_URL}/races/current/`)
+        fetch(`${API_URL}/races/${incomingRaceId}/setup`)
             .then(r => r.ok ? r.json() : null)
             .then(setup => {
                 if (!setup) return;
-                if (incomingRaceId != null && setup.race_id !== incomingRaceId) return;
                 if (incomingState === 'NotStarted') stageRace(setup, targetLaps);
-                else applyRaceSetup(setup, targetLaps);
+                else applyRaceIdentity(setup);
             })
             .catch(() => {})
             .finally(() => { resyncInFlightRef.current = false; });
@@ -204,11 +208,16 @@ const LapCounter = () => {
     const handleCarSelectedInLapCounter = (car) => {
         const laneNumber = drivers[carSelectorModalDriverIdx].number;
         if (raceIdRef.current) {
+            // The API owns the lineup; then tell lapdata, which re-reads it and publishes
+            // the new car in race_state (only the car, for a race already under way).
+            // Without it the next race_state would put the old car back.
             fetch(`${API_URL}/races/${raceIdRef.current}/lanes/${laneNumber}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ car_id: car.id }),
-            }).catch(e => console.error('Failed to save car assignment:', e));
+            })
+                .then(() => mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'reload_lineup' })))
+                .catch(e => console.error('Failed to save car assignment:', e));
         }
     }
 
@@ -322,6 +331,9 @@ const LapCounter = () => {
                     inLineup: true,
                     driverId: rd.driver_id,
                     name: rd.driver_name,
+                    // lapdata publishes the lineup's car picture, so a Finished race keeps
+                    // its cars after the session has ended. An older lapdata sends none.
+                    carImgUrl: rd.car_picture !== undefined ? carImageUrl(rd.car_picture) : driver.carImgUrl,
                     lastLap: rd.has_started ? rd.last_lap.toFixed(3) : '',
                     fastestLap: rd.best_lap != null ? rd.best_lap.toFixed(3) : '',
                     isRaceFastestLap: rd.is_race_fastest_lap,

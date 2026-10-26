@@ -83,7 +83,7 @@ The startup read (`GET /races/running/recovery/`) is **not** a departure: lapdat
 
 **`race_control`:** `{"command": "start", "race_id": 5}`
 
-⚠️ **NextRace edits the queued lineup through the API only, so lapdata doesn't see them unless told.** After every edit (add/remove driver, lane toggle, car swap) NextRace publishes `reload_lineup`; lapdata re-reads `/races/pending/` and re-stages it, but **only while the staged race is `NotStarted` and is still the queue head** — mid-race the head is the *next* race and must never replace the running one (advancing is `prepare`'s job). `prepare` itself is likewise ignored while a race is `ArmedForStart`/`Running`/`Yellow`/`Paused` — a client acting on a stale view (RaceControl regenerating during a pause, or closing a stuck DB race) must never stage the next race over a live one; End first. `arm` also re-reads the lineup rather than trusting `pending_race_cache` (the cache is only a fallback if the API is down), so an edit whose `reload_lineup` was missed still gets raced. Without both, an added driver's laps go uncounted and /currentrace shows the stale lineup (cards overlapping, since positions come from `race_state`).
+⚠️ **NextRace edits the queued lineup through the API only, so lapdata doesn't see them unless told.** After every edit (add/remove driver, lane toggle, car swap) NextRace publishes `reload_lineup`; lapdata re-reads `/races/pending/` and re-stages it, but **only while the staged race is `NotStarted` and is still the queue head** — mid-race the head is the *next* race and must never replace the running one (advancing is `prepare`'s job). `prepare` itself is likewise ignored while a race is `ArmedForStart`/`Running`/`Yellow`/`Paused` — a client acting on a stale view (RaceControl regenerating during a pause, or closing a stuck DB race) must never stage the next race over a live one; End first. The one exception is a **car swap** (a display fact, not a lineup change): on `reload_lineup` for a race of its own that is under way or Finished, lapdata re-reads *that* race (`GET /races/{race_id}/setup`) and takes only the car pictures (`update_car_pictures()`, matched on lane and driver). /currentrace's car picker PATCHes the API and then publishes `reload_lineup`, the same as NextRace — the API owns the lineup, lapdata never writes it. `race_state` carries each driver's `car_picture` (filename; React adds the media base, since only the browser knows which address it reached the API on), so displays never need a current race in the DB to show the cars: the last race of a session keeps them after the session auto-ends. `arm` also re-reads the lineup rather than trusting `pending_race_cache` (the cache is only a fallback if the API is down), so an edit whose `reload_lineup` was missed still gets raced. Without both, an added driver's laps go uncounted and /currentrace shows the stale lineup (cards overlapping, since positions come from `race_state`).
 
 **`race_state`:**
 ```json
@@ -91,7 +91,7 @@ The startup read (`GET /races/running/recovery/`) is **not** a departure: lapdat
   "race_id": 5, "state": "Running", "target_laps": 20,
   "race_fastest_lap": 4.523, "race_start_time": 1749123456.789,
   "drivers": [
-    { "lane": 1, "driver_id": 9, "driver_name": "Jake",
+    { "lane": 1, "driver_id": 9, "driver_name": "Jake", "car_picture": "GT_Porsche_Green.jpg",
       "laps_completed": 3, "laps_remaining": 17,
       "last_lap": 5.123, "best_lap": 4.987, "total_race_time": 15.234,
       "position": 1, "finished": false, "suspended": false, "has_started": true }

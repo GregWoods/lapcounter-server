@@ -145,6 +145,23 @@ def fetch_pending_race() -> dict | None:
     return None
 
 
+def fetch_race_setup(race_id: int) -> dict | None:
+    """One race's setup (lineup, car pictures), whatever its state, or None. Read-only.
+    The lineup is the API's to manage; this is how lapdata learns of a change to a race
+    already under way (a car swap from /currentrace) — see reload_lineup."""
+    try:
+        with urllib.request.urlopen(f"{api_url}/races/{race_id}/setup", timeout=5) as resp:
+            _set_api_reachable(True)
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        _set_api_reachable(True)
+        logger.error(f"API returned {e.code} when fetching race {race_id}'s setup: {e}")
+    except Exception as e:
+        _set_api_reachable(False)
+        logger.error(f"API unreachable when fetching race {race_id}'s setup: {e}")
+    return None
+
+
 def _parse_crossing(data: dict, arrival: float) -> Crossing | None:
     """Validate a car_timestamp payload into a Crossing, or None to drop it.
 
@@ -667,7 +684,13 @@ def handle_race_control(data: dict, arrival: float):
         # is armed the lineup is fixed, and mid-race the queue head is the *next* race,
         # which must not replace the one running.
         if race.state != 'NotStarted':
-            logger.info(f"reload_lineup ignored: race {race.race_id} is {race.state}")
+            # A car swap is the one change a race under way (or just Finished) can take,
+            # from /currentrace's car picker. The API owns the lineup, so re-read this
+            # race's own setup and take only the car pictures from it.
+            if race.race_id is not None:
+                setup = fetch_race_setup(race.race_id)
+                if setup and race.update_car_pictures(setup.get('lane_assignments') or []):
+                    publish_race_state()
             return
         fresh = fetch_pending_race()
         if not fresh:
