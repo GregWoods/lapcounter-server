@@ -6,6 +6,7 @@ uses them for I/O, which sits behind an `if __name__ == '__main__'` guard.
 """
 import asyncio
 import importlib
+import itertools
 import json
 import re
 import struct
@@ -44,9 +45,11 @@ def fresh_state(monkeypatch):
     monkeypatch.setattr(ble, '_last_heartbeat_at', None)
     monkeypatch.setattr(ble, '_power_retry_at', None)
     monkeypatch.setattr(ble, '_power_retry_delay', ble.POWER_RETRY_INITIAL_DELAY)
+    monkeypatch.setattr(ble, '_crossing_sequence', itertools.count(1))
+    monkeypatch.setattr(ble, '_car_sequence', [itertools.count(1) for _ in range(6)])
     published = []
     monkeypatch.setattr(ble, 'mqtt_client', types.SimpleNamespace(
-        publish=lambda topic, payload: published.append((topic, json.loads(payload)))))
+        publish=lambda topic, payload, **k: published.append((topic, json.loads(payload)))))
     ble._new_clock('test setup')
     return published
 
@@ -100,6 +103,34 @@ def test_first_packet_per_car_seeds_without_publishing(fresh_state):
 def _reconnect():
     """What run() does on reconnect: a new clock, and the per-car baselines KEPT."""
     ble._new_clock('reconnected to the powerbase')
+
+
+# --------------------------------------------------------------- delivery (#78)
+
+def test_crossings_are_published_at_qos_1(monkeypatch):
+    """So paho holds one made while our broker link is down, and the broker queues it
+    for lapdata's persistent session."""
+    sent = []
+    monkeypatch.setattr(ble, 'mqtt_client', types.SimpleNamespace(
+        publish=lambda topic, payload=None, qos=0, **k: sent.append((topic, qos))))
+    ble.publish_crossing(1, 1, ticks(50))
+    assert sent == [(ble.MQTT_TIMESTAMP_TOPIC, 1)]
+
+
+def test_crossings_are_numbered_in_sequence_overall_and_per_car(fresh_state):
+    """lapdata reads a jump as a crossing lost on the way to it: in seq at once, in
+    car_seq naming the car. Both survive a reconnect and a new clock: only a new process
+    (a new source) starts them again."""
+    ble.handle_slot_notification(None, packet(1, t1=ticks(50)))    # seed
+    ble.handle_slot_notification(None, packet(2, t1=ticks(50)))    # seed
+    ble.handle_slot_notification(None, packet(1, t1=ticks(55)))
+    ble.handle_slot_notification(None, packet(2, t1=ticks(56)))
+    _reconnect()
+    ble.handle_slot_notification(None, packet(1, t1=ticks(61)))
+
+    sent = _of(fresh_state, ble.MQTT_TIMESTAMP_TOPIC)
+    assert [(p['car'], p['seq'], p['car_seq']) for p in sent] == [(1, 1, 1), (2, 2, 1), (1, 3, 2)]
+    assert {p['source'] for p in sent} == {ble.SOURCE}
 
 
 def test_a_crossing_made_while_disconnected_is_still_counted(fresh_state):

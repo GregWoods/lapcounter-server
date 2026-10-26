@@ -10,7 +10,7 @@ import sys
 import os
 import aiomqtt
 
-from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, counter_ms
+from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, SOURCE, counter_ms, next_seq
 
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
@@ -64,10 +64,12 @@ async def send_lap_time(driver):
             crossing_counter_ms = counter_ms()
             lane_idx = random.randint(1, 2)
             lapdata = {"car": driver.driverNumber, "lane": lane_idx,
-                       "counter_ms": crossing_counter_ms, "clock": CLOCK}
+                       "counter_ms": crossing_counter_ms, "clock": CLOCK,
+                       "source": SOURCE, "seq": next_seq()}
             lapjson = json.dumps(lapdata)
             print(lapjson)
-            await client.publish(publish_topic, payload=lapjson)
+            # QoS 1, as the real GPIO Layer 1 publishes it (#78).
+            await client.publish(publish_topic, payload=lapjson, qos=1)
 
 
 async def send_clock_heartbeat():

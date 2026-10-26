@@ -12,7 +12,7 @@ import os
 import paho.mqtt.client as mqtt     #uses >= 2.0.0
 import sys
 import RPi.GPIO as GPIO             # actually uses the lgpio library for compativility with newer Linux kernels
-from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, counter_ms
+from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, SOURCE, counter_ms, next_seq
 
 # LANE_NUMBER starts from 1. 
 #   It is passed in as an environment variable in the docker compose file. 
@@ -56,10 +56,13 @@ client = None
 
 def send_lap_time(car_number, crossing_counter_ms):
     lapdata = {"car": car_number, "lane": lane_idx + 1,
-               "counter_ms": crossing_counter_ms, "clock": CLOCK}
+               "counter_ms": crossing_counter_ms, "clock": CLOCK,
+               "source": SOURCE, "seq": next_seq()}
     lapjson = json.dumps(lapdata)
     print(lapjson)
-    client.publish(MQTT_TIMESTAMP_TOPIC, payload=lapjson)
+    # QoS 1 (#78): paho holds it while the broker link is down, and the broker queues it
+    # for lapdata's persistent session. lapdata drops a redelivery.
+    client.publish(MQTT_TIMESTAMP_TOPIC, payload=lapjson, qos=1)
 
 def handshake_end(_):
     GPIO.output(lane["HSHAKE"], False)

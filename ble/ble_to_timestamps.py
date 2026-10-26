@@ -198,6 +198,17 @@ def _new_clock(reason: str) -> str:
 
 _new_clock('process start')
 
+# Crossings are numbered 1, 2, 3… for this process, so lapdata can tell when one never
+# reached it (#78): `seq` over every crossing, so a loss shows on the very next one, and
+# `car_seq` per car, which names the car once it next crosses. `source` names the process,
+# so a restart is a new sequence rather than one that went backwards; like the clock,
+# lapdata only compares it for equality. Numbered at publish, so a car crossing twice
+# while the powerbase link is down (it keeps only the latest stamp) is the one loss this
+# can't see.
+SOURCE = f"ble:{_PROCESS_ID}"
+_crossing_sequence = itertools.count(1)
+_car_sequence = [itertools.count(1) for _ in range(6)]
+
 # Commands that break the Slot timestamps' continuity: 0 and 1 zero them, 2 and 4 freeze
 # them. Freezing is the easy one to miss — it stops the clock WITHOUT moving it backwards,
 # so the backwards-detection in handle_slot_notification() can never catch it.
@@ -316,11 +327,16 @@ def publish_crossing(car_number: int, lane: int, device_ticks: int):
     and never reaches a lap. The anchor it keeps is only for lap 1.
     """
     _note_counter_seen(counter_ms(device_ticks))
+    seq = next(_crossing_sequence)
     payload = {"car": car_number, "lane": lane,
-               "counter_ms": counter_ms(device_ticks), "clock": _clock}
-    mqtt_client.publish(MQTT_TIMESTAMP_TOPIC, payload=json.dumps(payload))
+               "counter_ms": counter_ms(device_ticks), "clock": _clock,
+               "source": SOURCE, "seq": seq, "car_seq": next(_car_sequence[car_number - 1])}
+    # QoS 1 (#78): paho holds it while our broker link is down and sends it on reconnect,
+    # and the broker queues it for lapdata's persistent session. A redelivery is dropped
+    # by lapdata on (car, clock, counter_ms).
+    mqtt_client.publish(MQTT_TIMESTAMP_TOPIC, payload=json.dumps(payload), qos=1)
     logger.info(f"car_timestamp: car={car_number} lane={lane} "
-                f"counter={counter_ms(device_ticks)}ms clock={_clock}")
+                f"counter={counter_ms(device_ticks)}ms clock={_clock} seq={seq}")
 
 
 def decode_slot(data: bytearray) -> tuple[int, int, int] | None:

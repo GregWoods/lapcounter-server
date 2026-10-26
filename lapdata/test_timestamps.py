@@ -44,6 +44,11 @@ def published(monkeypatch):
         publish=lambda topic, payload, **k: sent.append((topic, json.loads(payload)))))
     monkeypatch.setattr(tsl, 'anchors', ClockAnchors())
     monkeypatch.setattr(tsl, 'prev_crossing', [None] * 6)
+    monkeypatch.setattr(tsl, '_recent_crossings',
+                        [tsl.collections.deque(maxlen=tsl.DEDUP_WINDOW) for _ in range(6)])
+    monkeypatch.setattr(tsl, '_last_seq', {})
+    monkeypatch.setattr(tsl, '_last_car_seq', {})
+    monkeypatch.setattr(tsl, '_seq_missing_warned', False)
     monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing: False)
     return sent
 
@@ -56,8 +61,16 @@ def _msg(topic, payload):
     return types.SimpleNamespace(topic=topic, payload=json.dumps(payload).encode())
 
 
-def _crossing(car, counter_ms, clock=CLOCK):
-    return {'car': car, 'lane': 1, 'counter_ms': counter_ms, 'clock': clock}
+SOURCE = 'ble:aa11bb'
+
+
+def _crossing(car, counter_ms, clock=CLOCK, seq=None, source=SOURCE, car_seq=None):
+    crossing = {'car': car, 'lane': 1, 'counter_ms': counter_ms, 'clock': clock}
+    if seq is not None:
+        crossing.update(source=source, seq=seq)
+    if car_seq is not None:
+        crossing['car_seq'] = car_seq
+    return crossing
 
 
 # --- The old contract is rejected outright, not guessed at ---
@@ -192,6 +205,125 @@ def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkey
     # A void crossing still says where and when it fell, exactly as a lap does (#27).
     assert (laps[0]['clock'], laps[0]['counter_ms']) == (CLOCK, 20_000)
     assert laps[0]['crossed_at'] == pytest.approx(laps[1]['crossed_at'] - 5.0, abs=0.01)
+
+
+# --- QoS 1 redelivery and lost crossings (#78) ---
+
+def _acted_on(monkeypatch):
+    """Record every crossing that reaches the race manager."""
+    seen = []
+    monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing: seen.append((lane, crossing.counter_ms)))
+    return seen
+
+
+def test_a_redelivered_crossing_is_ignored(published, monkeypatch):
+    """QoS 1 means the broker can resend a crossing we already handled. It must not
+    reach the race manager, publish a lap, or touch the phantom filter a second time —
+    even when it arrives after a later crossing, where the phantom filter alone would
+    read it as a lap going backwards."""
+    seen = _acted_on(monkeypatch)
+    tsl.handle_car_timestamp(_crossing(1, 10_000, seq=1), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(1, 15_000, seq=2), arrival=1015.0)
+    tsl.handle_car_timestamp(_crossing(1, 10_000, seq=1), arrival=1016.0)   # redelivered
+    tsl.handle_car_timestamp(_crossing(1, 15_000, seq=2), arrival=1016.1)   # redelivered
+    assert seen == [(1, 10_000), (1, 15_000)]
+    assert len(_laps(published)) == 2
+    assert tsl.prev_crossing[0].counter_ms == 15_000
+
+
+def test_the_same_counter_on_another_clock_or_car_is_not_a_redelivery(published, monkeypatch):
+    """The key is the whole crossing: ARC ticks are 10 ms, so two cars can share a
+    counter, and a new clock restarts the counter from wherever it now is."""
+    seen = _acted_on(monkeypatch)
+    tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(2, 10_000), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(1, 10_000, clock='ble:aa11bb:2'), arrival=1020.0)
+    assert seen == [(1, 10_000), (2, 10_000), (1, 10_000)]
+
+
+def _errors(caplog):
+    return [r.getMessage() for r in caplog.records if r.levelname == 'ERROR']
+
+
+def test_a_lost_crossing_is_logged_at_once_and_then_named(published, caplog):
+    """BLE numbers every crossing (seq) and each car's (car_seq). The seq gap shows on
+    the very next crossing, whoever it is; car_seq names the car when it crosses again."""
+    tsl.handle_car_timestamp(_crossing(3, 10_000, seq=1, car_seq=1), arrival=1010.0)
+    # seq 2 — car 3's car_seq 2 — never arrives.
+    tsl.handle_car_timestamp(_crossing(1, 12_000, seq=3, car_seq=1), arrival=1012.0)
+    assert len(_errors(caplog)) == 1
+    assert '1 car_timestamp(s) from ble:aa11bb never arrived' in _errors(caplog)[0]
+    assert 'a later LOST CROSSING line names the car' in _errors(caplog)[0]
+
+    tsl.handle_car_timestamp(_crossing(3, 25_000, seq=4, car_seq=3), arrival=1025.0)
+    assert len(_errors(caplog)) == 2
+    assert 'LOST CROSSING: car 3' in _errors(caplog)[1]
+
+
+def test_consecutive_crossings_log_no_gap(published, caplog):
+    """Including another car's crossings in between: car_seq is per car."""
+    tsl.handle_car_timestamp(_crossing(1, 10_000, seq=1, car_seq=1), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(2, 11_000, seq=2, car_seq=1), arrival=1011.0)
+    tsl.handle_car_timestamp(_crossing(1, 15_000, seq=3, car_seq=2), arrival=1015.0)
+    assert not _errors(caplog)
+
+
+def test_a_restarted_layer1_is_a_new_sequence_not_a_gap(published, caplog):
+    """A restart is a new source, starting again at 1. Nor is the first crossing seen
+    from a source a gap: a Layer 1 already running when lapdata started has numbered
+    crossings lapdata was never sent."""
+    tsl.handle_car_timestamp(_crossing(1, 10_000, seq=40, car_seq=12), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(1, 2_000, clock='ble:cc22dd:1', seq=1, car_seq=1,
+                                       source='ble:cc22dd'), arrival=1020.0)
+    tsl.handle_car_timestamp(_crossing(1, 7_000, clock='ble:cc22dd:1', seq=2, car_seq=2,
+                                       source='ble:cc22dd'), arrival=1025.0)
+    assert not _errors(caplog)
+
+
+def _gpio(car, counter_ms, seq, lane_container):
+    return _crossing(car, counter_ms, clock='gpio:b00t', seq=seq, source=f'gpio:{lane_container}')
+
+
+def test_a_gpio_lane_change_is_not_a_gap(published, caplog):
+    """GPIO runs one process per lane sensor on a shared clock, each numbering all of its
+    own crossings. A car changing lane moves from one sequence to the other."""
+    tsl.handle_car_timestamp(_gpio(1, 10_000, seq=7, lane_container='lane1'), arrival=1010.0)
+    tsl.handle_car_timestamp(_gpio(2, 11_000, seq=3, lane_container='lane2'), arrival=1011.0)
+    tsl.handle_car_timestamp(_gpio(1, 15_000, seq=4, lane_container='lane2'), arrival=1015.0)
+    tsl.handle_car_timestamp(_gpio(2, 16_000, seq=8, lane_container='lane1'), arrival=1016.0)
+    assert not _errors(caplog)
+
+
+def test_a_gpio_lost_crossing_shows_on_the_containers_next_crossing(published, caplog):
+    """Whatever car that is — so a loss is seen even if the car it belonged to never
+    crosses that sensor again. GPIO can't say which car it was."""
+    tsl.handle_car_timestamp(_gpio(1, 10_000, seq=7, lane_container='lane1'), arrival=1010.0)
+    tsl.handle_car_timestamp(_gpio(2, 16_000, seq=9, lane_container='lane1'), arrival=1016.0)
+    assert len(_errors(caplog)) == 1
+    assert "1 car_timestamp(s) from gpio:lane1 never arrived (seq 7 then 9)" in _errors(caplog)[0]
+    assert "can't say which car" in _errors(caplog)[0]
+
+
+def test_a_crossing_without_a_sequence_still_counts(published, monkeypatch, caplog):
+    """A Layer 1 older than lapdata: gap detection is a diagnostic, so its laps still
+    count, with one warning rather than one per crossing."""
+    seen = _acted_on(monkeypatch)
+    tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
+    tsl.handle_car_timestamp(_crossing(1, 15_000), arrival=1015.0)
+    assert len(seen) == 2
+    assert caplog.text.count('older than lapdata') == 1
+
+
+def test_car_timestamp_is_subscribed_at_qos_1_and_control_topics_are_not(monkeypatch):
+    """lapdata's session is persistent, so the broker queues whatever it subscribed to at
+    QoS 1 while it's away. That must be crossings only: a queued race_control replayed on
+    reconnect could stage or start a race."""
+    subscribed = {}
+    fake = types.SimpleNamespace(subscribe=lambda topic, qos=0: subscribed.__setitem__(topic, qos))
+    monkeypatch.setattr(tsl.race, 'race_id', 5)
+    monkeypatch.setattr(tsl, 'publish_race_state', lambda: None)
+    tsl.on_connect(fake, None, None, None, None)
+    assert subscribed == {'car_timestamp': 1, 'layer1_clock': 0, 'layer1_status': 0, 'race_control': 0}
 
 
 # --- driver_penalty ---

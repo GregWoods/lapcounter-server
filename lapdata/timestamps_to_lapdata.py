@@ -1,3 +1,4 @@
+import collections
 import time
 import os
 import json
@@ -79,6 +80,24 @@ _layer1_capabilities: list = []
 # lights-out resets them to — so the first crossing of a race is never filtered.
 prev_crossing: list = [None] * 6
 
+# car_timestamp is QoS 1 (#78), so a crossing can arrive twice: the broker resends one we
+# hadn't acked when our session resumes. Keyed on the crossing itself, (clock,
+# counter_ms) per car — the same key driver_laps uses — and compared for equality only,
+# so no clock is ever parsed. A redelivery only ever repeats something recent, so a short
+# window per car is enough.
+DEDUP_WINDOW = 64
+_recent_crossings: list = [collections.deque(maxlen=DEDUP_WINDOW) for _ in range(6)]
+# For gap detection: the last car_timestamp `seq` seen per source, and the last `car_seq`
+# per (source, car). `source` is one Layer 1 process, so a restarted Layer 1 is a new key
+# rather than a sequence that went down. `seq` numbers every crossing a process publishes,
+# whatever the car, so a loss shows on that process's very next crossing — the one that
+# works for GPIO, which runs a process per lane sensor that a car moves between as it
+# changes lane. `car_seq` is optional, from a Layer 1 that sees every car (BLE), and is
+# what names the car, once it next crosses.
+_last_seq: dict = {}
+_last_car_seq: dict = {}
+_seq_missing_warned = False
+
 # Whether the last API call actually reached it. This is not a React-only "graceful
 # degradation" concern: lapdata itself depends on the API for the pending-race queue and
 # persists race lifecycle through it (publish_race_state()'s /start and /finish POSTs),
@@ -159,6 +178,57 @@ def _to_unix(local: float) -> float:
     return time.time() - time.monotonic() + local
 
 
+def _is_seq(value) -> bool:
+    # bool is an int subclass, as for counter_ms.
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 1
+
+
+def _lost_since(table: dict, key, seq: int, what: str) -> int:
+    """Record `seq` as the latest for `key`, returning how many numbers were skipped. The
+    first seen for a key is only a baseline: a Layer 1 already running when we started
+    has numbered crossings this process was never sent."""
+    previous = table.get(key)
+    if previous is not None and seq <= previous:
+        # Not a redelivery (the crossing key would have caught that), and a restarted
+        # Layer 1 has a new source — so something is publishing out of order.
+        logger.warning(f"car_timestamp: {what} {seq} after {previous}")
+        return 0
+    table[key] = seq
+    return seq - previous - 1 if previous is not None else 0
+
+
+def _check_sequence(lane: int, source, seq, car_seq):
+    """Log, loudly, a car_timestamp that never reached us. A jump in Layer 1's numbering
+    means crossings were lost on the way. They can't be recovered — a driver is a lap
+    short and their next lap reads as a multiple — but a missing lap found after the
+    meet with no explanation is the worst kind of fault. Can't see a car crossing twice
+    while BLE was disconnected: the powerbase keeps only the latest stamp, so Layer 1
+    never knew either."""
+    global _seq_missing_warned
+    if not isinstance(source, str) or not source or not _is_seq(seq):
+        if not _seq_missing_warned:
+            _seq_missing_warned = True
+            logger.warning(f"car_timestamp without a usable source/seq ({source!r}, {seq!r}) — a "
+                           f"Layer 1 image is older than lapdata. Laps still count, but a lost "
+                           f"crossing can't be detected until it is updated.")
+        return
+    per_car = _is_seq(car_seq)
+    lost = _lost_since(_last_seq, source, seq, f"seq from {source}")
+    if lost:
+        car = ("a later LOST CROSSING line names the car once it crosses again" if per_car
+               else "this Layer 1 can't say which car")
+        logger.error(f"LOST CROSSING: {lost} car_timestamp(s) from {source} never arrived "
+                     f"(seq {seq - lost - 1} then {seq}) — {car}. If they were racing, a driver "
+                     f"is a lap short and their next lap time covers more than one lap.")
+    if per_car:
+        lost = _lost_since(_last_car_seq, (source, lane), car_seq, f"car {lane} car_seq from {source}")
+        if lost:
+            logger.error(f"LOST CROSSING: car {lane} — {lost} car_timestamp(s) from {source} "
+                         f"never arrived (car_seq {car_seq - lost - 1} then {car_seq}). If they "
+                         f"were racing, that driver is {lost} lap(s) short and their next lap "
+                         f"time covers more than one lap.")
+
+
 def handle_car_timestamp(data: dict, arrival: float):
     """Process a raw hardware crossing. Filters phantoms, publishes lap, updates race state."""
     lane = data['car']
@@ -167,6 +237,14 @@ def handle_car_timestamp(data: dict, arrival: float):
     crossing = _parse_crossing(data, arrival)
     if crossing is None:
         return
+
+    key = (crossing.clock, crossing.counter_ms)
+    if key in _recent_crossings[idx]:
+        logger.info(f"car_timestamp: car={lane} counter={crossing.counter_ms}ms clock={crossing.clock} "
+                    f"already handled (redelivery) — ignored")
+        return
+    _recent_crossings[idx].append(key)
+    _check_sequence(lane, data.get('source'), data.get('seq'), data.get('car_seq'))
 
     # Every crossing doubles as a clock sample, on top of the layer1_clock heartbeat.
     anchors.observe(crossing.clock, crossing.counter_ms, arrival)
@@ -764,7 +842,11 @@ def on_message(_client, _userdata, msg):
 
 
 def on_connect(_client, _userdata, _flags, _reason_code, _properties):
-    _client.subscribe('car_timestamp')
+    # QoS 1 (#78): with our persistent session (see the client below) the broker queues
+    # crossings while we're away and resends any we hadn't acked. The rest stay QoS 0, so
+    # the broker queues none of them for us: a stale race_control replayed on reconnect
+    # could stage or start a race, and a stale clock sample is only late.
+    _client.subscribe('car_timestamp', qos=1)
     _client.subscribe('layer1_clock')
     _client.subscribe('layer1_status')
     _client.subscribe('race_control')
@@ -889,7 +971,11 @@ def _load_on_startup() -> bool:
 # nothing reads it as a race that ended.
 OFFLINE_STATE = json.dumps({'state': 'Offline', 'race_id': None, 'drivers': []})
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+# A fixed client id and clean_session=False make the broker keep our car_timestamp
+# subscription, and queue crossings for it, across a disconnect or a restart (#78). paho
+# acks each one when on_message returns, which catches everything, so a crossing is only
+# resent if we died while handling it — and the dedup above drops it if it got that far.
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id='lapdata', clean_session=False)
 client.on_connect = on_connect
 client.on_disconnect = on_disconnect
 client.on_message = on_message
