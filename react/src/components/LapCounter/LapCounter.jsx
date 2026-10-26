@@ -113,13 +113,23 @@ const LapCounter = () => {
     // whether to adopt it (newly staged) or ignore it (stale lapdata broadcast).
     // A NotStarted state means lapdata just staged a new race, so reset to the clean
     // get-ready preview; otherwise overlay identity/lineup onto the live view.
-    const resyncCurrentRace = (incomingState, targetLaps) => {
-        if (resyncInFlightRef.current) return;
+    //
+    // ⚠️ Only a setup for the race race_state names is applied, and each race+state (or
+    // staged lineup, for a NotStarted lineup edit) is tried once. A Finished race stays
+    // on screen while the DB's current race is already the next one queued; applying that
+    // one rebuilt every card hidden, and the next message brought them back, so with the
+    // 2s heartbeat (#76) the leaderboard flew in again every beat.
+    const resyncAttemptRef = useRef(null);
+    const resyncCurrentRace = (incomingState, targetLaps, incomingRaceId, lineup = '') => {
+        const attempt = `${incomingRaceId}:${incomingState}:${lineup}`;
+        if (resyncInFlightRef.current || resyncAttemptRef.current === attempt) return;
         resyncInFlightRef.current = true;
+        resyncAttemptRef.current = attempt;
         fetch(`${API_URL}/races/current/`)
             .then(r => r.ok ? r.json() : null)
             .then(setup => {
                 if (!setup) return;
+                if (incomingRaceId != null && setup.race_id !== incomingRaceId) return;
                 if (incomingState === 'NotStarted') stageRace(setup, targetLaps);
                 else applyRaceSetup(setup, targetLaps);
             })
@@ -225,7 +235,7 @@ const LapCounter = () => {
         // by the time race_id resynced a message later the state had already moved past
         // ArmedForStart, so it never got a second chance to fire.
         if (raceState.race_id && raceState.race_id !== raceIdRef.current) {
-            resyncCurrentRace(raceState.state, raceState.target_laps);
+            resyncCurrentRace(raceState.state, raceState.target_laps, raceState.race_id);
         }
 
         if (raceState.race_number) {
@@ -297,7 +307,7 @@ const LapCounter = () => {
         if (state === 'NotStarted') {
             const shown = driversRef.current.filter(d => d?.inLineup).map(d => `${d.number}:${d.driverId}`).sort().join();
             const staged = raceDrivers.map(d => `${d.lane}:${d.driver_id}`).sort().join();
-            if (shown !== staged) resyncCurrentRace(state, raceState.target_laps);
+            if (shown !== staged) resyncCurrentRace(state, raceState.target_laps, raceState.race_id, staged);
         }
 
         setDrivers(currentDrivers =>
