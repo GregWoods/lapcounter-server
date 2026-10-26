@@ -115,6 +115,10 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./react/src:/app/src
+      # Mounted too, or a new sound/image is missing until the image is rebuilt (the
+      # start-light beeps were silently absent for weeks that way: Vite answers a
+      # missing file with index.html, which decodeAudioData just rejects).
+      - ./react/public:/app/public
     ports:
       - 8088:5173
     #environment variables cannot be used directly by a react app, though Vite can be used to read them and compile them into the app
