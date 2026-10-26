@@ -160,6 +160,17 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
     const fastestRaceLap = raceState?.race_fastest_lap ?? null;
     const isFinished = raceState?.state === 'Finished';
 
+    // A driver's personal best goes in a pill in the colour of the record they hold, as
+    // in the sidebar: purple for the session's fastest lap, else green for this race's.
+    // Compared at the 3 dp shown, since the race's lap list isn't rounded.
+    const sameTime = (a, b) => a != null && b != null && a.toFixed(3) === b.toFixed(3);
+    const recordClass = (driver) => {
+        if (sameTime(driver.session_fastest_lap, fastestSessionLap)) return 'flc-record flc-record-session';
+        const laps = driver.current_race_laps ?? [];
+        if (laps.length && sameTime(Math.min(...laps), fastestRaceLap)) return 'flc-record flc-record-race';
+        return undefined;
+    };
+
     useEffect(() => {
         const endTime = raceState?.race_end_time;
         if (!endTime || raceState?.state !== 'Running') {
@@ -226,7 +237,9 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
                                     {driver.driver_name}
                                 </div>
                                 <div className="flc-session-best">
-                                    {formatTime(driver.session_fastest_lap)}
+                                    <span className={recordClass(driver)}>
+                                        {formatTime(driver.session_fastest_lap)}
+                                    </span>
                                 </div>
                                 <div className="flc-lap-times">
                                     {displayLaps.map((t, i) => (

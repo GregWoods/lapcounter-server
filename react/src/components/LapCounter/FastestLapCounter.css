@@ -277,6 +277,33 @@
     color: #4caf50;
 }
 
+/* A record holder's personal best, in a pill: the sidebar's hue darkened for the fill,
+   so white text reads on it, and its sidebar shade as the border. Reads the same on a
+   racing driver's pale row and an idle driver's dark one. */
+/* Every personal best gets the pill's box, invisible unless it is a record, so the
+   digits line up down the column. */
+.flc-session-best > span {
+    display: inline-block;
+    padding: 0 0.6rem;
+    border: 0.25rem solid transparent;
+    border-radius: 999px;
+    line-height: 1.2;
+}
+
+.flc-session-best > .flc-record {
+    color: #fff;
+}
+
+.flc-session-best > .flc-record-session {
+    background-color: #6029a3;
+    border-color: #b97fff;
+}
+
+.flc-session-best > .flc-record-race {
+    background-color: #276829;
+    border-color: #4caf50;
+}
+
 .flc-countdown {
     color: #e0e0e0;
     font-size: 6rem;
