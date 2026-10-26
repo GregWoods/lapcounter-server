@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useLoaderData, useRouteLoaderData, Link } from 'react-router-dom';
-import { House, LogOut } from 'lucide-react';
+import { ChevronDown, ChevronRight, House, LogOut } from 'lucide-react';
 import { useAdminAuth } from '../../contexts/adminAuth';
 import MqttSubscriber from '../MqttSubscriber.jsx';
 import SessionForm from './SessionForm.jsx';
@@ -15,7 +15,14 @@ const Sessions = () => {
     const meeting = useRouteLoaderData('meeting');
     const [sessions, setSessions] = useState(useLoaderData() || []);
     const [addingSession, setAddingSession] = useState(false);
-    const [editingSessionId, setEditingSessionId] = useState(null);
+    // Sessions whose settings are expanded under their summary row.
+    const [expandedSessionIds, setExpandedSessionIds] = useState(() => new Set());
+    const setExpanded = (sessionId, expanded) => setExpandedSessionIds(ids => {
+        const next = new Set(ids);
+        if (expanded) next.add(sessionId); else next.delete(sessionId);
+        return next;
+    });
+    const toggleExpanded = (sessionId) => setExpanded(sessionId, !expandedSessionIds.has(sessionId));
     const [endingSessionId, setEndingSessionId] = useState(null);
     const [endingLoading, setEndingLoading] = useState(false);
     const [endingError, setEndingError] = useState(null);
@@ -89,7 +96,7 @@ const Sessions = () => {
         });
         if (!res.ok) throw new Error('Failed to update session');
         await reload();
-        setEditingSessionId(null);
+        setExpanded(sessionId, false);
     };
 
     return (
@@ -118,57 +125,62 @@ const Sessions = () => {
 
                     {sessions.map((session, sessionIdx) => (
                         <div key={session.id} className="admin-session-row">
-                            {editingSessionId === session.id ? (
+                            <div className="admin-session-display">
+                                {/* The title expands the session's settings under this summary row:
+                                    editable until it starts, read-only after. */}
+                                <button
+                                    type="button"
+                                    className="admin-session-toggle"
+                                    onClick={() => toggleExpanded(session.id)}
+                                    aria-expanded={expandedSessionIds.has(session.id)}
+                                    title={session.state === 'NotStarted' ? "Edit this session's settings" : "Show this session's settings"}
+                                >
+                                    {expandedSessionIds.has(session.id) ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                    <span className="admin-session-title">Session {sessionIdx + 1}</span>
+                                </button>
+                                <SessionTypeIcon type={session.session_type} />
+                                {session.state === 'InProgress' && (
+                                    <span className="admin-session-badge">In Progress</span>
+                                )}
+                                {session.races_per_driver != null && (
+                                    <span className="admin-session-detail">
+                                        {session.races_total != null ? `${session.races_total} races ` : ''}
+                                        ({session.races_per_driver} races per driver)
+                                    </span>
+                                )}
+                                <span className="admin-session-detail">
+                                    {session.end_condition_info}&nbsp;{session.end_condition === 'Time' ? 'minute' : 'lap'} races
+                                </span>
+                                {session.start_grid === 'InFrontOfLine' && (
+                                    <span className="admin-session-detail">First crossing counts as lap 1</span>
+                                )}
+                                <div className="admin-session-actions">
+                                    {session.state === 'InProgress' && (
+                                        <button
+                                            className="admin-btn-ghost admin-btn-sm admin-end-session-btn"
+                                            onClick={() => { setEndingSessionId(session.id); setEndingError(null); }}
+                                            title="End this session"
+                                        >
+                                            End Session
+                                        </button>
+                                    )}
+                                    {['Finished', 'InProgress'].includes(session.state) && (
+                                        <Link to={`${base}/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
+                                            Results
+                                        </Link>
+                                    )}
+                                </div>
+                            </div>
+                            {expandedSessionIds.has(session.id) && (
                                 <SessionForm
                                     initial={session}
                                     meetingId={meeting.id}
                                     onSave={(form) => handleUpdateSession(session.id, form)}
-                                    onCancel={() => setEditingSessionId(null)}
+                                    onCancel={() => setExpanded(session.id, false)}
                                     hasPowerControl={hasPowerControl}
+                                    // Once started, a session's settings can be seen but not changed.
+                                    readOnly={session.state !== 'NotStarted'}
                                 />
-                            ) : (
-                                <div className="admin-session-display">
-                                    <span className="admin-session-title">Session {sessionIdx + 1}</span>
-                                    {session.state === 'InProgress' && (
-                                        <span className="admin-session-badge">In Progress</span>
-                                    )}
-                                    {session.races_per_driver != null && (
-                                        <span className="admin-session-detail">
-                                            {session.races_total != null ? `${session.races_total} races ` : ''}
-                                            ({session.races_per_driver} races per driver)
-                                        </span>
-                                    )}
-                                    <span className="admin-session-detail">
-                                        {session.end_condition_info}&nbsp;{session.end_condition === 'Time' ? 'minute' : 'lap'} races
-                                    </span>
-                                    {session.start_grid === 'InFrontOfLine' && (
-                                        <span className="admin-session-detail">First crossing counts as lap 1</span>
-                                    )}
-                                    <SessionTypeIcon type={session.session_type} />
-                                    <div className="admin-session-actions">
-                                        {session.state === 'InProgress' && (
-                                            <button
-                                                className="admin-btn-ghost admin-btn-sm admin-end-session-btn"
-                                                onClick={() => { setEndingSessionId(session.id); setEndingError(null); }}
-                                                title="End this session"
-                                            >
-                                                End Session
-                                            </button>
-                                        )}
-                                        {['Finished', 'InProgress'].includes(session.state) ? (
-                                            <Link to={`${base}/results/${session.id}`} className="admin-btn-ghost admin-btn-sm" style={{ textDecoration: 'none' }}>
-                                                Results
-                                            </Link>
-                                        ) : (
-                                            <button
-                                                className="admin-btn-ghost admin-btn-sm"
-                                                onClick={() => { setEditingSessionId(session.id); setAddingSession(false); }}
-                                            >
-                                                Edit
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
                             )}
                         </div>
                     ))}
@@ -186,7 +198,7 @@ const Sessions = () => {
                     ) : (
                         <button
                             className="admin-btn-add-session"
-                            onClick={() => { setAddingSession(true); setEditingSessionId(null); }}
+                            onClick={() => setAddingSession(true)}
                         >
                             + Add Session
                         </button>

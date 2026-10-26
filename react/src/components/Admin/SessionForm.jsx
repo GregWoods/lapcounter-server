@@ -31,12 +31,15 @@ function serializePoints(str) {
     return JSON.stringify(nums);
 }
 
-export default function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl, previousYellowGraceSeconds }) {
+// readOnly shows a started session's settings as saved: every field disabled, no Save.
+export default function SessionForm({ initial, meetingId, onSave, onCancel, hasPowerControl, previousYellowGraceSeconds, readOnly = false }) {
     const [form, setForm] = useState(() => ({
         session_type: initial?.session_type ?? 'Points',
         end_condition_info: initial?.end_condition_info ?? DEFAULT_LAPS,
-        races_per_driver: initial?.races_per_driver ?? DEFAULT_RACES_PER_DRIVER,
-        max_sit_outs: initial?.max_sit_outs ?? DEFAULT_MAX_SIT_OUTS,
+        // Both nullable on purpose (no automatic end / no sit-out limit), so a saved
+        // null must stay null rather than being replaced by a new session's default.
+        races_per_driver: initial ? initial.races_per_driver : DEFAULT_RACES_PER_DRIVER,
+        max_sit_outs: initial ? initial.max_sit_outs : DEFAULT_MAX_SIT_OUTS,
         // A new session starts from the meeting's previous session's value, else the default.
         yellow_grace_seconds: initial?.yellow_grace_seconds ?? previousYellowGraceSeconds ?? DEFAULT_YELLOW_GRACE_SECONDS,
         yellow_grace_power_pct: initial?.yellow_grace_power_pct ?? 100,
@@ -52,6 +55,15 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
     const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
     const isFastestLap = form.session_type === 'FastestLap';
+    // Editing follows the Layer 1 running now. Viewing shows what the session was saved
+    // with, whatever is attached today: power percentages that do anything (saving
+    // without power control stores 100/100), and a lap penalty that is switched on.
+    const showPowerFields = readOnly
+        ? (form.yellow_grace_power_pct !== 100 || form.yellow_post_grace_power_pct !== 100)
+        : hasPowerControl;
+    const showLapPenalty = readOnly
+        ? form.yellow_lap_penalty_laps > 0
+        : (!hasPowerControl && !isFastestLap);
     // Null means no sit-out limit — the "Sit-out penalty" toggle is just a friendlier
     // face on that same nullability, rather than a separate field.
     const sitOutPenaltyEnabled = form.max_sit_outs != null;
@@ -105,6 +117,8 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
 
     return (
         <form className="admin-form admin-session-form" onSubmit={handleSubmit}>
+            {/* A disabled fieldset disables every control inside it, so no field can be missed. */}
+            <fieldset className="admin-form-fieldset" disabled={readOnly}>
             <div className="admin-form-row">
                 <label>Race type</label>
                 <select value={form.session_type} onChange={e => handleSessionTypeChange(e.target.value)}>
@@ -209,7 +223,7 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
                         <span className="admin-form-unit">s</span>
                     </div>
                 </div>
-                {hasPowerControl && (
+                {showPowerFields && (
                     <>
                         <div className="admin-form-row">
                             <label>Max power during grace</label>
@@ -241,7 +255,7 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
                         </div>
                     </>
                 )}
-                {!hasPowerControl && !isFastestLap && (
+                {showLapPenalty && (
                     <div className="admin-form-field-group">
                         <div className="admin-form-row">
                             <label>Penalty</label>
@@ -260,10 +274,17 @@ export default function SessionForm({ initial, meetingId, onSave, onCancel, hasP
                     </div>
                 )}
             </div>
+            </fieldset>
             {error && <p className="admin-error">{error}</p>}
             <div className="admin-form-actions">
-                <button type="button" className="admin-btn-ghost" onClick={onCancel}>Cancel</button>
-                <button type="submit" className="admin-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                {readOnly ? (
+                    <button type="button" className="admin-btn-ghost" onClick={onCancel}>Close</button>
+                ) : (
+                    <>
+                        <button type="button" className="admin-btn-ghost" onClick={onCancel}>Cancel</button>
+                        <button type="submit" className="admin-btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+                    </>
+                )}
             </div>
         </form>
     );
