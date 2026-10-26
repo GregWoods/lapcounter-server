@@ -281,10 +281,10 @@ cd app && fastapi dev main.py
 Requires PostgreSQL running on localhost:5432 (the Docker `database` container works), already migrated — the API builds no tables itself, so run `python migrate.py` (same env vars) first if the stack's `migrate` service hasn't.
 
 ### Run Python tests
-A root `pytest.ini` sets `testpaths = api/app, lapdata, ble`, so one command runs every
+A root `pytest.ini` sets `testpaths = api/app, lapdata, ble, gpio`, so one command runs every
 DB-free pure-logic suite (lane assignment, points scoring, the lapdata race manager,
-clock anchoring and lap timing, crossing handling, and the BLE slot decoder and clock
-contract).
+clock anchoring and lap timing, crossing handling, the BLE slot decoder and clock
+contract, and the GPIO sensor-presence analysis).
 
 `ble/test_mock_scenarios.py` deliberately imports `lapdata/lap_clock.py` as well: `ble`
 publishes counters and clock ids, and `lap_clock` is what turns them back into lap times,
