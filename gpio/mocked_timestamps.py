@@ -83,16 +83,41 @@ async def send_clock_heartbeat():
                 {"clock": CLOCK, "counter_ms": counter_ms()}))
 
 
-async def publish_layer1_status():
-    """Retained, one-off: same capability set as the real gpio_to_timestamps.py, so a
-    dev meet running mocked-gpio exercises the Admin form's capability gating exactly
-    like real GPIO would. See CLAUDE.md "Layer 1 capability advertising"."""
-    async with aiomqtt.Client(mqtt_hostname) as client:
-        await client.publish('layer1_status', payload=json.dumps({
-            'layer1': 'gpio',
-            'capabilities': ['lap_timing'],
-            'timing_resolution_ms': 1,
-        }), retain=True)
+MQTT_KEEPALIVE_S = 5
+STATUS_RECONNECT_S = 1
+
+
+def _layer1_status(online: bool = True) -> str:
+    """Same capability set as the real gpio_to_timestamps.py, so a dev meet running
+    mocked-gpio exercises the Admin form's capability gating exactly like real GPIO
+    would. `online` is this container's own MQTT link (False only in its Last Will).
+    See CLAUDE.md "Layer 1 capability advertising"."""
+    return json.dumps({
+        'layer1': 'gpio',
+        'capabilities': ['lap_timing'],
+        'timing_resolution_ms': 1,
+        'online': online,
+    })
+
+
+async def hold_layer1_status():
+    """Retained status on a connection held open for the Last Will: the broker
+    publishes it 1.5x keepalive after we vanish (a crash, `docker stop`), so lapdata
+    pauses the race and every display says the track is offline, as with BLE. Also
+    what overwrites a stopped Layer 1's will when this one starts after it. Republished
+    on every reconnect, since the will may have fired while the link was down."""
+    will = aiomqtt.Will('layer1_status', payload=_layer1_status(online=False), retain=True)
+    while True:
+        try:
+            async with aiomqtt.Client(mqtt_hostname, keepalive=MQTT_KEEPALIVE_S,
+                                      will=will) as client:
+                await client.publish('layer1_status', payload=_layer1_status(), retain=True)
+                # Subscribed to nothing: this only waits, and raises when the link drops.
+                async for _ in client.messages:
+                    pass
+        except aiomqtt.MqttError as e:
+            print(f"layer1_status link lost ({e}); reconnecting")
+            await asyncio.sleep(STATUS_RECONNECT_S)
 
 # Create a list of drivers each with their own abilities
 driverRange = [i for i in range(1,numberOfDrivers+1)]
@@ -101,8 +126,8 @@ drivers = list(map(lambda n: Driver(n, time.time()), driverRange))
 
 # Create a task for each driver
 async def schedule_tasks():
-    await publish_layer1_status()
     async with asyncio.TaskGroup() as tg:
+        tg.create_task(hold_layer1_status())
         for driver in drivers:
             tg.create_task(send_lap_time(driver))
         tg.create_task(send_clock_heartbeat())
