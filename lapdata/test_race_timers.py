@@ -491,6 +491,39 @@ def test_reload_lineup_does_not_advance_to_a_different_race(staged, monkeypatch)
     assert sorted(staged.race.drivers) == [1]
 
 
+# --- The queue has gone (its session was ended): the staged race goes with it (#106) ---
+
+@pytest.mark.parametrize('command', ['reload_lineup', 'prepare'])
+def test_a_staged_race_whose_queue_has_gone_is_unloaded(staged, monkeypatch, command):
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
+    monkeypatch.setattr(tsl, '_api_reachable', True)   # a 404: nothing queued
+    control(command)
+
+    assert (staged.race.race_id, staged.race.state, staged.race.drivers) == (None, 'NotStarted', {})
+    last = staged.published[-1]
+    assert (last['race_id'], last['race_number'], last['drivers']) == (None, None, [])
+
+
+@pytest.mark.parametrize('command', ['reload_lineup', 'prepare'])
+def test_a_staged_race_is_kept_while_the_api_is_down(staged, monkeypatch, command):
+    """Unreachable is not empty: the race may well still be queued."""
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
+    monkeypatch.setattr(tsl, '_api_reachable', False)
+    control(command)
+
+    assert (staged.race.race_id, sorted(staged.race.drivers)) == (1, [1])
+
+
+def test_a_finished_race_stays_on_screen_when_the_queue_empties(lapdata, monkeypatch):
+    """The last race of a session: its session auto-ended, and its results stay."""
+    control('end')
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: None)
+    monkeypatch.setattr(tsl, '_api_reachable', True)
+    control('prepare')
+
+    assert (lapdata.race.race_id, lapdata.race.state) == (1, 'Finished')
+
+
 def test_reload_lineup_never_touches_a_running_race(lapdata, monkeypatch):
     """Mid-race the queue head is the next race; NextRace edits to it must not
     replace the race being run."""

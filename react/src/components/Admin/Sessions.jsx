@@ -55,6 +55,9 @@ const Sessions = () => {
             if (!res.ok) throw new Error('Failed to end session');
             await reload();
             publishAdminUpdate('session_finished', { session_id: endingSessionId });
+            // Ending a session deletes its queue. Tell lapdata, as NextRace does after a
+            // lineup edit, so it stops broadcasting a staged race that no longer exists.
+            mqttClientRef.current?.publish('race_control', JSON.stringify({ command: 'reload_lineup' }));
             setEndingSessionId(null);
         } catch (err) {
             setEndingError(err.message);
@@ -196,7 +199,7 @@ const Sessions = () => {
                     <div className="admin-modal" onClick={e => e.stopPropagation()}>
                         <p className="admin-modal-title">End this session?</p>
                         <p className="admin-modal-body">
-                            The session will be marked Finished. If there is a next session queued, it will become In Progress.
+                            The session will be marked Finished, and its races not yet run will be removed. The next session starts from Race Control (Next Session).
                         </p>
                         {endingError && <p className="admin-error">{endingError}</p>}
                         <div className="admin-modal-actions">

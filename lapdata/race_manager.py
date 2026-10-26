@@ -131,6 +131,13 @@ class RaceManager:
         # changes how a missing crossing baseline is logged.
         self.recovered: bool = False
 
+    def unload(self):
+        """Back to the empty NotStarted state lapdata starts in: no race staged. For a
+        staged race whose queue has gone (its session was ended). The clock anchors are
+        Layer 1's, not the race's, so they are kept."""
+        self.__init__(self.anchors)
+        logger.info("Unloaded the staged race: nothing queued")
+
     def load_lineup(self, race_id: int, race_number: int, target_laps: int,
                     lane_assignments: list, count_first_crossing: bool = False,
                     session_type: str = 'Points', race_duration_seconds=None,

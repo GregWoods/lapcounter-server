@@ -140,7 +140,15 @@ export default function RaceControl() {
     // impossible "Race 5 of 4" — a race number can never exceed its own session's total,
     // which is exactly the tell. Discard the whole stale message rather than one field,
     // the same way `info.pendingRaceId` is treated as "no live message yet".
-    const raceStateStale = raceState && info.racesTotal != null && raceState.race_number > info.racesTotal;
+    // ⚠️ That only catches a number past the total. A staged (NotStarted) race must also be
+    // the queue head: if race_state names any other one, it was deleted under lapdata —
+    // its session was ended, so "Race 5 of 5" of a session whose race 5 is gone (#106) —
+    // or the queue was just rebuilt and lapdata hasn't re-staged yet. Either way the API
+    // knows better, and Start Race must not send that race's id.
+    const stagedRaceGone = raceState?.state === 'NotStarted' && raceState.race_id != null
+        && infoLoaded && raceState.race_id !== info.pendingRaceId;
+    const raceStateStale = raceState && (stagedRaceGone
+        || (info.racesTotal != null && raceState.race_number > info.racesTotal));
     // lapdata also publishes an empty NotStarted state (race_id null) whenever no race is
     // loaded — before a session is started, or between sessions. That is "nothing staged",
     // not a race to start, so treat it like no message and let `info` decide what to offer.
@@ -221,6 +229,8 @@ export default function RaceControl() {
         clientRef.current?.publish('admin_update', JSON.stringify({
             reason: 'session_finished', session_id: info.activeSessionId,
         }));
+        // The queue is deleted with the session: lapdata unstages a race it had staged.
+        publish('reload_lineup');
         await loadInfo();
     };
 
