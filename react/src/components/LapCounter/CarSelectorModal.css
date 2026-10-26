@@ -9,39 +9,38 @@
     z-index: 1; /*-1 when hidden*/
 }
 
-/* DriverCard which is being spotLighted gets z-index:2 */
-.drivercard.spotlightme {
-    z-index: 2;
-}
-
+/* Sized to the viewport, not to 1080p: the car grid scrolls inside it, and the buttons
+   sit below the grid so they are always on screen. */
 .carselectormodal {
     position: fixed;
-    top:480px;
-    height: 560px;
-    left: 30px;
-    width: 1860px;
+    inset: max(16px, 4vh) max(16px, 3vw);
     z-index: 3;
+    display: flex;
+    flex-direction: column;
     background-color: white;
     border-radius: 20px;
+    overflow: hidden;
 }
 
-.carcontainer  {
-    position: absolute;
-    top: 0px;
-    bottom: 150px;
-    width:100%;
-    overflow : auto;
+.carcontainer {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+    align-content: start;
+    gap: 12px;
+    padding: 16px;
 }
 
 a.carimage {
-    display: inline-block;
+    display: block;
     position: relative;
-    height: 185px;
-    width: 330px;
-    margin:6px;
+    aspect-ratio: 16 / 9;
     cursor: pointer;
     border-radius: 12px;
-    border: 5px solid grey;    
+    border: 5px solid grey;
+    overflow: hidden;
 }
 a.carimage img {
     position: absolute;
@@ -53,13 +52,12 @@ a.carimage img {
 }
 
 .carselectorbuttons {
-    position: absolute;
-    bottom: 0px;
-    width: 100%;
-    height: 150px;
+    flex-shrink: 0;
     display: flex;
     justify-content: center;
     align-items: center;
+    padding: 16px;
+    border-top: 1px solid #ddd;
 }
 
 .carselectormodal button,

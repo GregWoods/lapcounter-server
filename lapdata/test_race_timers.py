@@ -336,6 +336,22 @@ def test_end_for_another_race_never_ends_ours_under_way(lapdata, monkeypatch, co
     assert lapdata.race.state != 'Finished'
 
 
+# --- reload_lineup never touches a race under way: it is edited only while queued ---
+
+@pytest.mark.parametrize('command', [None, 'end'])
+def test_reload_lineup_leaves_a_race_under_way_alone(lapdata, monkeypatch, command):
+    """Not even a re-read: Running or Finished, the lineup is fixed."""
+    fetched = []
+    monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: fetched.append(1) or PENDING)
+    if command:
+        control(command)
+    state, published = lapdata.race.state, len(lapdata.published)
+
+    control('reload_lineup')
+    assert fetched == []
+    assert (lapdata.race.state, len(lapdata.published)) == (state, published)
+
+
 def test_end_naming_our_own_race_ends_it(lapdata):
     control('end', race_id=1)
     assert lapdata.race.state == 'Finished'

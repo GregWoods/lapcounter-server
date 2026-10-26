@@ -48,8 +48,7 @@ export const getDriverDataDefault = (lapsPerRace) => {
         position: null, 
         finished: false, 
         suspended: false,
-        hasStartedRacing: false,
-        spotlightMe: false
+        hasStartedRacing: false
     }
 };
 

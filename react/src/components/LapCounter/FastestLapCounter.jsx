@@ -1,6 +1,10 @@
 import './FastestLapCounter.css';
 import './DriverColors.css';
 import { useState, useEffect, useRef } from 'react';
+import { CAR_MEDIA_URL } from '../../endpoints.js';
+
+// What a lane with no car assigned shows, same as the driver cards.
+const GENERIC_CAR = 'GT_AA_Generic.jpg';
 
 const BAR_HEIGHT_REM = 5.0;
 const GAP_REM = 0.3;
@@ -156,6 +160,17 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
     const fastestRaceLap = raceState?.race_fastest_lap ?? null;
     const isFinished = raceState?.state === 'Finished';
 
+    // A driver's personal best goes in a pill in the colour of the record they hold, as
+    // in the sidebar: purple for the session's fastest lap, else green for this race's.
+    // Compared at the 3 dp shown, since the race's lap list isn't rounded.
+    const sameTime = (a, b) => a != null && b != null && a.toFixed(3) === b.toFixed(3);
+    const recordClass = (driver) => {
+        if (sameTime(driver.session_fastest_lap, fastestSessionLap)) return 'flc-record flc-record-session';
+        const laps = driver.current_race_laps ?? [];
+        if (laps.length && sameTime(Math.min(...laps), fastestRaceLap)) return 'flc-record flc-record-race';
+        return undefined;
+    };
+
     useEffect(() => {
         const endTime = raceState?.race_end_time;
         if (!endTime || raceState?.state !== 'Running') {
@@ -173,6 +188,7 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
             <div id="flc-main" style={{ '--name-col-width': nameColWidth }}>
                 <div id="flc-col-headers">
                     <div className="flc-ch-pos">Session Posn</div>
+                    <div className="flc-ch-car" />
                     <div className="flc-ch-name" />
                     <div className="flc-ch-session-best">Session Fastest Lap</div>
                     <div className="flc-ch-laps">Race Lap Times</div>
@@ -211,11 +227,19 @@ const FastestLapCounter = ({ raceState, pendingRace }) => {
                                         ? position
                                         : '–'}
                                 </div>
+                                <div className="flc-car">
+                                    {driver.in_current_race && (
+                                        <img alt="" src={`${CAR_MEDIA_URL}/${driver.car_picture || GENERIC_CAR}`}
+                                            onError={(e) => { e.target.onerror = null; e.target.src = `${CAR_MEDIA_URL}/${GENERIC_CAR}`; }} />
+                                    )}
+                                </div>
                                 <div className={`flc-name${driver.in_current_race ? ' emphasized' : ''}`}>
                                     {driver.driver_name}
                                 </div>
                                 <div className="flc-session-best">
-                                    {formatTime(driver.session_fastest_lap)}
+                                    <span className={recordClass(driver)}>
+                                        {formatTime(driver.session_fastest_lap)}
+                                    </span>
                                 </div>
                                 <div className="flc-lap-times">
                                     {displayLaps.map((t, i) => (

@@ -1,8 +1,6 @@
 import './LapCounter.css';
 import useLocalStorageState from 'use-local-storage-state'
 import MqttSubscriber from '../MqttSubscriber.jsx'
-import EditDriverNamesModal from './EditDriverNamesModal.jsx';
-import CarSelectorModal from './CarSelectorModal.jsx';
 import DriverCard from './DriverCard.jsx';
 import FastestLapCounter from './FastestLapCounter.jsx';
 import Header from './Header.jsx';
@@ -46,12 +44,6 @@ const LapCounter = () => {
     const driversRef = useRef();
     driversRef.current = drivers;
 
-    const [driverNamesModalShown, setDriverNamesModalShown] = useState(false);
-    const [driverNamesModalDriverIdx, setDriverNamesModalDriverIdx] = useState(0);
-
-    const [carSelectorModalShown, setCarSelectorModalShown] = useState(false);
-    const [carSelectorModalDriverIdx, setCarSelectorModalDriverIdx] = useState(0);
-
     const [raceId, setRaceId] = useState(null);
     const raceIdRef = useRef();
     raceIdRef.current = raceId;
@@ -62,11 +54,19 @@ const LapCounter = () => {
     const [sessionType, setSessionType] = useState(pendingRace?.session_type ?? 'Points');
     const [fastestLapRaceState, setFastestLapRaceState] = useState(null);
 
-    const mqttClientRef = useRef(null);
     const resyncInFlightRef = useRef(false);
 
-    // Apply a race setup (from the loader / /races/current/) to the viewmodel:
-    // identity (id, number, type) + a *staged* lane lineup. Driver cards are rebuilt
+    // A race's identity: id, number, session labels, type.
+    const applyRaceIdentity = (setup) => {
+        if (setup.race_id) setRaceId(setup.race_id);
+        if (setup.race_number != null) setRaceNumber(setup.race_number);
+        if (setup.session_number != null) setSessionNumber(setup.session_number);
+        if (setup.session_races_total != null) setSessionRacesTotal(setup.session_races_total);
+        if (setup.session_type) setSessionType(setup.session_type);
+    };
+
+    // Apply a race setup (from the loader / a race's /setup) to the viewmodel:
+    // identity + a *staged* lane lineup. Driver cards are rebuilt
     // from a fresh base so no lap times / laps-remaining bleed across from a previous
     // race — live lap data only ever comes from race_state. `targetLaps` (from the
     // race_state) seeds "Laps Remaining" with the full race distance before any laps
@@ -87,11 +87,7 @@ const LapCounter = () => {
                     : { ...driver, inLineup: false, position: null, hasStartedRacing: false };
             })
         );
-        if (setup.race_id) setRaceId(setup.race_id);
-        if (setup.race_number != null) setRaceNumber(setup.race_number);
-        if (setup.session_number != null) setSessionNumber(setup.session_number);
-        if (setup.session_races_total != null) setSessionRacesTotal(setup.session_races_total);
-        if (setup.session_type) setSessionType(setup.session_type);
+        applyRaceIdentity(setup);
     };
 
     // Stage a freshly-loaded race onto the get-ready preview: clean lineup (above)
@@ -108,30 +104,29 @@ const LapCounter = () => {
         setRace(r => ({ ...r, hasStarted: false, paused: false, underStartersOrders: false }));
     };
 
-    // The DB is authoritative for which race is current. When a race_state arrives
-    // for a race other than the one we're showing, re-fetch /races/current/ to decide
-    // whether to adopt it (newly staged) or ignore it (stale lapdata broadcast).
-    // A NotStarted state means lapdata just staged a new race, so reset to the clean
-    // get-ready preview; otherwise overlay identity/lineup onto the live view.
+    // When a race_state arrives for a race other than the one we're showing, fetch that
+    // race's own setup for what race_state doesn't carry: the session labels in the
+    // header. A NotStarted state means lapdata just staged a new race, so reset to the
+    // clean get-ready preview. Any other state only takes the identity: the cards, car
+    // pictures included, come from race_state, and rebuilding them would hide a race in
+    // progress or a Finished one until the next message.
     //
-    // ⚠️ Only a setup for the race race_state names is applied, and each race+state (or
-    // staged lineup, for a NotStarted lineup edit) is tried once. A Finished race stays
-    // on screen while the DB's current race is already the next one queued; applying that
-    // one rebuilt every card hidden, and the next message brought them back, so with the
-    // 2s heartbeat (#76) the leaderboard flew in again every beat.
+    // ⚠️ The race race_state names, never /races/current/: after a session's last race the
+    // DB has no current race at all, and between races its current race is the next one
+    // queued while the Finished one is still on screen. Each race+state (or staged lineup,
+    // for a NotStarted lineup edit) is fetched once, or the 2s heartbeat (#76) repeats it.
     const resyncAttemptRef = useRef(null);
     const resyncCurrentRace = (incomingState, targetLaps, incomingRaceId, lineup = '') => {
         const attempt = `${incomingRaceId}:${incomingState}:${lineup}`;
         if (resyncInFlightRef.current || resyncAttemptRef.current === attempt) return;
         resyncInFlightRef.current = true;
         resyncAttemptRef.current = attempt;
-        fetch(`${API_URL}/races/current/`)
+        fetch(`${API_URL}/races/${incomingRaceId}/setup`)
             .then(r => r.ok ? r.json() : null)
             .then(setup => {
                 if (!setup) return;
-                if (incomingRaceId != null && setup.race_id !== incomingRaceId) return;
                 if (incomingState === 'NotStarted') stageRace(setup, targetLaps);
-                else applyRaceSetup(setup, targetLaps);
+                else applyRaceIdentity(setup);
             })
             .catch(() => {})
             .finally(() => { resyncInFlightRef.current = false; });
@@ -186,31 +181,6 @@ const LapCounter = () => {
     }
 
     resetExpiredFastestLapToday();
-
-    const openDriverNamesModal = (driverIdx) => {
-        setDriverNamesModalDriverIdx(driverIdx);
-        setDriverNamesModalShown(true);
-    }
-
-    const openCarSelectorModal = (driverIdx) => {
-        setCarSelectorModalDriverIdx(driverIdx);
-        setCarSelectorModalShown(true);
-    }
-
-    const closeCarSelectorModal = () => {
-        setCarSelectorModalShown(false);
-    }
-
-    const handleCarSelectedInLapCounter = (car) => {
-        const laneNumber = drivers[carSelectorModalDriverIdx].number;
-        if (raceIdRef.current) {
-            fetch(`${API_URL}/races/${raceIdRef.current}/lanes/${laneNumber}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ car_id: car.id }),
-            }).catch(e => console.error('Failed to save car assignment:', e));
-        }
-    }
 
     // Primary display update: map race_state from LapData onto the drivers viewmodel
     const processRaceStateMsg = (raceState) => {
@@ -302,8 +272,8 @@ const LapCounter = () => {
         const p1LapsRemaining = p1Driver?.laps_remaining ?? 0;
 
         // Same race, but NextRace changed who is in it (lapdata re-staged after a
-        // reload_lineup). race_state carries no car pictures, so re-fetch the setup
-        // for those; the positions below still apply straight away.
+        // reload_lineup). Re-stage it from the setup; the cards below still take
+        // positions and car pictures from race_state straight away.
         if (state === 'NotStarted') {
             const shown = driversRef.current.filter(d => d?.inLineup).map(d => `${d.number}:${d.driverId}`).sort().join();
             const staged = raceDrivers.map(d => `${d.lane}:${d.driver_id}`).sort().join();
@@ -322,6 +292,9 @@ const LapCounter = () => {
                     inLineup: true,
                     driverId: rd.driver_id,
                     name: rd.driver_name,
+                    // lapdata publishes the lineup's car picture, so a Finished race keeps
+                    // its cars after the session has ended. An older lapdata sends none.
+                    carImgUrl: rd.car_picture !== undefined ? carImageUrl(rd.car_picture) : driver.carImgUrl,
                     lastLap: rd.has_started ? rd.last_lap.toFixed(3) : '',
                     fastestLap: rd.best_lap != null ? rd.best_lap.toFixed(3) : '',
                     isRaceFastestLap: rd.is_race_fastest_lap,
@@ -378,7 +351,6 @@ const LapCounter = () => {
                     mqttHost={MQTT_URL}
                     onRaceStateMessage={processRaceStateMsg}
                     onLayer1StatusMessage={setLayer1Status}
-                    clientRef={mqttClientRef}
                     debug={DEBUG}
                 />
                 <Header
@@ -409,35 +381,16 @@ const LapCounter = () => {
                 ) : (
                     <div id="driverCardOuter">
                         <div id="driverCardContainer" className={numberOfDriversRacingClassName}>
-                            <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(0)}} onRequestOpenCarSelector={() => {openCarSelectorModal(0)}} />
-                            <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(1)}} onRequestOpenCarSelector={() => {openCarSelectorModal(1)}} />
-                            <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(2)}} onRequestOpenCarSelector={() => {openCarSelectorModal(2)}} />
-                            <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(3)}} onRequestOpenCarSelector={() => {openCarSelectorModal(3)}} />
-                            <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(4)}} onRequestOpenCarSelector={() => {openCarSelectorModal(4)}} />
-                            <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} onRequestOpenDriverNames={() => {openDriverNamesModal(5)}} onRequestOpenCarSelector={() => {openCarSelectorModal(5)}} />
-
-                            <CarSelectorModal
-                                showMe={carSelectorModalShown}
-                                onClose={closeCarSelectorModal}
-                                carImgListUrl={API_URL + '/api/cars'}
-                                drivers={drivers}
-                                setDrivers={setDrivers}
-                                driverIdx={carSelectorModalDriverIdx}
-                                setDriverIdx={setCarSelectorModalDriverIdx}
-                                onCarSelected={handleCarSelectedInLapCounter}
-                            />
+                            <DriverCard driver={drivers[0]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} />
+                            <DriverCard driver={drivers[1]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} />
+                            <DriverCard driver={drivers[2]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} />
+                            <DriverCard driver={drivers[3]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} />
+                            <DriverCard driver={drivers[4]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} />
+                            <DriverCard driver={drivers[5]} underStartersOrders={race.underStartersOrders} previewDriverCards={previewDriverCards} />
                         </div>
                     </div>
                 )}
             </div>
-
-           <EditDriverNamesModal
-                showMe={driverNamesModalShown}
-                onClose={() => setDriverNamesModalShown(false)}
-                drivers={drivers}
-                setDrivers={setDrivers}
-                driverIdxToFocus={driverNamesModalDriverIdx}
-            />
         </div>
     );
 }

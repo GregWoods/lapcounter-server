@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import CarImage from './CarImage';
 import './CarSelectorModal.css';
-import {driverSorter} from './lapUtils.js';
 
 
-const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers, driverIdx, setDriverIdx, onCarSelected }) => {
+// NextRace's car picker. /currentrace has none: a race is edited only while it is queued.
+const CarSelectorModal = ({ showMe, onClose, carImgListUrl, onCarSelected }) => {
 
     const [cars, setCars] = useState([]);
 
@@ -21,61 +21,28 @@ const CarSelectorModal = ({ showMe, onClose, carImgListUrl, drivers, setDrivers,
             );
     }, [carImgListUrl]);
 
+    // Escape and a click outside close it too, so it can always be dismissed.
+    useEffect(() => {
+        if (!showMe) return;
+        const onKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [showMe, onClose]);
 
-    const setCarImage = (car) => {
-        if (drivers && setDrivers) {
-            let newDrivers = [...drivers];
-            newDrivers[driverIdx] = {...drivers[driverIdx], carImgUrl: car.url};
-            setDrivers(newDrivers);
-            skipDriver();
-        }
-        onCarSelected?.(car);
-    }
-
-    const skipDriver = () => {
-        if (!drivers || !setDriverIdx) return;
-        const currentDriver = drivers[driverIdx];
-        const tmpDrivers = drivers.filter(Boolean).sort(driverSorter);
-        const currentDriverSortedIdx = tmpDrivers.findIndex(driver => driver.number === currentDriver.number);
-
-        let nextDriverSortedIdx;
-        if (currentDriverSortedIdx === tmpDrivers.length - 1) {
-            nextDriverSortedIdx = 0;
-        } else {
-            nextDriverSortedIdx = currentDriverSortedIdx + 1;
-        }
-        const nextDriverNumber = tmpDrivers[nextDriverSortedIdx].number;
-        const nextDriverIdx = drivers.findIndex(driver => driver?.number === nextDriverNumber);
-
-        setDriverIdx(nextDriverIdx);
-    }
-
-
-    const setSpotlightMe = () => {
-        if (!drivers || !setDrivers) return;
-        const newDrivers = drivers.map((driver, index) => {
-            if (!driver) return null;
-            return { ...driver, spotlightMe: (index === driverIdx) };
-        });
-        setDrivers(newDrivers);
-    }
 
     if (cars && showMe) {
-        if (drivers) setSpotlightMe();
-
         return (
             <>
-            <div className="fullscreenblur"></div>
+            <div className="fullscreenblur" onClick={onClose}></div>
             <div className="carselectormodal">
                 <div className="carcontainer">
                     {cars.map((car, idx) => {
-                        return <a className="carimage" key={idx} onClick={() => setCarImage(car)}><CarImage url={car.url} /></a>
+                        return <a className="carimage" key={idx} onClick={() => onCarSelected?.(car)}><CarImage url={car.url} /></a>
                     })}
                 </div>
 
                 <div className="carselectorbuttons">
-                    {drivers && <><button onClick={skipDriver}>Skip</button>&nbsp;&nbsp;</>}
-                    <button onClick={onClose}>Done</button>
+                    <button onClick={onClose}>Cancel</button>
                 </div>
             </div>
             </>

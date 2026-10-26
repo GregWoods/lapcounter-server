@@ -667,7 +667,6 @@ def handle_race_control(data: dict, arrival: float):
         # is armed the lineup is fixed, and mid-race the queue head is the *next* race,
         # which must not replace the one running.
         if race.state != 'NotStarted':
-            logger.info(f"reload_lineup ignored: race {race.race_id} is {race.state}")
             return
         fresh = fetch_pending_race()
         if not fresh:

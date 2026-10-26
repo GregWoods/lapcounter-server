@@ -22,9 +22,9 @@ def at(seconds_after_go, clock=CLOCK, late=0.0):
 
 
 def make_lineup(n=3):
-    """lane_assignments for lanes 1..n, driver_id = lane, named DriverN."""
+    """lane_assignments for lanes 1..n, driver_id = lane, named DriverN, in carN.jpg."""
     return [
-        {'id': lane, 'driver_name': f'Driver{lane}', 'lane_number': lane}
+        {'id': lane, 'driver_name': f'Driver{lane}', 'lane_number': lane, 'car_picture': f'car{lane}.jpg'}
         for lane in range(1, n + 1)
     ]
 
@@ -763,6 +763,23 @@ def test_fastest_lap_to_dict_includes_all_session_drivers_sorted_by_best():
     assert driver1['in_current_race'] is True
     assert driver1['lane'] == 1
     assert driver1['current_race_laps'] == [pytest.approx(5.0)]
+    # A car belongs to a race: only a driver in this one has one.
+    assert (driver1['car_picture'], bench['car_picture']) == ('car1.jpg', None)
+
+
+# --- Car pictures ---
+
+def test_each_drivers_car_picture_is_published():
+    """So a screen can show the cars for any race lapdata holds, including a Finished
+    one after its session has ended and the DB has no current race."""
+    state = new_race(n_drivers=2).to_dict()
+    assert [d['car_picture'] for d in state['drivers']] == ['car1.jpg', 'car2.jpg']
+
+
+def test_a_lane_with_no_car_publishes_an_empty_picture():
+    race = RaceManager(ClockAnchors())
+    race.load_lineup(1, 1, 3, [{'id': 1, 'driver_name': 'A', 'lane_number': 1, 'car_picture': None}])
+    assert race.to_dict()['drivers'][0]['car_picture'] == ''
 
 
 def test_fastest_lap_merge_preserves_better_in_memory_best_over_db_value():
