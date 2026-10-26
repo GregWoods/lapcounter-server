@@ -18,10 +18,12 @@ CROSSING_COUNTED = 'counted'
 CROSSING_START_LINE = 'start_line'   # the discarded part-lap from a grid behind the line
 CROSSING_YELLOW_FLAG = 'yellow_flag'  # crossed after a yellow-flag grace expired
 CROSSING_BASELINE = 'baseline'       # nothing to time it from: the next lap starts here
+CROSSING_TOO_SHORT = 'too_short'     # lap 1 under min_lap_time from lights-out (#120)
 # ⚠️ An outcome says why a crossing did or didn't count, never what it cost. A yellow-flag
 # crossing may or may not incur a lap penalty; penalties are a separate fact (race_penalties,
 # and the driver_penalty topic in #88), not a kind of crossing (Greg, 2026-10-25).
-CROSSING_OUTCOMES = (CROSSING_COUNTED, CROSSING_START_LINE, CROSSING_YELLOW_FLAG, CROSSING_BASELINE)
+CROSSING_OUTCOMES = (CROSSING_COUNTED, CROSSING_START_LINE, CROSSING_YELLOW_FLAG, CROSSING_BASELINE,
+                     CROSSING_TOO_SHORT)
 
 
 @dataclass
@@ -98,7 +100,10 @@ class RaceManager:
         self.race_start_time: Optional[float] = None
         self.race_fastest_lap: float = 999.999
         self.yellow_grace_seconds: float = 5.0
-        self.min_lap_time: Optional[float] = None  # seconds; None = use lapdata's MINIMUM_LAP_TIME fallback
+        self.min_lap_time: Optional[float] = None  # seconds; None = use default_min_lap_time
+        # lapdata's MINIMUM_LAP_TIME, set by timestamps_to_lapdata: the floor when the
+        # staged race has no session setting. None = no floor.
+        self.default_min_lap_time: Optional[float] = None
         # Whole seconds until a yellow flag's grace period cuts power; None outside
         # Yellow. Ticked down by lapdata's own timers, like start_lights, so a display
         # renders the number it's given instead of comparing a deadline against its
@@ -477,6 +482,14 @@ class RaceManager:
             'counter_ms': crossing.counter_ms if crossing else None,
         })
 
+    @property
+    def lap_time_floor(self) -> Optional[float]:
+        """The shortest possible lap, in seconds: the session's min_lap_time, else
+        lapdata's fallback. A lap this short or shorter isn't real — the phantom filter
+        drops a crossing this soon after the last one, and on_lap() voids a lap 1 this
+        soon after lights-out."""
+        return self.min_lap_time if self.min_lap_time is not None else self.default_min_lap_time
+
     # States in which a crossing is a real lap: the cars are under power and racing.
     # Yellow is in here because its grace period keeps full power on — see yellow().
     COUNTING_STATES = ('Running', 'Yellow')
@@ -553,6 +566,19 @@ class RaceManager:
         # their baseline instead of the next crossing.
         if not driver.lap_times and self.race_start is not None:
             lap_time, timing = self.race_start.since_go(crossing, self.anchors)
+            # A lap 1 no longer than the shortest possible lap is a car that was sitting
+            # on the line, or rolled over it, at lights-out (#120). The phantom filter
+            # can't catch it: there is no previous crossing to compare with. Void, and it
+            # doesn't move the start of lap 1 — the next crossing is still timed from
+            # lights-out, the same as a yellow-flag crossing. It does take last_crossing
+            # if there is none, like the start-line crossing, so the car sorts as started.
+            floor = self.lap_time_floor
+            if floor is not None and lap_time <= floor:
+                if driver.last_crossing is None:
+                    driver.last_crossing = crossing
+                logger.info(f"Lane {lane}: lap 1 of {lap_time:.3f}s is under the "
+                            f"{floor}s minimum — void, lap 1 still runs from lights-out")
+                return CROSSING_TOO_SHORT
         elif driver.last_crossing is not None:
             lap_time, timing = interval_s(driver.last_crossing, crossing, self.anchors)
         else:

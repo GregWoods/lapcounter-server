@@ -45,6 +45,7 @@ start_lights_pre_delay = float(os.getenv('START_LIGHTS_PRE_DELAY', '2.0'))
 # a clock change. See lapdata/lap_clock.py.
 anchors = ClockAnchors()
 race = RaceManager(anchors)
+race.default_min_lap_time = min_lap_time_s
 pending_race_cache: dict | None = None
 _light_timers: list = []  # the start-light sequence timers (5 lights + lights-out)
 _end_timer: threading.Timer | None = None
@@ -252,7 +253,8 @@ def handle_car_timestamp(data: dict, arrival: float):
     elapsed = None
     if previous is not None:
         elapsed, _ = interval_s(previous, crossing, anchors)
-        if elapsed <= (race.min_lap_time if race.min_lap_time is not None else min_lap_time_s):
+        floor = race.lap_time_floor
+        if floor is not None and elapsed <= floor:
             return  # phantom trigger — too soon after last crossing
 
     prev_crossing[idx] = crossing

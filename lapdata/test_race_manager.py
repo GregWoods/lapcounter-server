@@ -4,7 +4,7 @@ import uuid
 import pytest
 from lap_clock import ClockAnchors, Crossing, TIMING_ANCHORED, TIMING_COUNTER, TIMING_FROM_GO
 from race_manager import (CROSSING_BASELINE, CROSSING_COUNTED, CROSSING_YELLOW_FLAG,
-                          CROSSING_START_LINE, RaceManager)
+                          CROSSING_START_LINE, CROSSING_TOO_SHORT, RaceManager)
 
 # Lights-out on lapdata's monotonic clock, and the Layer 1 clock the cars run on. The
 # anchor is set up so counter 0 lands exactly on GO, which makes at(t) below read as
@@ -116,6 +116,77 @@ def test_subsequent_laps_timed_from_previous_crossing():
     assert driver.laps_completed == 2
     assert driver.last_lap_time == pytest.approx(4.5)
     assert driver.lap_times == [pytest.approx(4.5), pytest.approx(4.5)]
+
+
+# --- Lap 1 under the minimum lap time (#120) ---
+
+def test_lap_one_under_min_lap_time_is_void_and_lap_one_still_runs_from_lights_out():
+    """A car on the line at lights-out crosses almost at once. With the grid in front of
+    the line that crossing would end lap 1 — and win fastest lap outright."""
+    race = new_race(count_first_crossing=True)
+    race.min_lap_time = 3.0
+    assert race.on_lap(1, at(0.039)) == CROSSING_TOO_SHORT
+    driver = race.drivers[1]
+    assert driver.lap_times == []
+    assert driver.best_lap_time == pytest.approx(999.999)
+    assert race.race_fastest_lap == pytest.approx(999.999)
+    assert driver.has_started
+
+    assert race.on_lap(1, at(5.2)) == CROSSING_COUNTED
+    assert driver.lap_times == [pytest.approx(5.2)]
+    assert driver.last_lap_timing == TIMING_FROM_GO
+
+
+def test_a_void_lap_one_still_sorts_the_car_as_started():
+    """Like the start-line crossing, it takes last_crossing, or race_time() is 0.0 and the
+    car sorts on lane number."""
+    race = new_race(count_first_crossing=True)
+    race.min_lap_time = 3.0
+    crossing = at(0.4)
+    race.on_lap(2, crossing)
+    assert race.drivers[2].last_crossing == crossing
+    assert race.race_time(race.drivers[2]) == pytest.approx(0.4)
+
+
+def test_lap_one_exactly_at_min_lap_time_is_void():
+    """Same rule as the phantom filter: a lap equal to the minimum is rejected."""
+    race = new_race(count_first_crossing=True)
+    race.min_lap_time = 3.0
+    assert race.on_lap(1, at(3.0)) == CROSSING_TOO_SHORT
+    assert race.on_lap(1, at(8.0)) == CROSSING_COUNTED
+    assert race.drivers[1].lap_times == [pytest.approx(8.0)]
+
+
+def test_lap_one_floor_falls_back_to_lapdatas_default():
+    race = new_race(count_first_crossing=True)
+    race.default_min_lap_time = 2.0
+    assert race.on_lap(1, at(1.5)) == CROSSING_TOO_SHORT
+
+
+def test_only_lap_one_is_checked_against_min_lap_time():
+    """Lap 2 onwards is the phantom filter's job, between two crossings."""
+    race = new_race(count_first_crossing=True)
+    race.min_lap_time = 3.0
+    race.on_lap(1, at(5.0))
+    assert race.on_lap(1, at(6.0)) == CROSSING_COUNTED
+
+
+def test_grid_behind_the_line_is_unchanged_by_min_lap_time():
+    race = new_race(count_first_crossing=False)
+    race.min_lap_time = 3.0
+    assert race.on_lap(1, at(0.2)) == CROSSING_START_LINE
+    assert race.on_lap(1, at(5.0)) == CROSSING_COUNTED
+    assert race.drivers[1].lap_times == [pytest.approx(5.0)]
+
+
+def test_a_void_lap_one_is_never_the_session_fastest_lap():
+    race = new_race(count_first_crossing=True, session_type='FastestLap',
+                    race_duration_seconds=300)
+    race.min_lap_time = 3.0
+    race.on_lap(1, at(0.039))
+    assert race.to_dict()['session_fastest_lap'] is None
+    race.on_lap(1, at(5.5))
+    assert race.to_dict()['session_fastest_lap'] == pytest.approx(5.5)
 
 
 def test_discarded_crossing_then_first_real_lap_still_timed_from_lights_out():

@@ -114,7 +114,7 @@ def test_phantom_filter_works_on_counters(published, monkeypatch):
     """Two crossings closer together than MINIMUM_LAP_TIME on Layer 1's counter are a
     phantom trigger even when latency spread their arrivals much further apart — which
     is exactly what a Slot rotation does."""
-    monkeypatch.setattr(tsl, 'min_lap_time_s', 4.0)
+    monkeypatch.setattr(tsl.race, 'default_min_lap_time', 4.0)
     tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
     tsl.handle_car_timestamp(_crossing(1, 11_000), arrival=1020.0)   # 1s later, 10s apart
     assert len(_laps(published)) == 1
@@ -122,7 +122,7 @@ def test_phantom_filter_works_on_counters(published, monkeypatch):
 
 def test_the_staged_races_session_setting_overrides_the_env_fallback(published, monkeypatch):
     """min_lap_time comes from the session; the env var is only the fallback."""
-    monkeypatch.setattr(tsl, 'min_lap_time_s', 4.0)
+    monkeypatch.setattr(tsl.race, 'default_min_lap_time', 4.0)
     monkeypatch.setattr(tsl.race, 'min_lap_time', 1.0)
     tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
     tsl.handle_car_timestamp(_crossing(1, 12_000), arrival=1012.0)   # 2s: over 1s, under 4s
@@ -132,14 +132,14 @@ def test_the_staged_races_session_setting_overrides_the_env_fallback(published, 
 def test_a_genuine_lap_is_not_filtered_by_a_late_notification(published, monkeypatch):
     """The mirror case, and the one that loses a real lap: a delayed notification must
     not be able to push two genuine crossings under MINIMUM_LAP_TIME."""
-    monkeypatch.setattr(tsl, 'min_lap_time_s', 4.0)
+    monkeypatch.setattr(tsl.race, 'default_min_lap_time', 4.0)
     tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
     tsl.handle_car_timestamp(_crossing(1, 15_000), arrival=1010.2)   # arrived 200ms apart
     assert len(_laps(published)) == 2
 
 
 def test_lanes_are_filtered_independently(published, monkeypatch):
-    monkeypatch.setattr(tsl, 'min_lap_time_s', 4.0)
+    monkeypatch.setattr(tsl.race, 'default_min_lap_time', 4.0)
     tsl.handle_car_timestamp(_crossing(1, 10_000), arrival=1010.0)
     tsl.handle_car_timestamp(_crossing(2, 10_100), arrival=1010.1)
     assert len(_laps(published)) == 2
