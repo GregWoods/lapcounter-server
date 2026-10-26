@@ -551,8 +551,8 @@ def test_a_clean_404_is_not_treated_as_unreachable(monkeypatch, published):
 def test_a_genuine_connection_failure_is_treated_as_unreachable(monkeypatch, published):
     """A real network failure (connection refused, DNS, timeout — anything that isn't a
     clean HTTP response) means the API is actually down. lapdata depends on it for the
-    pending-race queue and for persisting race lifecycle (publish_race_state()'s /start
-    and /finish POSTs) — not a React-only nicety — so this must be surfaced loudly
+    pending-race queue, and it is what persists the race lifecycle (from race_state, #79)
+    — not a React-only nicety — so this must be surfaced loudly
     (published in race_state) rather than logged and silently worked around."""
     monkeypatch.setattr(tsl, '_api_reachable', True)  # start optimistic to prove the flip
 

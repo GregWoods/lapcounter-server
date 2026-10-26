@@ -148,7 +148,7 @@ const LapCounter = () => {
     const [startLights, setStartLights] = useState(0); // lit count, driven by lapdata's race_state
     const [yellowSecondsLeft, setYellowSecondsLeft] = useState(null); // grace countdown, driven by lapdata
     // Optimistic until the first race_state says otherwise — lapdata itself depends on
-    // the API (pending-race queue, /start+/finish persistence), so this isn't a
+    // the API (pending-race queue, race lifecycle persistence), so this isn't a
     // React-only nicety; see ApiUnreachableModal.
     const [apiReachable, setApiReachable] = useState(true);
     const [previewDriverCards, setPreviewDriverCards] = useState(!!pendingRace?.lane_assignments);

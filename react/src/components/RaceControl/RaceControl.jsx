@@ -150,9 +150,10 @@ export default function RaceControl() {
     // The DB says a race is Running but lapdata isn't running it — it restarted mid-race
     // (lapdata recovers a Running race itself now, so this is the fallback for when it
     // can't, or hasn't yet). Every button below hangs off lapdata's state, so none would
-    // show, and `end` over MQTT would reach a lapdata with nothing to end. Ending it
-    // through the API finishes the race and runs the session auto-end. A Finished race_state
-    // for that same race is not this: lapdata's finish POST is simply still in flight.
+    // show. End Race sends `end` naming the race: lapdata loads it and publishes it
+    // Finished, and the API persists that from race_state, session auto-end included (#79).
+    // A Finished race_state for that same race is not this: the API simply hasn't
+    // persisted it yet.
     // ⚠️ Judged on the raw message, not liveRaceState: that one is nulled for a stale or
     // empty message too, and neither means lapdata has lost anything.
     // Until the retained race_state arrives, "no race_state" means "not heard yet", not
@@ -163,7 +164,8 @@ export default function RaceControl() {
         ? info.runningRaceId : null;
     // lapdata has a race of its own under way. Its controls must stay — a stuck race is
     // a DB record to clean up, not a reason to lose the yellow flag mid-race — and
-    // nothing may stage the next race over it.
+    // nothing may stage the next race over it. Nor is there anything to offer: the API
+    // finishes a stuck race by itself once it sees a different one under way (#79).
     const lapdataRaceUnderWay = ['ArmedForStart', 'Running', 'Yellow', 'Paused'].includes(raceState?.state);
 
     // Live values win; fall back to the API snapshot before the first MQTT message. An
@@ -202,16 +204,10 @@ export default function RaceControl() {
     const yellowFlag = () => publish('yellow');
     const resumeRace = () => publish('resume');
 
-    // Close a race lapdata has lost: finish it in the DB (which auto-ends the session if
-    // that was the last race), tell other pages, then stage whatever is next — unless
-    // lapdata is racing something else, which prepare would replace (lapdata refuses it
-    // too, but don't rely on one guard).
-    const endOrphanedRace = async () => {
-        await apiPost(`/races/${orphanedRaceId}/finish`);
-        clientRef.current?.publish('admin_update', JSON.stringify({ reason: 'race_finished', race_id: orphanedRaceId }));
-        await loadInfo();
-        if (!lapdataRaceUnderWay) publish('prepare', {});
-    };
+    // Close a race lapdata has lost, through lapdata like any other End: it comes back as a
+    // Finished race_state for that race, which refreshes this page, and Next Race stages
+    // whatever is next as usual.
+    const endOrphanedRace = () => publish('end', { race_id: orphanedRaceId });
 
     // "Next Session": begin the next NotStarted session and pre-populate its queue.
     const nextSession = async () => { await apiPost('/sessions/start-next'); await loadInfo(); };
@@ -313,15 +309,6 @@ export default function RaceControl() {
                 </div>
             ))}
 
-            {orphanedRaceId != null && state !== 'Orphaned' && (
-                <div className="rc-regen-banner">
-                    <span>
-                        Race {info.runningRaceNumber} is also still marked Running, but the lap
-                        counter isn&apos;t tracking it.
-                    </span>
-                    <button className="rc-btn rc-btn--regen" onClick={endOrphanedRace}>Close it</button>
-                </div>
-            )}
 
             <section className="rc-actions">
                 {state === 'Connecting' && <p className="rc-connecting">Connecting…</p>}

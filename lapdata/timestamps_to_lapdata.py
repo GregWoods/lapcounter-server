@@ -61,10 +61,6 @@ _yellow_generation = 0
 # Every mutation of `race` holds this — MQTT messages on paho's thread and lapdata's own
 # timers on theirs — so a timer's check-then-act can't interleave with a message.
 _race_lock = threading.RLock()
-# Last race state we POSTed to the API, so we fire /start and /finish exactly once
-# per transition. lapdata (the race authority) owns these DB side-effects server-side
-# so persistence is browser-independent — no client needs to be open.
-_last_posted_state: str | None = None
 
 # Capabilities of whichever Layer 1 is currently running, from its retained
 # layer1_status message (empty until one arrives — treated the same as "no
@@ -99,9 +95,9 @@ _last_car_seq: dict = {}
 _seq_missing_warned = False
 
 # Whether the last API call actually reached it. This is not a React-only "graceful
-# degradation" concern: lapdata itself depends on the API for the pending-race queue and
-# persists race lifecycle through it (publish_race_state()'s /start and /finish POSTs),
-# so a genuinely unreachable API means the whole system's source of truth is down, not
+# degradation" concern: lapdata itself depends on the API for the pending-race queue, and
+# the API is what persists the race lifecycle (from race_state, #79), so a genuinely
+# unreachable API means the whole system's source of truth is down, not
 # just a display losing a nicety. Published in every race_state (see publish_race_state)
 # so every screen can show it — unmissably, per the "TV sized UI" rule, not a quiet log
 # line nobody's watching mid-meet. Starts True (optimistic) so a display doesn't flash a
@@ -578,7 +574,7 @@ def handle_race_control(data: dict, arrival: float):
         # in `pending_race_cache` from a previous, unrelated race. Once bit us for real:
         # after a full DB reseed mid-session, lapdata (never restarted, so still holding
         # a pre-reseed cache) armed and ran an entire race on stale cached data — wrong
-        # driver names throughout, and its start/finish POSTs landed on whatever race the
+        # driver names throughout, and its start/finish were persisted to whatever race the
         # reused id now pointed to post-reseed.
         fresh = fetch_pending_race()
         if fresh:
@@ -611,7 +607,7 @@ def handle_race_control(data: dict, arrival: float):
         _cancel_end_timer()
 
         # Use the pre-cached lineup when the race_id matches — avoids the timing
-        # issue where POST /races/N/start has already run by the time we fetch,
+        # issue where race N has already been persisted as Running by the time we fetch,
         # causing fetch_pending_race() to return Race N+1 instead of Race N.
         if pending_race_cache and pending_race_cache.get('race_id') == race_id:
             pending = pending_race_cache
@@ -641,7 +637,7 @@ def handle_race_control(data: dict, arrival: float):
         # startup, so this is not a new state.
         race_id = data.get('race_id')
         # Never over a race that is still under way: the queue head is the *next* race, and
-        # loading it would throw away this one's laps and its /finish. A client can send
+        # loading it would throw away this one's laps and its finish. A client can send
         # prepare from a stale view (RaceControl after ending a stuck race, or regenerating
         # while Paused); End first is the only way to move on.
         if race.state in ('ArmedForStart', 'Running', 'Yellow', 'Paused'):
@@ -706,6 +702,10 @@ def handle_race_control(data: dict, arrival: float):
         publish_race_state()
 
     elif command == 'end':
+        race_id = data.get('race_id')
+        if race_id is not None and race_id != race.race_id:
+            _end_other_race(race_id)
+            return
         _cancel_start_timers()
         _cancel_yellow_timers()
         _cancel_end_timer()
@@ -714,6 +714,40 @@ def handle_race_control(data: dict, arrival: float):
 
     else:
         logger.warning(f"Unknown race_control command: {command}")
+
+
+def _end_other_race(race_id: int):
+    """End a race the DB still holds Running but this process isn't running — RaceControl's
+    End Race for a stuck race. Caller holds _race_lock. The race is loaded and published
+    Finished like any other, so the API's race_state subscriber finishes it and runs the
+    session auto-end (#79); nothing writes to the DB from here or the browser.
+
+    Not over a race of our own that is under way: that one must keep its laps, and the
+    subscriber already finishes the stuck race once it sees a different race under way."""
+    global pending_race_cache
+    if race.state in ('ArmedForStart', 'Running', 'Yellow', 'Paused'):
+        logger.warning(f"end for race {race_id} ignored: race {race.race_id} is {race.state} "
+                       f"(the stuck race is closed when this one is persisted)")
+        return
+    recovery = fetch_running_recovery()
+    if recovery is None and not _api_reachable:
+        logger.error(f"Cannot end race {race_id}: API unreachable")
+        return
+    _cancel_start_timers()
+    _cancel_yellow_timers()
+    if recovery and recovery.get('race_id') == race_id and recover_running_race(recovery):
+        logger.info(f"Loaded stuck race {race_id} from the database to end it")
+    else:
+        # No lineup to rebuild, or the DB's newest Running race is a different one: end it
+        # with no drivers. Only its id matters to the subscriber.
+        race_number = recovery.get('race_number') if recovery and recovery.get('race_id') == race_id else None
+        _load_pending({'race_id': race_id, 'race_number': race_number, 'lane_assignments': []})
+        logger.info(f"Ending stuck race {race_id} with no lineup")
+    _cancel_end_timer()
+    race.end()
+    publish_race_state()
+    # The stuck race replaced the staged queue head; the operator's Next Race stages it again.
+    pending_race_cache = None
 
 
 def _stop_race(reason: str) -> bool:
@@ -744,22 +778,6 @@ def on_disconnect(_client, _userdata, _flags, _reason_code, _properties):
         _stop_race('lapdata lost the MQTT broker')
 
 
-def _post_api(path: str, json_body: dict | None = None):
-    """Fire-and-forget POST to the API in a daemon thread (never blocks MQTT)."""
-    def _do():
-        try:
-            data = json.dumps(json_body).encode('utf-8') if json_body is not None else None
-            headers = {'Content-Type': 'application/json'} if data is not None else {}
-            req = urllib.request.Request(f"{api_url}{path}", data=data, headers=headers, method='POST')
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                resp.read()
-            _set_api_reachable(True)
-        except Exception as e:
-            logger.warning(f"API POST {path} failed: {e}")
-            _set_api_reachable(False)
-    threading.Thread(target=_do, daemon=True).start()
-
-
 def publish_pending_penalties():
     """Publish each penalty race_manager applied since the last call as its own
     `driver_penalty` event (#88), currently only a yellow-flag lap penalty. dbwriter
@@ -778,25 +796,16 @@ def publish_pending_penalties():
 
 
 def publish_race_state():
-    global _last_posted_state
     state_dict = race.to_dict()
     # Not race-manager business (race_manager.py is pure/DB-free), so it's folded in
     # here rather than in RaceManager.to_dict() — see _api_reachable above.
     state_dict['api_reachable'] = _api_reachable
     state_dict['capabilities'] = _layer1_capabilities
     # Retained, so a subscriber that (re)connects gets the current state at once (#76).
+    # This is also how the race lifecycle reaches the DB: the API's race_state subscriber
+    # reconciles each one (Running, Finished, the session auto-end, #79), so lapdata
+    # makes no HTTP writes.
     client.publish('race_state', json.dumps(state_dict), retain=True)
-
-    # Persist race-lifecycle transitions via the API (race Running/Finished, session
-    # InProgress, and the automatic session-end). Starting the next race/session stays
-    # a manual /racecontrol action, so we only POST start/finish — never advance.
-    state = race.state
-    if state != _last_posted_state:
-        if state == 'Running':
-            _post_api(f"/races/{race.race_id}/start", {"started_at": race.race_start_time})
-        elif state == 'Finished':
-            _post_api(f"/races/{race.race_id}/finish")
-        _last_posted_state = state
 
 
 def handle_layer1_status(data: dict):
@@ -889,10 +898,10 @@ def recover_running_race(recovery: dict) -> bool:
     """Rebuild a race the DB still calls Running but this process knows nothing about —
     lapdata restarted mid-race. Holds _race_lock. The race comes back Paused (see
     RaceManager.restore); if it had already run out of time or been won it comes back
-    Finished and publish_race_state() POSTs the finish, which also runs the API's
-    session auto-end — the step that never happened when this was a manual restart.
+    Finished, and the API persists the finish from that race_state, session auto-end
+    included — the step that never happened when this was a manual restart.
     Returns False, loading nothing, if the payload has no lineup to rebuild."""
-    global pending_race_cache, _last_posted_state
+    global pending_race_cache
     setup = recovery.get('setup')
     if not setup:
         logger.error(f"Race {recovery.get('race_id')} is Running in the DB but has no lineup — can't recover it")
@@ -906,9 +915,6 @@ def recover_running_race(recovery: dict) -> bool:
         ({int(driver_id): n for driver_id, n in recovery['crossings'].items()}
          if recovery.get('crossings') is not None else None),
     )
-    # The state we just rebuilt is what the API already holds (Running), or is a Finished
-    # transition it must be told about. Either way, don't POST a bogus /start for it.
-    _last_posted_state = 'Running' if race.state != 'Finished' else None
     if race.state != 'Finished':
         _schedule_end_timer()
     publish_race_state()

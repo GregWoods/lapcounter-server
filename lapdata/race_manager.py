@@ -202,7 +202,7 @@ class RaceManager:
           crossings is gone.
 
         A timed race whose time ran out while we were away, or a Laps race where everyone
-        had already taken the chequered flag, comes back Finished so the finish gets POSTed.
+        had already taken the chequered flag, comes back Finished so the finish gets persisted.
         """
         self.recovered = True
         self.race_start_time = started_at
@@ -339,7 +339,8 @@ class RaceManager:
         is timed from, so time spent blocking would land in lap 1.
 
         race_start_time (wall clock) survives for display, the time-expiry timer and the
-        /races/{id}/start POST. None of those needs to be better than roughly right, and
+        races.started_at the API stores from race_state. None of those needs to be better
+        than roughly right, and
         none of them times a lap any more.
         """
         self.state = 'Running'
