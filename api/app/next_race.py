@@ -161,32 +161,39 @@ def assign_drivers_to_lanes(driver_list: List[DriverWithLane], lanes: List[Lane]
 
 
 def get_session_fastest_laps(dbsession, session_id: int) -> list:
-    """Return all session drivers with their best lap time across finished races.
+    """Every session driver with their best counted lap so far and when they first set it,
+    which is what lapdata needs to rebuild its Fastest Lap ranking after a restart (#112).
 
-    Returns [] for non-FastestLap contexts. Until the DB writer is implemented
-    all session_fastest_lap values will be None (no DriverLap records exist in
-    production), but the list of drivers is correct for initialising LapData's
-    in-memory session state.
+    Running races count as well as Finished ones, so a lapdata recovering mid-race gets
+    the current race's bests with their times too. The order is lapdata's last stored
+    ranking (session_drivers.position), so a screen showing this before any race_state
+    has arrived shows lapdata's order rather than one of its own; nothing is ranked here.
     """
     from sqlalchemy import text
     query = text("""
+        WITH laps AS (
+            SELECT dr.driver_id, dl.lap_time, dl.crossed_at
+            FROM races r
+            JOIN driver_races dr ON dr.race_id = r.id
+            JOIN driver_laps dl ON dl.driver_race_id = dr.id AND dl.outcome = 'counted'
+            WHERE r.session_id = :session_id AND r.state IN ('Finished', 'Running')
+        ), best AS (
+            SELECT driver_id, MIN(lap_time) AS lap_time FROM laps GROUP BY driver_id
+        )
         SELECT
             d.id            AS driver_id,
             md.driver_name,
-            MIN(dl.lap_time) AS session_fastest_lap
+            b.lap_time      AS session_fastest_lap,
+            (SELECT EXTRACT(EPOCH FROM MIN(l.crossed_at)) FROM laps l
+             WHERE l.driver_id = d.id AND l.lap_time = b.lap_time) AS session_fastest_lap_at,
+            sd.position
         FROM sessions s
         JOIN meeting_drivers md ON s.meeting_id = md.meeting_id
         JOIN drivers d ON d.id = md.driver_id
-        LEFT JOIN driver_races dr
-            ON d.id = dr.driver_id
-            AND dr.race_id IN (
-                SELECT id FROM races
-                WHERE session_id = :session_id AND state = 'Finished'
-            )
-        LEFT JOIN driver_laps dl ON dl.driver_race_id = dr.id AND dl.outcome = 'counted'
+        LEFT JOIN best b ON b.driver_id = d.id
+        LEFT JOIN session_drivers sd ON sd.session_id = s.id AND sd.driver_id = d.id
         WHERE s.id = :session_id
-        GROUP BY d.id, md.driver_name
-        ORDER BY session_fastest_lap ASC NULLS LAST
+        ORDER BY sd.position ASC NULLS LAST, md.driver_name
     """)
     rows = dbsession.exec(query.bindparams(session_id=session_id)).all()
     return [
@@ -194,6 +201,9 @@ def get_session_fastest_laps(dbsession, session_id: int) -> list:
             driver_id=row.driver_id,
             driver_name=row.driver_name,
             session_fastest_lap=float(row.session_fastest_lap) if row.session_fastest_lap is not None else None,
+            session_fastest_lap_at=(float(row.session_fastest_lap_at)
+                                    if row.session_fastest_lap_at is not None else None),
+            position=row.position,
         )
         for row in rows
     ]

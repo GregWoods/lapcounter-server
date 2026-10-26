@@ -110,6 +110,10 @@ class SessionDriverFastestLap(SQLModel):
     driver_id: int
     driver_name: str
     session_fastest_lap: Optional[float] = None
+    # When that lap was set (unix seconds, driver_laps.crossed_at): lapdata's tie-break.
+    session_fastest_lap_at: Optional[float] = None
+    # lapdata's ranking as stored (session_drivers.position); None = unranked.
+    position: Optional[int] = None
 
 
 class NextRaceSetup(SQLModel):

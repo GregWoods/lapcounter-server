@@ -111,24 +111,24 @@ INSERT INTO races (id, session_id, race_number, state) VALUES (2, 2, 2, 'Finishe
 
 -- Race 1: Alice L1, Bob L2, Charlie L3, Dave L4, Eve L5, Frank L6  (Greg/Hannah/Jake sit out)
 -- Positions: P1 Bob(20L/9.567), P2 Eve(20L/9.876), P3 Alice(19L), P4 Dave(18L), P5 Frank(17L), P6 Charlie(16L)
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES
-    (1,  1, 1, 2, 1, 19, 10.234),  -- Alice   L1 P3
-    (2,  2, 1, 7, 2, 20,  9.567),  -- Bob     L2 P1
-    (3,  3, 1, 3, 3, 16, 12.123),  -- Charlie L3 P6
-    (4,  4, 1, 5, 4, 18, 10.789),  -- Dave    L4 P4
-    (5,  5, 1, 8, 5, 20,  9.876),  -- Eve     L5 P2
-    (6,  6, 1, 9, 6, 17, 11.234)   -- Frank   L6 P5
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time, position) VALUES
+    (1,  1, 1, 2, 1, 19, 10.234, 3),  -- Alice   L1 P3
+    (2,  2, 1, 7, 2, 20,  9.567, 1),  -- Bob     L2 P1
+    (3,  3, 1, 3, 3, 16, 12.123, 6),  -- Charlie L3 P6
+    (4,  4, 1, 5, 4, 18, 10.789, 4),  -- Dave    L4 P4
+    (5,  5, 1, 8, 5, 20,  9.876, 2),  -- Eve     L5 P2
+    (6,  6, 1, 9, 6, 17, 11.234, 5)   -- Frank   L6 P5
     ON CONFLICT (id) DO NOTHING;
 
 -- Race 2: Greg L1, Hannah L2, Jake L3, Alice L4, Bob L5, Charlie L6  (Dave/Eve/Frank sit out)
 -- Positions: P1 Alice(20L/9.456), P2 Jake(20L/9.789), P3 Greg(19L), P4 Bob(18L), P5 Hannah(17L), P6 Charlie(16L)
-INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time) VALUES
-    (7,  7, 2, 2, 1, 19, 10.123),  -- Greg    L1 P3
-    (8,  8, 2, 7, 2, 17, 11.345),  -- Hannah  L2 P5
-    (9,  9, 2, 3, 3, 20,  9.789),  -- Jake    L3 P2
-    (10, 1, 2, 5, 4, 20,  9.456),  -- Alice   L4 P1
-    (11, 2, 2, 8, 5, 18, 10.567),  -- Bob     L5 P4
-    (12, 3, 2, 9, 6, 16, 12.456)   -- Charlie L6 P6
+INSERT INTO driver_races (id, driver_id, race_id, car_id, lane, laps_completed, fastest_lap_time, position) VALUES
+    (7,  7, 2, 2, 1, 19, 10.123, 3),  -- Greg    L1 P3
+    (8,  8, 2, 7, 2, 17, 11.345, 5),  -- Hannah  L2 P5
+    (9,  9, 2, 3, 3, 20,  9.789, 2),  -- Jake    L3 P2
+    (10, 1, 2, 5, 4, 20,  9.456, 1),  -- Alice   L4 P1
+    (11, 2, 2, 8, 5, 18, 10.567, 4),  -- Bob     L5 P4
+    (12, 3, 2, 9, 6, 16, 12.456, 6)   -- Charlie L6 P6
     ON CONFLICT (id) DO NOTHING;
 
 -- Race 1 laps (sample — not all 20 per driver)
@@ -271,8 +271,11 @@ BEGIN
     LOOP
       v_lt := round((v_base + random() * v_range)::numeric, 3);
       EXIT WHEN v_elapsed + v_lt > race_seconds;
-      INSERT INTO driver_laps (driver_race_id, lap_time, created_at) VALUES (v_dr_id, v_lt, now());
       v_elapsed := v_elapsed + v_lt;
+      -- crossed_at: races 10 minutes apart from 14:00, so who set a tied best first is known.
+      INSERT INTO driver_laps (driver_race_id, lap_time, created_at, crossed_at)
+        VALUES (v_dr_id, v_lt, now(),
+                TIMESTAMPTZ '2030-01-01 14:00:00+00' + make_interval(mins => rec.race_number * 10, secs => v_elapsed));
       v_nlaps := v_nlaps + 1;
       v_last := v_lt;
       IF v_best IS NULL OR v_lt < v_best THEN
@@ -284,6 +287,33 @@ BEGIN
        SET laps_completed = v_nlaps, last_lap_time = v_last, fastest_lap_time = v_best
      WHERE id = v_dr_id;
   END LOOP;
+
+  -- What lapdata would have published in each Finished race_state and the API's subscriber
+  -- stored (#112): each race ranked on the drivers' best laps in it (the Results medals),
+  -- and the session on their bests overall. Same rule as race_manager.py: best lap, then
+  -- whoever set it first, then lane / driver_id. Only demo data ranks here; live, lapdata does.
+  WITH best AS (
+    SELECT DISTINCT ON (dl.driver_race_id) dl.driver_race_id, dl.lap_time, dl.crossed_at
+    FROM driver_laps dl JOIN driver_races dr ON dr.id = dl.driver_race_id
+    WHERE dr.race_id = ANY(race_ids)
+    ORDER BY dl.driver_race_id, dl.lap_time, dl.crossed_at
+  )
+  UPDATE driver_races dr SET position = ranked.pos
+  FROM (
+    SELECT dr.id, ROW_NUMBER() OVER (PARTITION BY dr.race_id ORDER BY b.lap_time, b.crossed_at, dr.lane) AS pos
+    FROM driver_races dr JOIN best b ON b.driver_race_id = dr.id
+  ) ranked
+  WHERE dr.id = ranked.id;
+
+  WITH best AS (
+    SELECT DISTINCT ON (dr.driver_id) dr.driver_id, dl.lap_time, dl.crossed_at
+    FROM driver_laps dl JOIN driver_races dr ON dr.id = dl.driver_race_id
+    WHERE dr.race_id = ANY(race_ids)
+    ORDER BY dr.driver_id, dl.lap_time, dl.crossed_at
+  )
+  INSERT INTO session_drivers (session_id, driver_id, position)
+  SELECT 1, driver_id, ROW_NUMBER() OVER (ORDER BY lap_time, crossed_at, driver_id) FROM best
+  ON CONFLICT (session_id, driver_id) DO UPDATE SET position = EXCLUDED.position;
 END $$;
 
 SELECT setval(pg_get_serial_sequence('cars', 'id'), MAX(id)) FROM cars;

@@ -271,7 +271,7 @@ def handle_car_timestamp(data: dict, arrival: float):
     }))
     logger.info(f"lap: lane={lane} counter={crossing.counter_ms}ms clock={crossing.clock}")
 
-    outcome = race.on_lap(lane, crossing)
+    outcome = race.on_lap(lane, crossing, crossed_at=crossing_unix)
     if outcome:
         publish_race_state()
 

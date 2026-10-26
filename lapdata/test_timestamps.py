@@ -49,7 +49,7 @@ def published(monkeypatch):
     monkeypatch.setattr(tsl, '_last_seq', {})
     monkeypatch.setattr(tsl, '_last_car_seq', {})
     monkeypatch.setattr(tsl, '_seq_missing_warned', False)
-    monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing: False)
+    monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing, crossed_at=None: False)
     return sent
 
 
@@ -157,7 +157,7 @@ def test_driver_lap_carries_the_clock_counter_and_timing(published, monkeypatch)
     timed it and how."""
     driver = types.SimpleNamespace(driver_id=9, lap_times=[], last_lap_timing='')
 
-    def count_a_lap(lane, crossing):
+    def count_a_lap(lane, crossing, crossed_at=None):
         driver.lap_times.append(4.5)
         driver.last_lap_timing = 'counter'
         return 'counted'
@@ -183,7 +183,7 @@ def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkey
     driver = types.SimpleNamespace(driver_id=9, lap_times=[4.5] * 5, last_lap_timing='counter')
     outcomes = iter(['yellow_flag', 'counted', None])
 
-    def on_lap(lane, crossing):
+    def on_lap(lane, crossing, crossed_at=None):
         outcome = next(outcomes)
         if outcome == 'counted':
             driver.lap_times.append(4.5)
@@ -212,7 +212,7 @@ def test_every_crossing_acted_on_is_published_with_its_outcome(published, monkey
 def _acted_on(monkeypatch):
     """Record every crossing that reaches the race manager."""
     seen = []
-    monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing: seen.append((lane, crossing.counter_ms)))
+    monkeypatch.setattr(tsl.race, 'on_lap', lambda lane, crossing, crossed_at=None: seen.append((lane, crossing.counter_ms)))
     return seen
 
 
@@ -333,7 +333,7 @@ def test_a_penalty_is_published_as_its_own_event_after_its_crossing(published, m
     the void crossing that incurred it, and is published once."""
     driver = types.SimpleNamespace(driver_id=9, lap_times=[4.5], last_lap_timing='counter')
 
-    def yellow_flag_crossing(lane, crossing):
+    def yellow_flag_crossing(lane, crossing, crossed_at=None):
         tsl.race.pending_penalty_records.append({
             'penalty_id': 'c0ffee00-0000-4000-8000-000000000001', 'issued_at': 1020.0,
             'driver_id': 9, 'penalty_type': 'lap', 'amount': 2,

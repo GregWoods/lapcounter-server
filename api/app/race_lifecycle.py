@@ -20,7 +20,8 @@ plan_reconcile() is the decision and is DB-free, so it is unit-tested on its own
 A Finished race_state also carries each driver's final position and race time, which
 are stored in driver_races as published (#81, plan_results()). ⚠️ A race finished by
 inference (a different race under way) never had its Finished message reach us, so it
-has no results.
+has no results. For a Fastest Lap session the Finished race_state also carries the
+session's ranking, stored in session_drivers.position (#112, plan_session_positions()).
 """
 import logging
 from datetime import datetime, timezone
@@ -29,7 +30,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from model import DriverRace, Race, RaceSession
+from model import DriverRace, Race, RaceSession, SessionDriver
 from next_race import get_drivers_for_next_race_sql, remove_pending_races
 
 logger = logging.getLogger('uvicorn.error')
@@ -81,10 +82,35 @@ def plan_results(race_state: dict) -> Optional[dict]:
     and no race time, so they score nothing."""
     if race_state.get('state') != 'Finished' or race_state.get('race_id') is None:
         return None
+    if race_state.get('session_type') == 'FastestLap':
+        # Ranked on each driver's best lap in this race (#112): the per-race medals on
+        # Results. There is no race time; None = no counted lap in this race.
+        return {
+            d['driver_id']: (d.get('race_position'), None)
+            for d in race_state.get('session_drivers') or []
+            if d.get('driver_id') is not None and d.get('in_current_race')
+        }
     return {
         d['driver_id']: ((d.get('position'), d.get('total_race_time'))
                          if d.get('has_started') else (None, None))
         for d in race_state.get('drivers') or []
+        if d.get('driver_id') is not None
+    }
+
+
+def plan_session_positions(race_state: dict) -> Optional[dict]:
+    """A Fastest Lap session's ranking from a Finished race_state, as driver_id ->
+    position (None = no counted lap yet), or None if the message isn't one.
+
+    lapdata is the one authority on that ranking too (#112), tie-break included, so it is
+    copied as published. Taken only from a Finished race: that is the standing the Results
+    page shows, and the race whose laps it covers is then in the DB as Finished."""
+    if (race_state.get('state') != 'Finished' or race_state.get('race_id') is None
+            or race_state.get('session_type') != 'FastestLap'):
+        return None
+    return {
+        d['driver_id']: d.get('position')
+        for d in race_state.get('session_drivers') or []
         if d.get('driver_id') is not None
     }
 
@@ -109,6 +135,10 @@ def reconcile(dbsession: Session, race_state: dict) -> list[tuple]:
     if results is not None and race is not None and race.state == 'Finished':
         if store_results(dbsession, race_id, results):
             logger.info(f"race_state: race {race_id} results stored")
+    positions = plan_session_positions(race_state)
+    if positions is not None and race is not None and race.state == 'Finished':
+        if store_session_positions(dbsession, race.session_id, positions):
+            logger.info(f"race_state: session {race.session_id} Fastest Lap ranking stored")
     return actions
 
 
@@ -125,6 +155,28 @@ def store_results(dbsession: Session, race_id: int, results: dict) -> bool:
             dr.position, dr.race_time = position, race_time
             dbsession.add(dr)
             changed = True
+    if changed:
+        dbsession.commit()
+    return changed
+
+
+def store_session_positions(dbsession: Session, session_id: int, positions: dict) -> bool:
+    """Write lapdata's Fastest Lap ranking to session_drivers, creating a driver's row if
+    they have none yet (it otherwise only exists once a driver is disqualified). Touches
+    only what differs, as the heartbeat repeats Finished every 2s. Returns True if anything
+    changed."""
+    changed = False
+    for driver_id, position in positions.items():
+        sd = dbsession.get(SessionDriver, (session_id, driver_id))
+        if sd is None:
+            if position is None:
+                continue
+            sd = SessionDriver(session_id=session_id, driver_id=driver_id)
+        elif sd.position == position:
+            continue
+        sd.position = position
+        dbsession.add(sd)
+        changed = True
     if changed:
         dbsession.commit()
     return changed
