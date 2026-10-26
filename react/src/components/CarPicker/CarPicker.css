@@ -41,8 +41,8 @@
     font-weight: 800;
 }
 
-.carpicker--light-lane .carpicker-lane,
-.carpicker--light-lane .carpicker-car--current::after { color: #111; }
+.carpicker--light .carpicker-car-label,
+.carpicker-lane.carpicker--light { color: #111; }
 
 .carpicker-icon,
 .carpicker-icon-spacer {
@@ -96,14 +96,21 @@
     box-shadow: 0 0 0 0.15em #15171a, 0 0 1.2em 0.2em var(--lane-color, #5be07a);
 }
 
-.carpicker-car--current::after {
-    content: 'Current car';
+/* Already on another lane: that lane's colour, and dimmed, so picking it is a deliberate
+   choice (a swap between lanes) rather than a slip. */
+.carpicker-car--in-use {
+    border: 0.3em solid var(--lane-color);
+}
+
+.carpicker-car--in-use img { opacity: 0.55; }
+
+.carpicker-car-label {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
     padding: 0.2em;
-    background: var(--lane-color, #5be07a);
+    background: var(--lane-color);
     color: #fff;
     font-weight: 800;
     font-size: 0.9em;
