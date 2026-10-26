@@ -287,19 +287,6 @@ class RaceManager:
             if times and sum(times) > flag_at:
                 driver.finished = True
 
-    def update_car_pictures(self, lane_assignments: list) -> bool:
-        """Take the car pictures from a re-read lineup, and nothing else — for a car swapped
-        on a race already under way, where the lineup itself is fixed. Matched on lane and
-        driver, so a lineup for some other race changes nothing. Returns whether any did."""
-        changed = False
-        for a in lane_assignments:
-            driver = self.drivers.get(a.get('lane_number'))
-            picture = a.get('car_picture') or ''
-            if driver and driver.driver_id == a.get('id') and driver.car_picture != picture:
-                driver.car_picture = picture
-                changed = True
-        return changed
-
     def _merge_session_drivers(self, lane_assignments: list, session_drivers: list):
         """Merge API session driver list into in-memory session_drivers.
 

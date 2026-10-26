@@ -5,7 +5,7 @@ import DriverCardTime from './DriverCardTime';
 import { CAR_MEDIA_URL } from '../../endpoints.js';
 
 
-const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestOpenDriverNames, onRequestOpenCarSelector}) => {
+const DriverCard = ({driver, underStartersOrders, previewDriverCards}) => {
     if (!driver) return null;
     let className = 'drivercard driver' + driver.number;
     // An empty lane (no driver assigned) stays as a placeholder in the viewmodel but is
@@ -16,9 +16,6 @@ const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestO
         //} else {
             className += ' show';
         //}
-    }
-    if (driver.spotlightMe) {
-        className += ' spotlightme';
     }
 
 
@@ -53,10 +50,10 @@ const DriverCard = ({driver, underStartersOrders, previewDriverCards, onRequestO
     return (
         <div className={className} data-order={driverPosition}>
 
-            <div className="drivername emphasized" onClick={onRequestOpenDriverNames}>
+            <div className="drivername emphasized">
                 <div>{driver.name}</div>
             </div>
-            <div className="carimg" onClick={onRequestOpenCarSelector}>
+            <div className="carimg">
                 <img alt="Car Image" src={driver.carImgUrl}
                     onError={(e) => { e.target.onerror = null; e.target.src = `${CAR_MEDIA_URL}/GT_AA_Generic.jpg`; }} />
             </div>

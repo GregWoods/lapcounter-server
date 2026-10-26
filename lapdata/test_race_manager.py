@@ -782,26 +782,6 @@ def test_a_lane_with_no_car_publishes_an_empty_picture():
     assert race.to_dict()['drivers'][0]['car_picture'] == ''
 
 
-def test_a_car_swap_mid_race_changes_only_the_picture():
-    race = new_race(n_drivers=2, count_first_crossing=True)
-    race.on_lap(1, at(5.0))
-    swapped = make_lineup(2)
-    swapped[0]['car_picture'] = 'spare.jpg'
-
-    assert race.update_car_pictures(swapped) is True
-    lane1 = race.to_dict()['drivers'][0]
-    assert (lane1['car_picture'], lane1['laps_completed']) == ('spare.jpg', 1)
-    assert race.update_car_pictures(swapped) is False   # nothing new: no republish
-
-
-def test_a_lineup_for_other_drivers_changes_no_picture():
-    """Matched on lane AND driver, so another race's lineup can't repaint this one."""
-    race = new_race(n_drivers=1)
-    other = [{'id': 99, 'driver_name': 'Other', 'lane_number': 1, 'car_picture': 'other.jpg'}]
-    assert race.update_car_pictures(other) is False
-    assert race.to_dict()['drivers'][0]['car_picture'] == 'car1.jpg'
-
-
 def test_fastest_lap_merge_preserves_better_in_memory_best_over_db_value():
     """_merge_session_drivers should keep the better of in-memory vs DB best,
     not blindly overwrite with whatever the API supplies."""

@@ -34,7 +34,6 @@
     border-radius: 1.04vw 1.04vw 0 0;
     white-space: nowrap;
     overflow: hidden;
-    cursor: pointer;
 }
 
 .drivername div {
@@ -49,7 +48,6 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    cursor: pointer;
 }
 
 .carimg img {
@@ -80,10 +78,6 @@
 
 .drivercard .timelbl {
     font-size: 2.6rem;
-}
-
-.spotlightme {
-    z-index: 1;
 }
 
 .fastestlaptime {
