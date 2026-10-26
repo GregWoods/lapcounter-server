@@ -232,7 +232,7 @@ def test_broker_reconnect_does_not_replace_the_loaded_race(lapdata, monkeypatch)
     """on_connect fires on every reconnect. Reloading the lineup then would swap a
     running race for the next one in the queue."""
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
-    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
+    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic, qos=0: None), None, None, None, None)
 
     assert lapdata.race.race_id == 1
     assert lapdata.race.state == 'Running'
@@ -245,7 +245,7 @@ def test_first_connect_loads_the_pending_race(lapdata, monkeypatch):
     monkeypatch.setattr(tsl, '_api_reachable', True)
     monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: PENDING)
-    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
+    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic, qos=0: None), None, None, None, None)
 
     assert fresh.race_id == 1
     assert fresh.state == 'NotStarted'
@@ -264,7 +264,7 @@ def test_restart_mid_race_recovers_the_running_race_paused(lapdata, monkeypatch)
     monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: RECOVERY)
     # The queue head must NOT be loaded in its place.
     monkeypatch.setattr(tsl, 'fetch_pending_race', lambda: {**PENDING, 'race_id': 2})
-    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
+    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic, qos=0: None), None, None, None, None)
 
     assert fresh.race_id == 1
     assert fresh.state == 'Paused'
@@ -300,7 +300,7 @@ def test_api_down_at_startup_is_retried_not_forgotten(lapdata, monkeypatch):
     monkeypatch.setattr(tsl, '_api_reachable', False)
     monkeypatch.setattr(tsl, '_startup_load_pending', False)
     monkeypatch.setattr(tsl, 'fetch_running_recovery', lambda: None)
-    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic: None), None, None, None, None)
+    tsl.on_connect(types.SimpleNamespace(subscribe=lambda topic, qos=0: None), None, None, None, None)
     assert tsl._startup_load_pending is True
     assert fresh.race_id is None
 

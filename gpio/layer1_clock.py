@@ -16,6 +16,7 @@ Deliberately a module of its own rather than a few lines copied into both script
 ONE thing that must not drift between the two lane containers is agreement about the
 clock, and copies drift.
 """
+import itertools
 import os
 import secrets
 import time
@@ -43,6 +44,21 @@ def _boot_id() -> str:
 
 
 CLOCK = f"gpio:{_boot_id()}"
+
+# Unlike the clock, the crossing sequence (#78) IS per process, and numbers every crossing
+# the process publishes whatever the car. Per car would be blind here: a car changing lane
+# is seen by one lane container and then the other, so neither sees all of its crossings,
+# and a loss could go unnoticed for the rest of the race. One sequence per container
+# shows a loss on that container's next crossing — at the cost of not knowing which car
+# it was. A restart is a new source, never a sequence that went backwards. lapdata
+# compares it for equality only.
+SOURCE = f"gpio:{secrets.token_hex(4)}"
+_crossing_sequence = itertools.count(1)
+
+
+def next_seq() -> int:
+    """This process's next crossing number: 1, 2, 3…"""
+    return next(_crossing_sequence)
 
 
 def counter_ms() -> int:
