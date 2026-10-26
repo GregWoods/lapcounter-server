@@ -175,6 +175,28 @@
     min-width: 100px;
 }
 
+/* A session's title: expands its settings under the summary row. */
+.admin-session-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    padding: 0;
+    color: #888;
+    font: inherit;
+    cursor: pointer;
+}
+
+.admin-session-toggle:hover,
+.admin-session-toggle:hover .admin-session-title {
+    color: #1a7fd4;
+}
+
+.admin-session-display + .admin-session-form {
+    margin-top: 10px;
+}
+
 .admin-session-detail {
     color: #888;
     font-size: 0.9rem;
@@ -435,6 +457,46 @@
     background: #202020;
     border-radius: 8px;
     padding: 14px;
+}
+
+/* Wraps the session form's fields so a started session can show them disabled.
+   Laid out like .admin-form itself, with the fieldset's own border and padding removed. */
+.admin-form-fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    border: none;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+}
+
+/* Viewing, not editing: greyed out, so it's plain at a glance nothing here can be changed. */
+.admin-form-fieldset:disabled input:not([type="checkbox"]),
+.admin-form-fieldset:disabled select {
+    background: #1c1c1c;
+    color: #8a8a8a;
+    border-color: #2a2a2a;
+    cursor: default;
+    opacity: 1;
+}
+
+/* Any disabled toggle: muted track and thumb, on or off. */
+.admin-toggle:has(input:disabled),
+.admin-toggle input[type="checkbox"]:disabled {
+    cursor: default;
+}
+
+.admin-toggle input[type="checkbox"]:disabled + .admin-toggle-track {
+    background: #2a2a2a;
+}
+
+.admin-toggle input[type="checkbox"]:disabled:checked + .admin-toggle-track {
+    background: #3b5266;
+}
+
+.admin-toggle input[type="checkbox"]:disabled + .admin-toggle-track .admin-toggle-thumb {
+    background: #8a8a8a;
 }
 
 .admin-form-actions {
