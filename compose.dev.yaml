@@ -17,20 +17,54 @@ services:
 
 
 
-  # The older dev Layer 1: publishes car_timestamp directly, so it tests lapdata and
-  # React but none of ble/. Behind a profile since mocked-ble became the dev default.
-  # Only one Layer 1 may run, and mocked-ble has no profile, so stop it:
+  # The GPIO dev Layer 1, three services: mocked-gpio-1 and -2 are the real, unmodified
+  # gpio_to_timestamps.py, one per lane as on the Pi, against a fake RPi.GPIO
+  # (gpio/mock_rpi_gpio.py). mock-track owns the cars' lap timing and lanes and feeds
+  # each crossing to its lane's fake board on mock/gpio/lane<N> (#101).
+  # Only one Layer 1 may run, and mocked-ble has no profile, so stop it and name these:
   #   docker compose -f compose.dev.yaml stop mocked-ble
-  #   docker compose -f compose.dev.yaml --profile mocked-gpio up -d mocked-gpio
-  mocked-gpio:
+  #   docker compose -f compose.dev.yaml --profile mocked-gpio up -d mock-track mocked-gpio-1 mocked-gpio-2
+  # The volume is required: gpio/.dockerignore keeps mock_*.py out of the (production)
+  # image. No hot reload: restart them after editing ./gpio.
+  mock-track:
     profiles: ["mocked-gpio"]
-    container_name: mocked-gpio
+    container_name: mock-track
+    build: ./gpio
+    command: ["python", "mock_track.py"]
+    volumes:
+      - ./gpio:/app
     environment:
       - MQTT_HOSTNAME=mosquitto
       - MOCK_NUMBER_OF_DRIVERS=6
-    build:
-      context: ./gpio
-      dockerfile: Dockerfile.Mocked
+      # - MOCK_LANE_CHANGE_PROBABILITY=0.15
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  mocked-gpio-1:
+    profiles: ["mocked-gpio"]
+    container_name: mocked-gpio-1
+    build: ./gpio
+    command: ["python", "mock_gpio_to_timestamps.py"]
+    volumes:
+      - ./gpio:/app
+    environment:
+      - LANE_NUMBER=1
+      - MQTT_HOSTNAME=mosquitto
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  mocked-gpio-2:
+    profiles: ["mocked-gpio"]
+    container_name: mocked-gpio-2
+    build: ./gpio
+    command: ["python", "mock_gpio_to_timestamps.py"]
+    volumes:
+      - ./gpio:/app
+    environment:
+      - LANE_NUMBER=2
+      - MQTT_HOSTNAME=mosquitto
     depends_on:
       - mosquitto
     restart: unless-stopped

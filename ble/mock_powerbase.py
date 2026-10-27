@@ -75,7 +75,7 @@ DISCONNECT_POWER_MODES = ('hold', 'off', 'on')
 
 @dataclasses.dataclass(frozen=True)
 class LapModel:
-    """Borrowed from gpio/mocked_timestamps.py: base + per-car ability + per-lap spread,
+    """Borrowed from gpio/mock_track.py: base + per-car ability + per-lap spread,
     plus the occasional off. Times are at full power; a lower multiplier stretches them."""
     min_lap_s: float = 5.0
     ability_range_s: float = 4.2

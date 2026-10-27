@@ -191,7 +191,7 @@ INSERT INTO driver_laps (id, driver_race_id, lap_time, created_at) VALUES
 -- Generated rather than hand-written: 13 drivers, races_per_driver = 2, 6 lanes
 -- => 5 races of sizes 6,5,5,5,5 (each driver races exactly twice).
 --
--- Lap times use the same model as gpio/mocked_timestamps.py: each driver has a
+-- Lap times use the same model as gpio/mock_track.py: each driver has a
 -- fixed pace (base) plus a fixed lap-to-lap spread (range), and every lap is
 --   lap = base + uniform(0, range)
 -- The gpio defaults (abilityRangeMax 4.2, lapTimeRangeMax 3.5) make the per-lap
@@ -245,7 +245,7 @@ BEGIN
     (4,1,4),(4,2,5),(4,3,6),(4,4,7),(4,5,8),
     (5,1,9),(5,2,10),(5,3,11),(5,4,12),(5,5,13);
 
-  -- Per-driver ability, mirroring gpio/mocked_timestamps.py (fixed per driver).
+  -- Per-driver ability, mirroring gpio/mock_track.py (fixed per driver).
   CREATE TEMP TABLE tmp_base (driver_id INT PRIMARY KEY, base_lap NUMERIC, lap_range NUMERIC) ON COMMIT DROP;
   INSERT INTO tmp_base (driver_id, base_lap, lap_range)
     SELECT g, 5 + random() * 5.0, random() * 2.0 FROM generate_series(1, 13) g;

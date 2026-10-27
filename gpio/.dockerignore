@@ -32,3 +32,7 @@
 **/values.dev.yaml
 LICENSE
 README.md
+
+# Dev only, kept out of the production gpio image. The dev mocked-gpio services
+# bind-mount the gpio folder over the app folder, so they still see them.
+mock_*.py

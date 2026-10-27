@@ -103,7 +103,7 @@ def on_observer_message(_client, _userdata, msg):
         _foreign_logged_at = now
         logger.error(f"Another Layer 1 is publishing car_timestamp ({_foreign_count} foreign so far, "
                      f"latest {payload}) — every lap is being double-counted. "
-                     f"Stop it: docker compose -f compose.dev.yaml stop mocked-gpio")
+                     f"Stop it: docker compose -f compose.dev.yaml stop mock-track mocked-gpio-1 mocked-gpio-2")
 
 
 observer.on_connect = on_observer_connect

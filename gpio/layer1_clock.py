@@ -32,9 +32,9 @@ HEARTBEAT_INTERVAL_S = 1.0
 def _boot_id() -> str:
     """An id that changes when the kernel's monotonic clock restarts, i.e. at boot.
 
-    The fallback is only reached off Linux — running mocked_timestamps.py natively on
-    Windows — where there is no /proc. It is per-process, which is correct there: there
-    is one process, so nothing has to agree with anything.
+    The fallback is only reached off Linux, where there is no /proc. It is per-process,
+    so the two lane containers would disagree there; the mocked lanes run in Linux
+    containers for that reason, never natively.
     """
     try:
         with open('/proc/sys/kernel/random/boot_id') as f:
