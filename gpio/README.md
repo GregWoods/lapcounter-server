@@ -7,17 +7,22 @@
 The commands in this script can be run individually and modified, if for example, during development you didn't want to push an interim
 build to DockerHub, replace `--push` with `--load`.
 
-The script builds 2 images, one for mocked gpi data and the other which uses the actual gpio pins on a Raspberry Pi.
+The script builds one image, which uses the actual gpio pins on a Raspberry Pi, for:
 
-Note that we build for 3 architectures:
-
-* `linux/amd64`for local use (run from WSL2 or Docker) using the mocked gpio 
 * `linux/arm/v7` for 32 bit Raspberry Pi OS running on the Pi Zero 2 W or Pi 3A+
 * `linux/arm64/v8` for 64 bit Raspberry Pi OS running on a 1Gb+ Pi 3 or later
 
 
-## Run it locally in Docker
+## Run it without a Pi (dev)
 
-Correctly set up environment variables are needed for any of these containers to run. So instead of using `docker run` directly, we run can run the container using docker compose.
+The same `gpio_to_timestamps.py` runs against a fake `RPi.GPIO` (`mock_rpi_gpio.py`), one
+container per lane as on the Pi, fed crossings by `mock_track.py` (#101). Only one Layer 1
+may run, so stop the dev default first:
 
-```docker compose -f ../compose.dev.yaml up --build mocked-gpio```
+```
+docker compose -f ../compose.dev.yaml stop mocked-ble
+docker compose -f ../compose.dev.yaml --profile mocked-gpio up -d --build mock-track mocked-gpio-1 mocked-gpio-2
+```
+
+The `mock_*.py` files are kept out of the image by `.dockerignore`; the dev services
+bind-mount this folder to get them.

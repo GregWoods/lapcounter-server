@@ -7,22 +7,29 @@
 # Note: -E is needed to pass the environment variables to sudo
 
 import json
+import logging
 import time
 import os
 import paho.mqtt.client as mqtt     #uses >= 2.0.0
-import sys
 import RPi.GPIO as GPIO             # actually uses the lgpio library for compativility with newer Linux kernels
 from layer1_clock import CLOCK, HEARTBEAT_INTERVAL_S, MQTT_CLOCK_TOPIC, SOURCE, counter_ms, next_seq
 
-# LANE_NUMBER starts from 1. 
-#   It is passed in as an environment variable in the docker compose file. 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# LANE_NUMBER starts from 1.
+#   It is passed in as an environment variable in the docker compose file.
 lane_idx = int(os.getenv('LANE_NUMBER')) - 1
-print(f"LANE_NUMBER: {lane_idx}")
+logger.info(f"LANE_NUMBER: {lane_idx + 1}")
 
 mqtt_hostname = os.getenv('MQTT_HOSTNAME')
-print(f"MQTT_HOSTNAME: {mqtt_hostname}")
+logger.info(f"MQTT_HOSTNAME: {mqtt_hostname}")
 
 MQTT_TIMESTAMP_TOPIC = "car_timestamp"
+# Same as BLE: the broker publishes our Last Will 1.5x this after we stop answering, and
+# lapdata pauses the race on it. Detecting a dead lane container within seconds rather
+# than paho's default 90 matters: every crossing on that lane meanwhile is a lost lap.
+MQTT_KEEPALIVE_S = 5
 
 # setup GPIO pin constants
 lanes = [{
@@ -59,7 +66,7 @@ def send_lap_time(car_number, crossing_counter_ms):
                "counter_ms": crossing_counter_ms, "clock": CLOCK,
                "source": SOURCE, "seq": next_seq()}
     lapjson = json.dumps(lapdata)
-    print(lapjson)
+    logger.info(lapjson)
     # QoS 1 (#78): paho holds it while the broker link is down, and the broker queues it
     # for lapdata's persistent session. lapdata drops a redelivery.
     client.publish(MQTT_TIMESTAMP_TOPIC, payload=lapjson, qos=1)
@@ -85,24 +92,39 @@ def car_detected(_):
     handshake_end(lane)
 
 # utilises a new thread to handle the GPIO event detection
-print(f"lane selected GPIO: {lane['SELECTED']}")
+logger.info(f"lane selected GPIO: {lane['SELECTED']}")
 GPIO.add_event_detect(lane["SELECTED"], GPIO.FALLING, callback=car_detected)
 
-def on_connect(_client, _userdata, _flags, _reason_code, _properties):
-    # Retained: a browser or lapdata connecting mid-meet needs the answer immediately.
-    # Republished on every reconnect too, in case a broker restart cleared it. See
-    # CLAUDE.md "Layer 1 capability advertising" — nothing downstream may branch on
+def layer1_status(online=True):
+    # See CLAUDE.md "Layer 1 capability advertising" — nothing downstream may branch on
     # 'layer1', only on 'capabilities'. GPIO has no power control at all, so this is the
-    # minimal capability set; both lane containers publish the same payload.
-    _client.publish('layer1_status', json.dumps({
+    # minimal capability set; both lane containers publish the same payload. `online` is
+    # this container's own MQTT link: False only in its Last Will.
+    return json.dumps({
         'layer1': 'gpio',
         'capabilities': ['lap_timing'],
         'timing_resolution_ms': 1,
-    }), retain=True)
+        'online': online,
+    })
+
+def on_connect(_client, _userdata, _flags, _reason_code, _properties):
+    # Retained: a browser or lapdata connecting mid-meet needs the answer immediately.
+    # Republished on every reconnect too, since our will may have fired while the link
+    # was down, or a broker restart cleared it.
+    _client.publish('layer1_status', layer1_status(), retain=True)
+
+def on_disconnect(_client, _userdata, _flags, reason_code, _properties):
+    logger.warning(f"MQTT link lost ({reason_code}); paho reconnects. Crossings meanwhile "
+                   f"are held at QoS 1")
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
-client.connect(mqtt_hostname)
+client.on_disconnect = on_disconnect
+# Either lane container dying sets the whole Layer 1 offline, which is right: that lane's
+# crossings can't be counted. lapdata pauses the race and every display says Track
+# offline, as with BLE. The container's restart republishes online.
+client.will_set('layer1_status', layer1_status(online=False), retain=True)
+client.connect(mqtt_hostname, keepalive=MQTT_KEEPALIVE_S)
 # create a new thread to handle the network loop. Also handles reconnecting
 client.loop_start()
 
