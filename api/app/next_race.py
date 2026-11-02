@@ -481,6 +481,7 @@ def _build_race_setup(dbsession, race):
                 dwl.id = dr.driver_id
                 dwl.driver_name = meeting_driver_names.get(dr.driver_id, "")
             dwl.car_picture = car_pictures.get(dr.car_id, "")
+            dwl.car_id = dr.car_id
         else:
             dwl = DriverWithLane.create(lane=lane)
         lane_assignments.append(dwl)
@@ -533,32 +534,75 @@ def _build_race_setup(dbsession, race):
     )
 
 
-def get_car_id_for_lane(dbsession, lane_number: int, meeting_id: int):
-    """Return car_id for a lane: last finished race first, then meeting_cars default."""
-    session_ids = [s.id for s in dbsession.exec(
-        select(RaceSession).where(RaceSession.meeting_id == meeting_id)
+def get_car_id_for_lane(dbsession, lane_number: int, race_session):
+    """Return car_id for a lane in this session (see _lane_to_car_map)."""
+    return _lane_to_car_map(dbsession, race_session).get(lane_number)
+
+
+def set_session_lane_car(dbsession, race_session, lane_number: int, car_id: int):
+    """Put a car on a lane for the rest of a session (#111).
+
+    Recorded in session_cars, so races built later (regenerate, a lane enabled, a driver
+    added) use it too, and applied to every queued race in the session. Finished and
+    Running races keep the car they were raced with: a race is edited only while queued.
+    """
+    if not 1 <= lane_number <= 6:
+        raise HTTPException(status_code=400, detail="Lane must be 1-6")
+    if car_id is None or not dbsession.get(Car, car_id):
+        raise HTTPException(status_code=404, detail="Car not found")
+    session_car = dbsession.get(SessionCar, (race_session.id, lane_number))
+    if session_car:
+        session_car.car_id = car_id
+    else:
+        session_car = SessionCar(session_id=race_session.id, lane=lane_number, car_id=car_id)
+    dbsession.add(session_car)
+    queued_ids = [r.id for r in dbsession.exec(
+        select(Race).where(Race.session_id == race_session.id, Race.state == 'NotStarted')
     ).all()]
-    last_race = dbsession.exec(
+    if queued_ids:
+        for dr in dbsession.exec(
+            select(DriverRace).where(DriverRace.race_id.in_(queued_ids), DriverRace.lane == lane_number)
+        ).all():
+            dr.car_id = car_id
+            dbsession.add(dr)
+    dbsession.commit()
+
+
+def session_lane_cars(dbsession, race_session):
+    """Each lane's car for a session, and who drives it in the next race: what RaceControl's
+    Edit Cars shows. The next race's own car wins over the session mapping, so this shows
+    what will actually be raced."""
+    lane_to_car = _lane_to_car_map(dbsession, race_session)
+    head = dbsession.exec(
         select(Race)
-        .where(Race.session_id.in_(session_ids), Race.state == 'Finished')
-        .order_by(Race.id.desc())
+        .where(Race.state == 'NotStarted', Race.session_id == race_session.id)
+        .order_by(Race.race_number, Race.id)
     ).first()
-    if last_race:
-        dr = dbsession.exec(
-            select(DriverRace).where(
-                DriverRace.race_id == last_race.id,
-                DriverRace.lane == lane_number
-            )
-        ).first()
-        if dr and dr.car_id is not None:
-            return dr.car_id
-    meeting_car = dbsession.exec(
-        select(MeetingCar).where(
-            MeetingCar.meeting_id == meeting_id,
-            MeetingCar.lane == lane_number
-        )
-    ).first()
-    return meeting_car.car_id if meeting_car else None
+    head_by_lane = {}
+    if head:
+        head_by_lane = {dr.lane: dr for dr in dbsession.exec(
+            select(DriverRace).where(DriverRace.race_id == head.id)
+        ).all()}
+    names = {md.driver_id: md.driver_name for md in dbsession.exec(
+        select(MeetingDriver).where(MeetingDriver.meeting_id == race_session.meeting_id)
+    ).all()}
+    cars = {c.id: c for c in dbsession.exec(select(Car)).all()}
+
+    result = []
+    for lane in dbsession.exec(select(Lane).order_by(Lane.lane_number)).all():
+        dr = head_by_lane.get(lane.lane_number)
+        car_id = dr.car_id if dr and dr.car_id is not None else lane_to_car.get(lane.lane_number)
+        car = cars.get(car_id)
+        result.append({
+            "lane": lane.lane_number,
+            "lane_color": lane.color,
+            "lane_enabled": lane.enabled,
+            "driver_name": names.get(dr.driver_id, "") if dr else "",
+            "car_id": car_id,
+            "car_name": car.name if car else None,
+            "car_picture": car.picture if car else None,
+        })
+    return result
 
 
 def add_driver_to_pending_lineup(dbsession, pending_race, driver_id: int):
@@ -579,7 +623,7 @@ def add_driver_to_pending_lineup(dbsession, pending_race, driver_id: int):
         raise HTTPException(status_code=404, detail="Driver not found")
     best_lane = min(free_lanes, key=lambda l: getattr(driver_data, f"lane{l.lane_number}_count"))
     race_session = dbsession.get(RaceSession, pending_race.session_id)
-    car_id = get_car_id_for_lane(dbsession, best_lane.lane_number, race_session.meeting_id)
+    car_id = get_car_id_for_lane(dbsession, best_lane.lane_number, race_session)
     dbsession.add(DriverRace(
         driver_id=driver_id,
         race_id=pending_race.id,
@@ -708,7 +752,7 @@ def set_lane_enabled(dbsession, lane_number: int, enabled: bool):
         )
 
         if next_driver:
-            car_id = get_car_id_for_lane(dbsession, lane_number, race_session.meeting_id)
+            car_id = get_car_id_for_lane(dbsession, lane_number, race_session)
             dbsession.add(DriverRace(
                 driver_id=next_driver.id,
                 race_id=pending_race.id,
@@ -757,13 +801,14 @@ def recalculate_meeting_driver_names(dbsession, meeting_id: int):
     dbsession.commit()
 
 
-def _lane_to_car_map(dbsession, meeting_id):
-    """Resolve lane → car_id for a new race lineup in this meeting.
+def _lane_to_car_map(dbsession, race_session):
+    """Resolve lane → car_id for a new race lineup in this session.
 
-    Primary source is the last completed race (cars stay on their lanes between
-    races); falls back to the meeting_cars defaults for lanes not yet seen.
-    Returns a single dict with the primary mapping layered over the fallback.
+    The operator's choice for the session (session_cars, #111) wins; then the meeting's
+    last completed race (cars stay on their lanes between races); then the meeting_cars
+    defaults for lanes not yet seen. Returns one dict with each layered over the next.
     """
+    meeting_id = race_session.meeting_id
     session_ids = [s.id for s in dbsession.exec(
         select(RaceSession).where(RaceSession.meeting_id == meeting_id)
     ).all()]
@@ -786,8 +831,12 @@ def _lane_to_car_map(dbsession, meeting_id):
     ).all()
     meeting_lane_to_car = {mc.lane: mc.car_id for mc in meeting_cars if mc.lane is not None}
 
-    # Last-race assignment wins over the meeting default.
-    return {**meeting_lane_to_car, **last_race_lane_to_car}
+    session_lane_to_car = {sc.lane: sc.car_id for sc in dbsession.exec(
+        select(SessionCar).where(SessionCar.session_id == race_session.id)
+    ).all()}
+
+    # Session choice wins over the last race, which wins over the meeting default.
+    return {**meeting_lane_to_car, **last_race_lane_to_car, **session_lane_to_car}
 
 
 def _persist_race(dbsession, setup, race_session, race_number, lane_to_car):
@@ -822,7 +871,7 @@ def _next_race_number(dbsession, session_id):
 
 def save_pending_race(dbsession, setup, race_session):
     """Persist a freshly calculated lineup as a NotStarted Race + DriverRace records."""
-    lane_to_car = _lane_to_car_map(dbsession, race_session.meeting_id)
+    lane_to_car = _lane_to_car_map(dbsession, race_session)
     _persist_race(dbsession, setup, race_session,
                   _next_race_number(dbsession, race_session.id), lane_to_car)
     # Reload from DB so the response includes everything load_pending_race adds
@@ -934,7 +983,7 @@ def build_session_schedule(race_session, drivers, lanes):
 def save_session_schedule(dbsession, schedule, race_session):
     """Persist a list of NextRaceSetup as consecutively-numbered NotStarted races,
     appended after any existing finished/running/queued races. Returns the count."""
-    lane_to_car = _lane_to_car_map(dbsession, race_session.meeting_id)
+    lane_to_car = _lane_to_car_map(dbsession, race_session)
     start_number = _next_race_number(dbsession, race_session.id)
     for offset, setup in enumerate(schedule):
         _persist_race(dbsession, setup, race_session, start_number + offset, lane_to_car)

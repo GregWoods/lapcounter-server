@@ -20,6 +20,7 @@ class DriverWithLane(SQLModel):
     lane_color: str = ""
     lane_enabled: bool = True
     car_picture: str = ""  # car image filename for this lane, e.g. "GT_Porsche_Black.jpg"
+    car_id: Optional[int] = None  # the car on this lane, so a car picker can mark it
 
 
     @classmethod

@@ -190,6 +190,15 @@ class SessionDriver(SQLModel, table=True):
     position: Optional[int] = Field(default=None)
 
 
+class SessionCar(SQLModel, table=True):
+    # The operator's lane -> car mapping for a session (migration 009, #111). Lanes with no
+    # row fall back to the meeting's last finished race, then meeting_cars.
+    __tablename__ = "session_cars"
+    session_id: Optional[int] = Field(default=None, foreign_key="sessions.id", primary_key=True)
+    lane: Optional[int] = Field(default=None, primary_key=True)
+    car_id: int = Field(foreign_key="cars.id")
+
+
 class DriverLap(SQLModel, table=True):
     __tablename__ = "driver_laps"
     # One row per Layer 1 crossing (migration 004, #77): dbwriter's redelivered

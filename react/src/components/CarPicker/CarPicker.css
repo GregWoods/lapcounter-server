@@ -1,0 +1,125 @@
+/* Its own base size: the global html { font-size: 1.666vw } is for the 1920px TV and
+   collapses rem to ~6px on a phone (see RaceControl.css). */
+.carpicker {
+    font-size: clamp(16px, 4.6vw, 22px);
+    font-family: system-ui, sans-serif;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: #15171a;
+    color: #f0f0f0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.9em;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.carpicker-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.6em;
+}
+
+.carpicker-header h2 {
+    flex: 1;
+    margin: 0;
+    font-size: 1.3em;
+    text-align: center;
+}
+
+/* Lane colour as a pill, like the lane badges elsewhere. White text on the dark lane
+   colours, dark text on the light ones; the outline keeps a white lane visible. */
+.carpicker-lane {
+    display: inline-block;
+    padding: 0.15em 0.7em;
+    border-radius: 2em;
+    background: var(--lane-color, #2c3138);
+    box-shadow: inset 0 0 0 0.08em #0006;
+    color: #fff;
+    font-weight: 800;
+}
+
+.carpicker--light .carpicker-car-label,
+.carpicker-lane.carpicker--light { color: #111; }
+
+.carpicker-icon,
+.carpicker-icon-spacer {
+    width: 2.4em;
+    height: 2.4em;
+    flex-shrink: 0;
+}
+
+.carpicker-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #2c3138;
+    border: none;
+    border-radius: 0.5em;
+    color: #f0f0f0;
+    cursor: pointer;
+}
+
+.carpicker-icon svg { width: 1.4em; height: 1.4em; }
+
+.carpicker-grid {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(10em, 45%), 1fr));
+    align-content: start;
+    gap: 0.6em;
+    padding: 0.3em;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.carpicker-car {
+    position: relative;
+    padding: 0;
+    border: 0.15em solid #3a4049;
+    border-radius: 0.6em;
+    overflow: hidden;
+    background: none;
+    cursor: pointer;
+}
+
+/* The car on the lane now must stand out at a glance from across the room: a heavy border,
+   a glow, and a label, all in the lane's colour, since a border alone was easy to miss. */
+.carpicker-car--current {
+    border: 0.5em solid var(--lane-color, #5be07a);
+    box-shadow: 0 0 0 0.15em #15171a, 0 0 1.2em 0.2em var(--lane-color, #5be07a);
+}
+
+/* Already on another lane: that lane's colour, and dimmed, so picking it is a deliberate
+   choice (a swap between lanes) rather than a slip. */
+.carpicker-car--in-use {
+    border: 0.3em solid var(--lane-color);
+}
+
+.carpicker-car--in-use img { opacity: 0.55; }
+
+.carpicker-car-label {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0.2em;
+    background: var(--lane-color);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+.carpicker-car img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+}

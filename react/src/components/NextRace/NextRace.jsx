@@ -1,11 +1,12 @@
 import './NextRace.css';
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useLoaderData, Link } from 'react-router-dom';
-import CarSelectorModal from '../LapCounter/CarSelectorModal';
+import CarPicker from '../CarPicker/CarPicker';
+import { carImageUrl, onCarImgError } from '../CarPicker/carImages.js';
 import MqttSubscriber from '../MqttSubscriber';
 import PageHeader from '../PageHeader/PageHeader';
 import { useGuestBase } from '../utils/meetingPaths';
-import { API_URL, MQTT_URL, CAR_MEDIA_URL } from '../../endpoints.js';
+import { API_URL, MQTT_URL } from '../../endpoints.js';
 
 
 function NextRace() {
@@ -77,10 +78,6 @@ function NextRaceSetupView({ next_race_setup }) {
         }
     };
 
-    const carMediaBase = `${CAR_MEDIA_URL}`;
-    const defaultCarImg = `${carMediaBase}/GT_AA_Generic.jpg`;
-    const carImageUrl = (picture) => picture ? `${carMediaBase}/${picture}` : defaultCarImg;
-
     const handleLaneToggle = async (laneNumber, enabled) => {
         const res = await fetch(`${API_URL}/lanes/${laneNumber}`, {
             method: 'PATCH',
@@ -120,6 +117,11 @@ function NextRaceSetupView({ next_race_setup }) {
         notifyLineupChanged();
     };
 
+    // Stable, since CarPicker re-binds its Escape handler whenever it changes.
+    const closeCarPicker = useCallback(() => setCarSelectorLane(null), []);
+
+    // Same as RaceControl's Edit Cars, opened straight on the car step: the car goes on
+    // this lane for every remaining race in the session, not just this one (#111).
     const handleCarSelected = async (car) => {
         const res = await fetch(`${API_URL}/races/pending/lanes/${carSelectorLane}`, {
             method: 'PATCH',
@@ -177,7 +179,7 @@ function NextRaceSetupView({ next_race_setup }) {
                                             alt="Car"
                                             className="car-thumbnail"
                                             onClick={() => setCarSelectorLane(driver.lane_number)}
-                                            onError={(e) => { e.target.onerror = null; e.target.src = defaultCarImg; }}
+                                            onError={onCarImgError}
                                         />
                                     )}
                                 </td>
@@ -234,12 +236,15 @@ function NextRaceSetupView({ next_race_setup }) {
 
             </div>
 
-            <CarSelectorModal
-                showMe={carSelectorLane !== null}
-                onClose={() => setCarSelectorLane(null)}
-                carImgListUrl={`${API_URL}/api/cars`}
-                onCarSelected={handleCarSelected}
-            />
+            {carSelectorLane !== null && (
+                <CarPicker
+                    lane={carSelectorLane}
+                    laneColor={laneAssignments.find(a => a.lane_number === carSelectorLane)?.lane_color}
+                    currentCarId={laneAssignments.find(a => a.lane_number === carSelectorLane)?.car_id}
+                    onPick={handleCarSelected}
+                    onClose={closeCarPicker}
+                />
+            )}
         </div>
     );
 }

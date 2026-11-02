@@ -17,6 +17,7 @@ from settings import Settings
 from model import *
 from responsemodel import RaceSessionWithState, RaceSessionSummary
 from next_race import _build_race_setup, get_drivers_for_next_race_sql, assign_drivers_to_lanes, load_pending_race, load_current_race, save_pending_race, find_pending_race, get_active_meeting, get_active_meeting_id, get_active_session, get_session_for_results, session_with_state, set_lane_enabled, add_driver_to_pending_lineup, recalculate_meeting_driver_names, select_balanced_race_drivers, compute_session_progress, load_race_queue, remove_pending_races, build_session_schedule, save_session_schedule, record_withdrawal, clear_withdrawal, session_skip_counts, set_driver_disqualified, clear_session_withdrawals, count_running_race, running_race_lineup
+from next_race import set_session_lane_car, session_lane_cars
 from points import session_points_rows
 import app_settings
 import race_lifecycle
@@ -695,21 +696,31 @@ def add_driver_to_pending_race(body: PendingRaceAddDriver, dbsession: SessionDep
 
 @app.patch("/races/pending/lanes/{lane_number}")
 def update_pending_race_lane_car(lane_number: int, update: LaneCarUpdate, dbsession: SessionDep):
+    # NextRace's car picker. A car goes on a lane for the rest of the session, not just
+    # this race (#111): the same change as RaceControl's Edit Cars.
     pending_race = find_pending_race(dbsession)
     if not pending_race:
         raise HTTPException(status_code=404, detail="No pending race")
-    driver_race = dbsession.exec(
-        select(DriverRace).where(
-            DriverRace.race_id == pending_race.id,
-            DriverRace.lane == lane_number
-        )
-    ).first()
-    if not driver_race:
-        raise HTTPException(status_code=404, detail="No driver assigned to that lane")
-    driver_race.car_id = update.car_id
-    dbsession.add(driver_race)
-    dbsession.commit()
+    race_session = dbsession.get(RaceSession, pending_race.session_id)
+    set_session_lane_car(dbsession, race_session, lane_number, update.car_id)
     return load_pending_race(dbsession)
+
+
+@app.get("/sessions/active/cars")
+def get_active_session_cars(dbsession: SessionDep):
+    """Each lane's car for the active session (InProgress, else the next NotStarted one),
+    with the next race's driver on it. 404 when there is no such session."""
+    race_session = get_active_session(dbsession)
+    return {"session_id": race_session.id, "lanes": session_lane_cars(dbsession, race_session)}
+
+
+@app.put("/sessions/active/lanes/{lane_number}/car")
+def put_active_session_lane_car(lane_number: int, update: LaneCarUpdate, dbsession: SessionDep):
+    """Put a car on a lane for the rest of the active session: every queued race, and any
+    race built later. Finished and Running races keep their car (#111)."""
+    race_session = get_active_session(dbsession)
+    set_session_lane_car(dbsession, race_session, lane_number, update.car_id)
+    return {"session_id": race_session.id, "lanes": session_lane_cars(dbsession, race_session)}
 
 
 @app.patch("/races/{race_id}/lanes/{lane_number}")
